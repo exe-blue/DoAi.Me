@@ -29,6 +29,7 @@ export interface CommandPreset {
   updatedAt: string;
 }
 
+// Command History
 export interface CommandHistory {
   id: string;
   presetId: string;
@@ -36,22 +37,17 @@ export interface CommandHistory {
   targetNode: string;
   targetDevices: string;
   executedAt: string;
-  status: "success" | "failed" | "running";
+  status: "success" | "running" | "failed";
 }
 
 // Task types
-export type TaskStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "stopped"
-  | "error";
+export type TaskStatus = "running" | "queued" | "completed" | "stopped" | "error";
 
 export interface TaskVariables {
-  watchPercent: number; // 0~100
-  commentProb: number; // 0~100
-  likeProb: number; // 0~100
-  saveProb: number; // 0~100
+  watchPercent: number;
+  commentProb: number;
+  likeProb: number;
+  saveProb: number;
   subscribeToggle: boolean;
 }
 
@@ -74,17 +70,21 @@ export interface Task {
   logs: string[];
 }
 
-// Channel & Content types
+// Channel types
 export interface Channel {
   id: string;
   name: string;
-  youtubeId: string;
+  youtubeId: string;          // canonical YouTube channel ID (e.g. "UC...")
+  youtubeHandle?: string;     // YouTube handle (e.g. "@SUPERANT_AN")
   thumbnail: string;
   subscriberCount: string;
   videoCount: number;
   addedAt: string;
   autoSync: boolean;
 }
+
+// Content types
+export type ContentStatus = "pending" | "task_created" | "completed";
 
 export interface Content {
   id: string;
@@ -96,7 +96,7 @@ export interface Content {
   publishedAt: string;
   registeredAt: string;
   taskId: string | null;
-  status: "pending" | "task_created" | "completed";
+  status: ContentStatus;
 }
 
 // Log types
@@ -110,10 +110,4 @@ export interface LogEntry {
   nodeId: string;
   deviceId: string | null;
   message: string;
-}
-
-// Settings
-export interface Settings {
-  concurrentTasksPerNode: number;
-  executionOrder: "random" | "sequential";
 }

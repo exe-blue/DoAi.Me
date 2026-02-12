@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import Image from "next/image";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Plus,
   Tv,
@@ -18,6 +19,7 @@ import {
   Bookmark,
   UserPlus,
   X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +37,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { SyncStatusBar } from "@/components/sync-status-bar";
+import { useChannelSync } from "@/hooks/use-channel-sync";
 import type { Channel, Content, TaskVariables } from "@/lib/types";
 
 /* ──────────── Variable Dialog (same as tasks) ──────────── */
@@ -152,12 +156,40 @@ function VariableDialog({
 function AddChannelDialog({
   open,
   onClose,
+  onChannelAdded,
 }: {
   open: boolean;
   onClose: () => void;
+  onChannelAdded: (channel: Channel) => void;
 }) {
   const [url, setUrl] = useState("");
-  const [preview, setPreview] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!url.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/youtube/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "등록 실패");
+      }
+      const channel = await res.json();
+      onChannelAdded(channel);
+      setUrl("");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "등록 실패");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -165,8 +197,7 @@ function AddChannelDialog({
         <DialogHeader>
           <DialogTitle>채널 등록</DialogTitle>
           <DialogDescription>
-            YouTube 채널 URL을 입력하면 YouTube Data API로 1분마다 새 영상을
-            자동 감지합니다.
+            YouTube 채널 URL을 입력하면 자동으로 채널 정보를 가져옵니다.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
@@ -175,66 +206,29 @@ function AddChannelDialog({
               htmlFor="channel-url"
               className="text-sm text-muted-foreground mb-1 block"
             >
-              채널 URL 또는 ID
+              채널 URL 또는 핸들
             </label>
-            <div className="flex gap-2">
-              <Input
-                id="channel-url"
-                placeholder="https://youtube.com/@channel"
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setPreview(e.target.value.length > 10);
-                }}
-                className="bg-secondary flex-1"
-              />
-              <Button variant="outline" size="sm">
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {preview && (
-            <div className="rounded-md border border-border p-3 bg-secondary">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                  <Tv className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    채널 미리보기
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    YouTube Data API 연동 확인 중...
-                  </p>
-                </div>
-                <Badge
-                  variant="outline"
-                  className="ml-auto text-xs border-emerald-500/30 text-emerald-400"
-                >
-                  확인됨
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="auto-sync"
-              defaultChecked
-              className="rounded"
+            <Input
+              id="channel-url"
+              placeholder="https://youtube.com/@channel"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setError(null);
+              }}
+              className="bg-secondary"
             />
-            <label htmlFor="auto-sync" className="text-sm text-muted-foreground">
-              자동 동기화 (1분마다 새 영상 감지)
-            </label>
           </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
             취소
           </Button>
-          <Button onClick={onClose}>등록</Button>
+          <Button onClick={handleSubmit} disabled={loading || !url.trim()}>
+            {loading && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+            등록
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -331,11 +325,106 @@ export function ChannelsPage({
   const [addContentOpen, setAddContentOpen] = useState(false);
   const [variableOpen, setVariableOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [realChannels, setRealChannels] = useState<Channel[] | null>(null);
+  const [realContents, setRealContents] = useState<Content[] | null>(null);
+
+  const { syncState, syncNow, setInterval: setSyncInterval, onSyncComplete, intervalMinutes } = useChannelSync();
+  const syncing = syncState.isSyncing;
+
+  const displayChannels = realChannels ?? channels;
+  const displayContents = realContents ?? contents;
+
+  // When sync completes, update local state
+  useEffect(() => {
+    onSyncComplete((result) => {
+      setRealChannels(result.channels);
+      setRealContents(result.contents);
+    });
+  }, [onSyncComplete]);
+
+  // Phase 1: Load from DB cache on mount (fast)
+  useEffect(() => {
+    fetch("/api/channels")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setRealChannels(data.channels);
+          setRealContents(data.contents);
+        }
+      })
+      .catch(() => {});
+    // Phase 2: Sync with YouTube API (via hook, triggers on mount if needed)
+    syncNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDeleteChannel = useCallback(
+    async (channelId: string) => {
+      try {
+        const res = await fetch("/api/youtube/channels", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: channelId }),
+        });
+        if (!res.ok) throw new Error("삭제 실패");
+        setRealChannels((prev) =>
+          prev ? prev.filter((c) => c.id !== channelId) : prev,
+        );
+        setRealContents((prev) =>
+          prev
+            ? prev.filter((c) => {
+                const channel = displayChannels.find(
+                  (ch) => ch.id === channelId,
+                );
+                return c.channelName !== channel?.name;
+              })
+            : prev,
+        );
+      } catch (err) {
+        console.error("Channel delete error:", err);
+      }
+    },
+    [displayChannels],
+  );
+
+  const handleCreateTask = useCallback(
+    async (content: Content) => {
+      try {
+        const channel = displayChannels.find(
+          (c) => c.name === content.channelName,
+        );
+        if (!channel) return;
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videoId: content.id, channelId: channel.id }),
+        });
+        if (!res.ok) throw new Error("작업 등록 실패");
+        // Update content status locally
+        setRealContents((prev) =>
+          prev
+            ? prev.map((c) =>
+                c.id === content.id
+                  ? {
+                      ...c,
+                      status: "task_created" as const,
+                      taskId: "pending",
+                    }
+                  : c,
+              )
+            : prev,
+        );
+      } catch (err) {
+        console.error("Task creation error:", err);
+      }
+    },
+    [displayChannels],
+  );
 
   const filteredContents = useMemo(() => {
-    if (!selectedChannel) return contents;
-    return contents.filter((c) => c.channelName === selectedChannel);
-  }, [contents, selectedChannel]);
+    if (!selectedChannel) return displayContents;
+    return displayContents.filter((c) => c.channelName === selectedChannel);
+  }, [displayContents, selectedChannel]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -349,6 +438,20 @@ export function ChannelsPage({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-transparent"
+            onClick={syncNow}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {syncing ? "동기화 중..." : "동기화"}
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -373,6 +476,17 @@ export function ChannelsPage({
         </div>
       </div>
 
+      {/* Sync Status Bar */}
+      <SyncStatusBar
+        lastSyncAt={syncState.lastSyncAt}
+        nextSyncAt={syncState.nextSyncAt}
+        isSyncing={syncing}
+        newVideoCount={syncState.newVideoCount}
+        intervalMinutes={intervalMinutes}
+        onSyncNow={syncNow}
+        onIntervalChange={setSyncInterval}
+      />
+
       {/* Channels Section */}
       <div>
         <h2 className="text-sm font-medium text-foreground mb-2">
@@ -383,8 +497,14 @@ export function ChannelsPage({
             </span>
           )}
         </h2>
+        {syncing && displayChannels.length === 0 && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">채널 정보를 불러오는 중...</span>
+          </div>
+        )}
         <div className="flex gap-2 flex-wrap">
-          {channels.map((channel) => {
+          {displayChannels.map((channel) => {
             const isActive = selectedChannel === channel.name;
             return (
               <button
@@ -450,9 +570,21 @@ export function ChannelsPage({
                       role="button"
                       tabIndex={0}
                       className="text-muted-foreground hover:text-foreground"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(
+                          `https://www.youtube.com/${channel.youtubeHandle || channel.youtubeId}`,
+                          "_blank",
+                        );
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") e.stopPropagation();
+                        if (e.key === "Enter") {
+                          e.stopPropagation();
+                          window.open(
+                            `https://www.youtube.com/${channel.youtubeHandle || channel.youtubeId}`,
+                            "_blank",
+                          );
+                        }
                       }}
                     >
                       <ExternalLink className="h-3 w-3" />
@@ -461,9 +593,15 @@ export function ChannelsPage({
                       role="button"
                       tabIndex={0}
                       className="text-muted-foreground hover:text-red-400"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChannel(channel.id);
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") e.stopPropagation();
+                        if (e.key === "Enter") {
+                          e.stopPropagation();
+                          handleDeleteChannel(channel.id);
+                        }
                       }}
                     >
                       <Trash2 className="h-3 w-3" />
@@ -521,11 +659,13 @@ export function ChannelsPage({
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-28 h-16 rounded bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative">
-                      <img
+                      <Image
                         src={content.thumbnail || "/placeholder.svg"}
                         alt={content.title}
-                        className="w-full h-full object-cover"
+                        fill
+                        className="object-cover"
                         crossOrigin="anonymous"
+                        unoptimized
                         onError={(e) => {
                           const target = e.currentTarget;
                           target.style.display = "none";
@@ -599,7 +739,11 @@ export function ChannelsPage({
                           작업 보기
                         </Button>
                       ) : (
-                        <Button size="sm" className="h-7 text-xs px-2.5">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs px-2.5"
+                          onClick={() => handleCreateTask(content)}
+                        >
                           <Plus className="h-3 w-3 mr-0.5" />
                           작업 등록
                         </Button>
@@ -616,6 +760,9 @@ export function ChannelsPage({
       <AddChannelDialog
         open={addChannelOpen}
         onClose={() => setAddChannelOpen(false)}
+        onChannelAdded={(channel) => {
+          setRealChannels((prev) => (prev ? [...prev, channel] : [channel]));
+        }}
       />
       <AddContentDialog
         open={addContentOpen}

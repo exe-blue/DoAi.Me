@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import Image from "next/image";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Plus,
   Square,
@@ -20,6 +21,7 @@ import {
   Bookmark,
   UserPlus,
   Eye,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -350,21 +352,27 @@ function TaskItem({
   task,
   onViewLog,
   onTogglePriority,
+  onDeleteTask,
+  onStopTask,
 }: {
   task: Task;
   onViewLog: (task: Task) => void;
   onTogglePriority: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  onStopTask: (taskId: string) => void;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4 hover:border-muted-foreground/20 transition-colors">
       <div className="flex items-start gap-4">
         {/* Thumbnail */}
         <div className="w-36 h-20 rounded-md bg-secondary shrink-0 overflow-hidden relative">
-          <img
+          <Image
             src={task.thumbnail || "/placeholder.svg"}
             alt={task.title}
-            className="w-full h-full object-cover"
+            fill
+            className="object-cover"
             crossOrigin="anonymous"
+            unoptimized
             onError={(e) => {
               const target = e.currentTarget;
               target.style.display = "none";
@@ -490,6 +498,7 @@ function TaskItem({
               variant="outline"
               size="sm"
               className="h-7 text-xs px-3 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 bg-transparent"
+              onClick={() => onStopTask(task.id)}
             >
               <Square className="h-3 w-3 mr-1" />
               중단
@@ -508,6 +517,7 @@ function TaskItem({
             variant="outline"
             size="sm"
             className="h-7 text-xs px-3 border-red-500/30 text-red-400 hover:bg-red-500/10 bg-transparent"
+            onClick={() => onDeleteTask(task.id)}
           >
             <Trash2 className="h-3 w-3 mr-1" />
             삭제
@@ -527,10 +537,28 @@ export function TasksPage({
   tasks: Task[];
   nodes: NodePC[];
 }) {
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [loading, setLoading] = useState(true);
   const [logTask, setLogTask] = useState<Task | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [variableOpen, setVariableOpen] = useState(false);
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tasks");
+      if (!res.ok) throw new Error("Failed to fetch tasks");
+      const data = await res.json();
+      setTasks(data.tasks);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort(
@@ -545,13 +573,49 @@ export function TasksPage({
     return s;
   }, [tasks]);
 
-  function handleTogglePriority(taskId: string) {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId ? { ...t, isPriority: !t.isPriority } : t,
-      ),
-    );
-  }
+  const handleTogglePriority = useCallback(async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const newPriority = task.isPriority ? 10 : 1;
+    setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, isPriority: !t.isPriority, priority: newPriority } : t));
+    try {
+      await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: taskId, priority: newPriority }),
+      });
+    } catch (err) {
+      console.error("Priority update error:", err);
+    }
+  }, [tasks]);
+
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: taskId }),
+      });
+      if (!res.ok) throw new Error("삭제 실패");
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    } catch (err) {
+      console.error("Task delete error:", err);
+    }
+  }, []);
+
+  const handleStopTask = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: taskId, status: "stopped" }),
+      });
+      if (!res.ok) throw new Error("중단 실패");
+      setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, status: "stopped" as const } : t));
+    } catch (err) {
+      console.error("Task stop error:", err);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -604,16 +668,33 @@ export function TasksPage({
         </div>
       </div>
 
+      {loading && tasks.length === 0 && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">작업 목록을 불러오는 중...</span>
+        </div>
+      )}
+
       <ScrollArea className="h-[calc(100vh-260px)]">
         <div className="flex flex-col gap-3 pr-3">
-          {sortedTasks.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              onViewLog={(t) => setLogTask(t)}
-              onTogglePriority={handleTogglePriority}
-            />
-          ))}
+          {sortedTasks.length === 0 && !loading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <ScrollText className="h-10 w-10 mb-3 opacity-30" />
+              <p className="text-sm">등록된 작업이 없습니다.</p>
+              <p className="text-xs mt-1">채널 페이지에서 컨텐츠를 작업으로 등록하세요.</p>
+            </div>
+          ) : (
+            sortedTasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                onViewLog={(t) => setLogTask(t)}
+                onTogglePriority={handleTogglePriority}
+                onDeleteTask={handleDeleteTask}
+                onStopTask={handleStopTask}
+              />
+            ))
+          )}
         </div>
       </ScrollArea>
 

@@ -9,6 +9,7 @@ module.exports = {
   workerId: process.env.WORKER_ID || null,
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   xiaoweiWsUrl: process.env.XIAOWEI_WS_URL || "ws://127.0.0.1:22222/",
   scriptsDir: process.env.SCRIPTS_DIR || "",
   screenshotsDir: process.env.SCREENSHOTS_DIR || "",

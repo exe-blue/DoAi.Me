@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DevicesPage } from "@/components/devices-page";
 import { PresetsPage } from "@/components/presets-page";
@@ -13,15 +13,12 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import {
-  mockNodes,
-  mockPresets,
-  mockCommandHistory,
-  mockTasks,
-  mockChannels,
-  mockContents,
-  mockLogs,
-} from "@/lib/mock-data";
+import { useWorkersWithRealtime } from "@/hooks/use-workers-store";
+import { useTasksWithRealtime } from "@/hooks/use-tasks-store";
+import { useChannelsStore } from "@/hooks/use-channels-store";
+import { usePresetsStore } from "@/hooks/use-presets-store";
+import { useLogsWithRealtime } from "@/hooks/use-logs-store";
+import { useStatsStore } from "@/hooks/use-stats-store";
 
 const TAB_LABELS: Record<string, string> = {
   devices: "디바이스",
@@ -34,17 +31,46 @@ const TAB_LABELS: Record<string, string> = {
 export default function Page() {
   const [activeTab, setActiveTab] = useState("devices");
 
+  // Use Realtime-enabled hooks
+  const { nodes, fetch: fetchWorkers } = useWorkersWithRealtime();
+  const { tasks, fetch: fetchTasks } = useTasksWithRealtime();
+  const { logs, fetch: fetchLogs } = useLogsWithRealtime();
+
+  // These don't have Realtime yet
+  const { channels, contents, fetch: fetchChannels } = useChannelsStore();
+  const { presets, fetch: fetchPresets } = usePresetsStore();
+  const { stats, fetch: fetchStats } = useStatsStore();
+
+  useEffect(() => {
+    fetchWorkers();
+    fetchStats();
+  }, [fetchWorkers, fetchStats]);
+
+  useEffect(() => {
+    if (activeTab === "tasks") fetchTasks();
+    if (activeTab === "channels") fetchChannels();
+    if (activeTab === "presets") fetchPresets();
+    if (activeTab === "logs") fetchLogs();
+  }, [activeTab, fetchTasks, fetchChannels, fetchPresets, fetchLogs]);
+
   const nodeStatus = useMemo(
     () => ({
-      connected: mockNodes.filter((n) => n.status === "connected").length,
-      total: mockNodes.length,
+      connected: stats?.workers.online ?? nodes.filter((n) => n.status === "connected").length,
+      total: stats?.workers.total ?? nodes.length,
     }),
-    [],
+    [stats, nodes],
   );
 
   const deviceStatus = useMemo(() => {
+    if (stats) {
+      return {
+        online: stats.devices.online,
+        running: stats.devices.running,
+        total: stats.devices.total,
+      };
+    }
     const s = { online: 0, running: 0, total: 0 };
-    for (const n of mockNodes) {
+    for (const n of nodes) {
       for (const d of n.devices) {
         if (d.status === "online") s.online++;
         if (d.status === "running") s.running++;
@@ -52,7 +78,7 @@ export default function Page() {
       }
     }
     return s;
-  }, []);
+  }, [stats, nodes]);
 
   return (
     <SidebarProvider>
@@ -77,27 +103,29 @@ export default function Page() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs font-mono text-muted-foreground">
-              WebSocket: 5/5 연결됨
+              {stats
+                ? `Workers: ${stats.workers.online}/${stats.workers.total} 연결됨`
+                : `Workers: ${nodeStatus.connected}/${nodeStatus.total} 연결됨`}
             </span>
           </div>
         </header>
 
         <main className="flex-1 p-4">
-          {activeTab === "devices" && <DevicesPage nodes={mockNodes} />}
+          {activeTab === "devices" && <DevicesPage nodes={nodes} />}
           {activeTab === "presets" && (
             <PresetsPage
-              presets={mockPresets}
-              history={mockCommandHistory}
-              nodes={mockNodes}
+              presets={presets}
+              history={[]}
+              nodes={nodes}
             />
           )}
           {activeTab === "tasks" && (
-            <TasksPage tasks={mockTasks} nodes={mockNodes} />
+            <TasksPage tasks={tasks} nodes={nodes} />
           )}
           {activeTab === "channels" && (
-            <ChannelsPage channels={mockChannels} contents={mockContents} />
+            <ChannelsPage channels={channels} contents={contents} />
           )}
-          {activeTab === "logs" && <LogsPage logs={mockLogs} />}
+          {activeTab === "logs" && <LogsPage logs={logs} />}
         </main>
       </SidebarInset>
     </SidebarProvider>

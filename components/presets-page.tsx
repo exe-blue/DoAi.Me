@@ -103,15 +103,15 @@ function DeviceSelector({
 
   const totalSelected = useMemo(() => {
     let count = 0;
-    for (const s of selectedDevices.values()) count += s.size;
+    selectedDevices.forEach((s) => { count += s.size; });
     return count;
   }, [selectedDevices]);
 
   const handleConfirm = () => {
     const selections: { nodeId: string; deviceIds: string[] }[] = [];
-    for (const [nodeId, deviceSet] of selectedDevices) {
+    selectedDevices.forEach((deviceSet, nodeId) => {
       selections.push({ nodeId, deviceIds: Array.from(deviceSet) });
-    }
+    });
     onConfirm(selections);
     onClose();
   };

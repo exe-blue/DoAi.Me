@@ -10,20 +10,30 @@ import type {
   DeviceStatus,
 } from "./types";
 
+// Seeded PRNG to avoid SSR/client hydration mismatch
+function createSeededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
 function generateDevices(nodeId: string, count: number): Device[] {
   const statuses: DeviceStatus[] = ["online", "running", "offline", "error"];
   const tasks = [
-    "[MV] NewJeans - How Sweet",
-    "aespa - Whiplash Offici...",
-    "IVE - HEYA Official MV",
-    "LE SSERAFIM - CRAZY",
-    "SEVENTEEN - MAESTRO",
+    "영상 재생 중...",
+    "채널 동기화 중...",
+    "데이터 수집 중...",
     null,
     null,
   ];
 
+  const seed = nodeId.split("").reduce((acc, ch) => acc * 31 + ch.charCodeAt(0), 0);
+  const random = createSeededRandom(Math.abs(seed) || 1);
+
   return Array.from({ length: count }, (_, i) => {
-    const status = statuses[Math.floor(Math.random() * 100) % 4];
+    const status = statuses[Math.floor(random() * 100) % 4];
     const hasTask = status === "running" || status === "online";
     return {
       id: `${nodeId}-D${String(i + 1).padStart(3, "0")}`,
@@ -31,7 +41,7 @@ function generateDevices(nodeId: string, count: number): Device[] {
       ip: `192.168.${parseInt(nodeId.replace("PC-", ""))}.${i + 10}`,
       status,
       currentTask: hasTask
-        ? tasks[Math.floor(Math.random() * tasks.length)]
+        ? tasks[Math.floor(random() * tasks.length)]
         : null,
       nodeId,
     };
@@ -172,277 +182,67 @@ export const mockCommandHistory: CommandHistory[] = [
   },
 ];
 
-export const mockTasks: Task[] = [
-  {
-    id: "task-001",
-    title: "[MV] NewJeans - How Sweet",
-    channelName: "HYBE LABELS",
-    thumbnail: "https://img.youtube.com/vi/ArmDp-zijuc/mqdefault.jpg",
-    duration: "3:27",
-    videoId: "ArmDp-zijuc",
-    status: "running",
-    priority: 1,
-    isPriority: true,
-    assignedDevices: 18,
-    totalDevices: 20,
-    progress: 72,
-    variables: {
-      watchPercent: 85,
-      commentProb: 12,
-      likeProb: 45,
-      saveProb: 8,
-      subscribeToggle: true,
-    },
-    createdAt: "2026-02-12T09:00:00Z",
-    completedAt: null,
-    logs: [
-      "2026-02-12 09:00 - 작업 시작",
-      "2026-02-12 09:01 - 18개 디바이스 할당 완료",
-      "2026-02-12 09:15 - 진행률 72%",
-    ],
-  },
-  {
-    id: "task-002",
-    title: "aespa - Whiplash Official MV",
-    channelName: "SMTOWN",
-    thumbnail: "https://img.youtube.com/vi/jWQx2f-CErU/mqdefault.jpg",
-    duration: "3:15",
-    videoId: "jWQx2f-CErU",
-    status: "queued",
-    priority: 2,
-    isPriority: false,
-    assignedDevices: 0,
-    totalDevices: 20,
-    progress: 0,
-    variables: {
-      watchPercent: 70,
-      commentProb: 8,
-      likeProb: 35,
-      saveProb: 5,
-      subscribeToggle: false,
-    },
-    createdAt: "2026-02-12T08:30:00Z",
-    completedAt: null,
-    logs: ["2026-02-12 08:30 - 작업 대기열에 등록"],
-  },
-  {
-    id: "task-003",
-    title: "IVE - HEYA Official MV",
-    channelName: "staraborned",
-    thumbnail: "https://img.youtube.com/vi/eHha60r8ePQ/mqdefault.jpg",
-    duration: "3:42",
-    videoId: "eHha60r8ePQ",
-    status: "completed",
-    priority: 3,
-    isPriority: false,
-    assignedDevices: 20,
-    totalDevices: 20,
-    progress: 100,
-    variables: {
-      watchPercent: 90,
-      commentProb: 15,
-      likeProb: 50,
-      saveProb: 10,
-      subscribeToggle: true,
-    },
-    createdAt: "2026-02-12T06:00:00Z",
-    completedAt: "2026-02-12T08:15:00Z",
-    logs: [
-      "2026-02-12 06:00 - 작업 시작",
-      "2026-02-12 06:01 - 20개 디바이스 할당",
-      "2026-02-12 08:15 - 작업 완료",
-    ],
-  },
-  {
-    id: "task-004",
-    title: "LE SSERAFIM - CRAZY Official MV",
-    channelName: "SOURCE MUSIC",
-    thumbnail: "https://img.youtube.com/vi/LOo_C5HsdWg/mqdefault.jpg",
-    duration: "3:09",
-    videoId: "LOo_C5HsdWg",
-    status: "completed",
-    priority: 4,
-    isPriority: false,
-    assignedDevices: 20,
-    totalDevices: 20,
-    progress: 100,
-    variables: {
-      watchPercent: 60,
-      commentProb: 5,
-      likeProb: 30,
-      saveProb: 3,
-      subscribeToggle: false,
-    },
-    createdAt: "2026-02-11T22:00:00Z",
-    completedAt: "2026-02-12T01:30:00Z",
-    logs: [
-      "2026-02-11 22:00 - 작업 시작",
-      "2026-02-12 01:30 - 작업 완료",
-    ],
-  },
-  {
-    id: "task-005",
-    title: "ILLIT - Magnetic Official MV",
-    channelName: "HYBE LABELS",
-    thumbnail: "https://img.youtube.com/vi/VACFR2uHxW8/mqdefault.jpg",
-    duration: "2:58",
-    videoId: "VACFR2uHxW8",
-    status: "stopped",
-    priority: 5,
-    isPriority: false,
-    assignedDevices: 12,
-    totalDevices: 20,
-    progress: 45,
-    variables: {
-      watchPercent: 50,
-      commentProb: 10,
-      likeProb: 40,
-      saveProb: 6,
-      subscribeToggle: true,
-    },
-    createdAt: "2026-02-11T18:00:00Z",
-    completedAt: "2026-02-11T19:30:00Z",
-    logs: [
-      "2026-02-11 18:00 - 작업 시작",
-      "2026-02-11 19:30 - 사용자에 의해 중단됨",
-    ],
-  },
-  {
-    id: "task-006",
-    title: "SEVENTEEN - MAESTRO Official MV",
-    channelName: "HYBE LABELS",
-    thumbnail: "https://img.youtube.com/vi/GiLt4goAecc/mqdefault.jpg",
-    duration: "4:01",
-    videoId: "GiLt4goAecc",
-    status: "queued",
-    priority: 6,
-    isPriority: false,
-    assignedDevices: 0,
-    totalDevices: 20,
-    progress: 0,
-    variables: {
-      watchPercent: 75,
-      commentProb: 10,
-      likeProb: 38,
-      saveProb: 7,
-      subscribeToggle: false,
-    },
-    createdAt: "2026-02-12T10:00:00Z",
-    completedAt: null,
-    logs: ["2026-02-12 10:00 - 작업 대기열에 등록"],
-  },
-  {
-    id: "task-007",
-    title: "BTS - Dynamite Official MV",
-    channelName: "HYBE LABELS",
-    thumbnail: "https://img.youtube.com/vi/gdZLi9oWNZg/mqdefault.jpg",
-    duration: "3:43",
-    videoId: "gdZLi9oWNZg",
-    status: "completed",
-    priority: 7,
-    isPriority: false,
-    assignedDevices: 20,
-    totalDevices: 20,
-    progress: 100,
-    variables: {
-      watchPercent: 95,
-      commentProb: 20,
-      likeProb: 60,
-      saveProb: 15,
-      subscribeToggle: true,
-    },
-    createdAt: "2026-02-11T10:00:00Z",
-    completedAt: "2026-02-11T14:00:00Z",
-    logs: [
-      "2026-02-11 10:00 - 작업 시작",
-      "2026-02-11 14:00 - 작업 완료",
-    ],
-  },
-];
+export const mockTasks: Task[] = [];
 
 export const mockChannels: Channel[] = [
   {
     id: "ch-yt-001",
-    name: "HYBE LABELS",
-    youtubeId: "UC3IZKseVpdzPSBaWxBxundA",
+    name: "슈퍼개미 안치현",
+    youtubeId: "UCxxxxxxxxxxxxxxxxxxxxxx1",
+    youtubeHandle: "@SUPERANT_AN",
     thumbnail: "/placeholder-channel.jpg",
-    subscriberCount: "76.4M",
-    videoCount: 1842,
-    addedAt: "2026-02-01T00:00:00Z",
+    subscriberCount: "-",
+    videoCount: 0,
+    addedAt: new Date().toISOString(),
     autoSync: true,
   },
   {
     id: "ch-yt-002",
-    name: "SMTOWN",
-    youtubeId: "UCEf_Bc-KVd7onSeifS3py9g",
+    name: "감동주식TV",
+    youtubeId: "UCxxxxxxxxxxxxxxxxxxxxxx2",
+    youtubeHandle: "@gamdongstockTV",
     thumbnail: "/placeholder-channel.jpg",
-    subscriberCount: "32.1M",
-    videoCount: 4120,
-    addedAt: "2026-02-01T00:00:00Z",
+    subscriberCount: "-",
+    videoCount: 0,
+    addedAt: new Date().toISOString(),
     autoSync: true,
   },
   {
     id: "ch-yt-003",
-    name: "staraborned",
-    youtubeId: "UCmUh55Hl-rOlMp78jYjItEg",
+    name: "종가베팅TV",
+    youtubeId: "UCxxxxxxxxxxxxxxxxxxxxxx3",
+    youtubeHandle: "@closingpricebetting_TV",
     thumbnail: "/placeholder-channel.jpg",
-    subscriberCount: "18.7M",
-    videoCount: 982,
-    addedAt: "2026-02-05T00:00:00Z",
-    autoSync: false,
+    subscriberCount: "-",
+    videoCount: 0,
+    addedAt: new Date().toISOString(),
+    autoSync: true,
+  },
+  {
+    id: "ch-yt-004",
+    name: "진짜주식연구소",
+    youtubeId: "UCxxxxxxxxxxxxxxxxxxxxxx4",
+    youtubeHandle: "@realstock_lab",
+    thumbnail: "/placeholder-channel.jpg",
+    subscriberCount: "-",
+    videoCount: 0,
+    addedAt: new Date().toISOString(),
+    autoSync: true,
+  },
+  {
+    id: "ch-yt-005",
+    name: "한강트레이딩",
+    youtubeId: "UCxxxxxxxxxxxxxxxxxxxxxx5",
+    youtubeHandle: "@hanriver_trading",
+    thumbnail: "/placeholder-channel.jpg",
+    subscriberCount: "-",
+    videoCount: 0,
+    addedAt: new Date().toISOString(),
+    autoSync: true,
   },
 ];
 
-export const mockContents: Content[] = [
-  {
-    id: "cnt-001",
-    videoId: "dQw4w9WgXcQ",
-    title: "[MV] NewJeans - How Sweet",
-    thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-    duration: "3:27",
-    channelName: "HYBE LABELS",
-    publishedAt: "2026-02-12T06:00:00Z",
-    registeredAt: "2026-02-12T06:01:00Z",
-    taskId: "task-001",
-    status: "task_created",
-  },
-  {
-    id: "cnt-002",
-    videoId: "abc123",
-    title: "aespa - Whiplash Official MV",
-    thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-    duration: "3:15",
-    channelName: "SMTOWN",
-    publishedAt: "2026-02-12T04:00:00Z",
-    registeredAt: "2026-02-12T04:01:00Z",
-    taskId: "task-002",
-    status: "task_created",
-  },
-  {
-    id: "cnt-003",
-    videoId: "def456",
-    title: "IVE - HEYA Official MV",
-    thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-    duration: "3:42",
-    channelName: "staraborned",
-    publishedAt: "2026-02-11T12:00:00Z",
-    registeredAt: "2026-02-11T12:01:00Z",
-    taskId: "task-003",
-    status: "completed",
-  },
-  {
-    id: "cnt-004",
-    videoId: "ghi789",
-    title: "SEVENTEEN - MAESTRO Official MV",
-    thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-    duration: "4:01",
-    channelName: "HYBE LABELS",
-    publishedAt: "2026-02-11T08:00:00Z",
-    registeredAt: "2026-02-11T08:01:00Z",
-    taskId: null,
-    status: "pending",
-  },
-];
+export const mockContents: Content[] = [];
 
 const logLevels = ["info", "warn", "error", "debug", "success"] as const;
 const logSources = [
@@ -472,17 +272,20 @@ const logMessages = [
   "메모리 사용량 경고: 85%",
 ];
 
-export const mockLogs: LogEntry[] = Array.from({ length: 100 }, (_, i) => ({
-  id: `log-${String(i + 1).padStart(4, "0")}`,
-  timestamp: new Date(
-    Date.now() - i * 30000 - Math.random() * 10000,
-  ).toISOString(),
-  level: logLevels[Math.floor(Math.random() * logLevels.length)],
-  source: logSources[Math.floor(Math.random() * logSources.length)],
-  nodeId: `PC-0${Math.floor(Math.random() * 5) + 1}`,
-  deviceId:
-    Math.random() > 0.4
-      ? `D-${String(Math.floor(Math.random() * 100) + 1).padStart(3, "0")}`
-      : null,
-  message: logMessages[Math.floor(Math.random() * logMessages.length)],
-}));
+export const mockLogs: LogEntry[] = (() => {
+  const random = createSeededRandom(42);
+  return Array.from({ length: 100 }, (_, i) => ({
+    id: `log-${String(i + 1).padStart(4, "0")}`,
+    timestamp: new Date(
+      1739350800000 - i * 30000 - random() * 10000,
+    ).toISOString(),
+    level: logLevels[Math.floor(random() * logLevels.length)],
+    source: logSources[Math.floor(random() * logSources.length)],
+    nodeId: `PC-0${Math.floor(random() * 5) + 1}`,
+    deviceId:
+      random() > 0.4
+        ? `D-${String(Math.floor(random() * 100) + 1).padStart(3, "0")}`
+        : null,
+    message: logMessages[Math.floor(random() * logMessages.length)],
+  }));
+})();
