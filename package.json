@@ -13,7 +13,13 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:api": "node tests/run-api-tests.js"
+    "test:e2e": "node tests/e2e-local.js",
+    "test:api": "node tests/run-api-tests.js",
+    "agent:dev": "cd agent && npm run dev",
+    "agent:start": "cd agent && npm start",
+    "db:verify": "npx supabase db execute --file supabase/verify_schema.sql",
+    "clean": "rm -rf .next",
+    "clean:cache": "rm -rf .next/cache"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

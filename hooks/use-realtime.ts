@@ -42,6 +42,7 @@ export function useTasksBroadcast(handlers: {
 
   useEffect(() => {
     const supabase = createClient();
+    if (!supabase) return;
 
     channelRef.current = supabase
       .channel("room:tasks")
@@ -100,6 +101,7 @@ export function useAllTaskLogsBroadcast(handlers: {
 
   useEffect(() => {
     const supabase = createClient();
+    if (!supabase) return;
 
     channelRef.current = supabase
       .channel("room:task_logs")
@@ -190,6 +192,8 @@ export function useBroadcast<T = unknown>(
     if (!channelName) return;
 
     const supabase = createClient();
+    if (!supabase) return;
+
     let channel = supabase.channel(channelName);
 
     for (const event of events) {
