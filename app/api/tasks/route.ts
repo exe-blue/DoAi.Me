@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { videoId, channelId, deviceCount, variables } = result.data;
+    const { videoId, channelId, workerId, deviceCount, variables } = result.data;
 
     // Merge with defaults for variables
     const fullVariables = variables ? {
@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
     const task = await createManualTask(videoId, channelId, {
       deviceCount: deviceCount ?? 20,
       variables: fullVariables,
+      workerId,
     });
 
     return NextResponse.json(task, { status: 201 });

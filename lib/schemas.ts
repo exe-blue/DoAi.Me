@@ -19,6 +19,7 @@ export const presetUpdateSchema = presetCreateSchema.partial();
 export const taskCreateSchema = z.object({
   videoId: z.string().min(1, "Video ID is required"),
   channelId: z.string().uuid("Invalid channel ID"),
+  workerId: z.string().uuid("Invalid worker ID").optional(),
   deviceCount: z.number().int().min(1).max(1000).optional(),
   variables: z
     .object({

@@ -97,7 +97,7 @@ export async function processNewVideos(videoIds: string[]) {
 export async function createManualTask(
   videoId: string,
   channelId: string,
-  options: { deviceCount?: number; variables?: TaskVariables } = {}
+  options: { deviceCount?: number; variables?: TaskVariables; workerId?: string } = {}
 ) {
   const supabase = createServerClient();
 
@@ -115,6 +115,7 @@ export async function createManualTask(
       device_count: options.deviceCount ?? 20,
       payload,
       status: "pending",
+      ...(options.workerId ? { worker_id: options.workerId } : {}),
     })
     .select()
     .single();
