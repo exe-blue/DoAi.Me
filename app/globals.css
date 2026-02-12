@@ -43,6 +43,18 @@
     --sidebar-accent-foreground: 210 20% 92%;
     --sidebar-border: 220 14% 12%;
     --sidebar-ring: 142 70% 45%;
+
+    /* Semantic status tokens */
+    --status-success: 158 64% 52%;
+    --status-warning: 43 96% 56%;
+    --status-error: 0 91% 71%;
+    --status-info: 217 91% 68%;
+    --status-neutral: 240 5% 65%;
+
+    /* Magic UI variables */
+    --magic-card-glow: var(--primary);
+    --grid-pattern-stroke: 220 14% 14%;
+    --grid-pattern-fill: 220 20% 6%;
   }
 }
 

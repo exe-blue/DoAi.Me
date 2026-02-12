@@ -30,7 +30,7 @@ export async function GET() {
     const { count: devicesRunning } = await supabase
       .from("devices")
       .select("*", { count: "exact", head: true })
-      .eq("status", "running");
+      .eq("status", "busy");
 
     const { count: devicesOffline } = await supabase
       .from("devices")

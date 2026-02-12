@@ -219,7 +219,7 @@ function AddChannelDialog({
               className="bg-secondary"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-status-error">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={loading}>
@@ -292,7 +292,7 @@ function AddContentDialog({
                   </p>
                   <Badge
                     variant="outline"
-                    className="mt-1 text-xs border-emerald-500/30 text-emerald-400"
+                    className="mt-1 text-xs border-status-success/30 text-status-success"
                   >
                     등록 가능
                   </Badge>
@@ -430,10 +430,10 @@ export function ChannelsPage({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">
+          <h1 className="text-2xl font-semibold text-foreground">
             채널 및 컨텐츠
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             등록된 컨텐츠가 자동으로 작업으로 이어집니다.
           </p>
         </div>
@@ -555,13 +555,13 @@ export function ChannelsPage({
                   {channel.autoSync ? (
                     <Badge
                       variant="outline"
-                      className="text-[10px] border-emerald-500/30 text-emerald-400"
+                      className="text-[11px] border-status-success/30 text-status-success"
                     >
                       <RefreshCw className="h-2.5 w-2.5 mr-0.5" />
                       자동
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       수동
                     </Badge>
                   )}
@@ -592,7 +592,7 @@ export function ChannelsPage({
                     <span
                       role="button"
                       tabIndex={0}
-                      className="text-muted-foreground hover:text-red-400"
+                      className="text-muted-foreground hover:text-status-error"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteChannel(channel.id);
@@ -674,7 +674,7 @@ export function ChannelsPage({
                       <div className="absolute inset-0 flex items-center justify-center">
                         <Play className="h-4 w-4 text-foreground/60" />
                       </div>
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-background/90 px-1 py-0.5 text-[9px] font-mono text-foreground">
+                      <span className="absolute bottom-0.5 right-0.5 rounded bg-background/90 px-1 py-0.5 text-[10px] font-mono text-foreground">
                         {content.duration}
                       </span>
                     </div>
@@ -697,13 +697,13 @@ export function ChannelsPage({
                         <Badge
                           variant="outline"
                           className={cn(
-                            "text-[10px]",
+                            "text-[11px]",
                             content.status === "completed" &&
-                              "border-emerald-500/30 text-emerald-400",
+                              "border-status-success/30 text-status-success",
                             content.status === "task_created" &&
-                              "border-amber-500/30 text-amber-400",
+                              "border-status-warning/30 text-status-warning",
                             content.status === "pending" &&
-                              "border-zinc-500/30 text-zinc-400",
+                              "border-status-neutral/30 text-status-neutral",
                           )}
                         >
                           {content.status === "completed"

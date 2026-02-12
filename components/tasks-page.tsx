@@ -40,21 +40,22 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { Task, NodePC, TaskStatus, TaskVariables } from "@/lib/types";
+import { statusTextClass, statusBadgeClass, statusDotClass } from "@/components/ui/status-indicator";
 
 /* ──────────── Status helpers ──────────── */
 
 function getTaskStatusIcon(status: TaskStatus) {
   switch (status) {
     case "running":
-      return <Play className="h-4 w-4 text-amber-400" />;
+      return <Play className={cn("h-4 w-4", statusTextClass("warning"))} />;
     case "queued":
-      return <Clock className="h-4 w-4 text-blue-400" />;
+      return <Clock className={cn("h-4 w-4", statusTextClass("info"))} />;
     case "completed":
-      return <CheckCircle2 className="h-4 w-4 text-emerald-400" />;
+      return <CheckCircle2 className={cn("h-4 w-4", statusTextClass("success"))} />;
     case "stopped":
-      return <Square className="h-4 w-4 text-zinc-400" />;
+      return <Square className={cn("h-4 w-4", statusTextClass("neutral"))} />;
     case "error":
-      return <AlertCircle className="h-4 w-4 text-red-400" />;
+      return <AlertCircle className={cn("h-4 w-4", statusTextClass("error"))} />;
   }
 }
 
@@ -76,15 +77,15 @@ function getTaskStatusLabel(status: TaskStatus) {
 function getTaskStatusColor(status: TaskStatus) {
   switch (status) {
     case "running":
-      return "border-amber-500/30 text-amber-400";
+      return statusBadgeClass("warning");
     case "queued":
-      return "border-blue-500/30 text-blue-400";
+      return statusBadgeClass("info");
     case "completed":
-      return "border-emerald-500/30 text-emerald-400";
+      return statusBadgeClass("success");
     case "stopped":
-      return "border-zinc-500/30 text-zinc-400";
+      return statusBadgeClass("neutral");
     case "error":
-      return "border-red-500/30 text-red-400";
+      return statusBadgeClass("error");
   }
 }
 
@@ -321,7 +322,7 @@ function RegisterTaskDialog({
                           <button
                             type="button"
                             key={d.id}
-                            className="rounded border border-border bg-secondary p-1 text-[9px] font-mono text-muted-foreground hover:border-primary transition-colors"
+                            className="rounded border border-border bg-secondary p-1 text-[10px] font-mono text-muted-foreground hover:border-primary transition-colors"
                           >
                             {idx + 1}
                           </button>
@@ -387,7 +388,7 @@ function TaskItem({
               }
             }}
           />
-          <span className="absolute bottom-1 right-1 rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-mono font-medium text-foreground">
+          <span className="absolute bottom-1 right-1 rounded bg-background/90 px-1.5 py-0.5 text-[11px] font-mono font-medium text-foreground">
             {task.duration}
           </span>
         </div>
@@ -463,8 +464,8 @@ function TaskItem({
 
           {task.status === "completed" && task.completedAt && (
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-xs text-emerald-400">
+              <CheckCircle2 className={cn("h-3.5 w-3.5", statusTextClass("success"))} />
+              <span className={cn("text-xs", statusTextClass("success"))}>
                 완료:{" "}
                 {new Date(task.completedAt).toLocaleString("ko-KR", {
                   month: "short",
@@ -488,7 +489,7 @@ function TaskItem({
                 onCheckedChange={() => onTogglePriority(task.id)}
                 className={cn(
                   task.isPriority &&
-                    "data-[state=checked]:bg-amber-500",
+                    "data-[state=checked]:bg-status-warning",
                 )}
               />
             </div>
@@ -497,7 +498,10 @@ function TaskItem({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs px-3 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 bg-transparent"
+              className={cn(
+                "h-7 text-xs px-3 bg-transparent",
+                "border-status-warning/30 text-status-warning hover:bg-status-warning/10"
+              )}
               onClick={() => onStopTask(task.id)}
             >
               <Square className="h-3 w-3 mr-1" />
@@ -516,7 +520,10 @@ function TaskItem({
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs px-3 border-red-500/30 text-red-400 hover:bg-red-500/10 bg-transparent"
+            className={cn(
+              "h-7 text-xs px-3 bg-transparent",
+              "border-status-error/30 text-status-error hover:bg-status-error/10"
+            )}
             onClick={() => onDeleteTask(task.id)}
           >
             <Trash2 className="h-3 w-3 mr-1" />
@@ -621,8 +628,8 @@ export function TasksPage({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">작업 관리</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-semibold text-foreground">작업 관리</h1>
+          <p className="text-base text-muted-foreground">
             트리거에 따라 자동 진행되는 작업을 관리합니다.
           </p>
         </div>
@@ -644,22 +651,22 @@ export function TasksPage({
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+        <div className="flex items-center gap-1.5 text-base">
+          <div className={cn("h-2.5 w-2.5 rounded-full", statusDotClass("warning"))} />
           <span className="text-muted-foreground">
             실행 중 {stats.running}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="h-2.5 w-2.5 rounded-full bg-blue-400" />
+        <div className="flex items-center gap-1.5 text-base">
+          <div className={cn("h-2.5 w-2.5 rounded-full", statusDotClass("info"))} />
           <span className="text-muted-foreground">대기 {stats.queued}</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+        <div className="flex items-center gap-1.5 text-base">
+          <div className={cn("h-2.5 w-2.5 rounded-full", statusDotClass("success"))} />
           <span className="text-muted-foreground">완료 {stats.completed}</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="h-2.5 w-2.5 rounded-full bg-zinc-400" />
+        <div className="flex items-center gap-1.5 text-base">
+          <div className={cn("h-2.5 w-2.5 rounded-full", statusDotClass("neutral"))} />
           <span className="text-muted-foreground">중단 {stats.stopped}</span>
         </div>
 

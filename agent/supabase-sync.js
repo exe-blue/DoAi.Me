@@ -179,13 +179,14 @@ class SupabaseSync {
     // 3. Auto-claim unassigned tasks
     const claimed = [];
     for (const task of (unassigned || [])) {
-      const { error: claimErr } = await this.supabase
+      const { data: claimData, error: claimErr } = await this.supabase
         .from("tasks")
         .update({ worker_id: workerId })
         .eq("id", task.id)
-        .is("worker_id", null); // Ensure no race condition
+        .is("worker_id", null) // Ensure no race condition
+        .select();
 
-      if (!claimErr) {
+      if (!claimErr && claimData && claimData.length > 0) {
         task.worker_id = workerId;
         claimed.push(task);
         console.log(`[Supabase] Claimed unassigned task: ${task.id}`);

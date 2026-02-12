@@ -9,10 +9,11 @@ function mapDeviceRow(row: DeviceRow): Device {
   return {
     id: row.id,
     serial: row.serial,
-    ip: row.ip_intranet ?? "",
+    ip: (row.ip_intranet as string) ?? "",
     status: (row.status as DeviceStatus) || "offline",
-    currentTask: row.current_task,
+    currentTask: row.current_task_id ?? "",
     nodeId: row.worker_id ?? "",
+    nickname: row.nickname ?? null,
   };
 }
 
@@ -20,7 +21,7 @@ function mapWorkerRow(row: WorkerRow, devices: DeviceRow[]): NodePC {
   return {
     id: row.id,
     name: row.hostname,
-    ip: row.ip_local ?? "",
+    ip: (row.ip_local as string) ?? "",
     status: row.status === "online" ? "connected" : "disconnected",
     devices: devices
       .filter((d) => d.worker_id === row.id)

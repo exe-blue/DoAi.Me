@@ -10,6 +10,7 @@ import {
   Settings,
   Wifi,
   WifiOff,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -28,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { id: "devices", label: "디바이스", icon: Monitor },
+  { id: "proxies", label: "프록시 설정", icon: Shield },
   { id: "presets", label: "명령 프리셋", icon: Terminal },
   { id: "tasks", label: "작업 관리", icon: ListTodo },
   { id: "channels", label: "채널 및 컨텐츠", icon: Tv },
@@ -55,10 +57,10 @@ export function AppSidebar({
             <Smartphone className="h-4 w-4 text-primary-foreground" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-sidebar-accent-foreground">
+            <h2 className="text-base font-semibold text-sidebar-accent-foreground">
               DoAi.Me
             </h2>
-            <p className="text-xs text-muted-foreground">Fleet Console</p>
+            <p className="text-sm text-muted-foreground">Fleet Console</p>
           </div>
         </div>
       </SidebarHeader>
@@ -93,17 +95,17 @@ export function AppSidebar({
           <SidebarGroupContent>
             <div className="flex flex-col gap-3 px-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   {nodeStatus.connected === nodeStatus.total ? (
-                    <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+                    <Wifi className="h-3.5 w-3.5 text-status-success" />
                   ) : (
-                    <WifiOff className="h-3.5 w-3.5 text-amber-400" />
+                    <WifiOff className="h-3.5 w-3.5 text-status-warning" />
                   )}
                   <span>노드 PC</span>
                 </div>
                 <Badge
                   variant="outline"
-                  className="text-xs border-emerald-500/30 text-emerald-400"
+                  className="text-xs border-status-success/30 text-status-success"
                 >
                   {nodeStatus.connected}/{nodeStatus.total}
                 </Badge>
@@ -115,7 +117,7 @@ export function AppSidebar({
                 </span>
                 <Badge
                   variant="outline"
-                  className="text-xs border-emerald-500/30 text-emerald-400"
+                  className="text-xs border-status-success/30 text-status-success"
                 >
                   {deviceStatus.online}
                 </Badge>
@@ -127,7 +129,7 @@ export function AppSidebar({
                 </span>
                 <Badge
                   variant="outline"
-                  className="text-xs border-amber-500/30 text-amber-400"
+                  className="text-xs border-status-warning/30 text-status-warning"
                 >
                   {deviceStatus.running}
                 </Badge>
@@ -156,7 +158,7 @@ export function AppSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
         <div className="px-2 pb-2">
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             DoAi.Me Fleet Console v1.0
           </p>
         </div>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
   title: "DoAi.Me - SmartPhone Farm Console",
@@ -18,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className="text-base">
+    <html lang="ko" className="dark text-base" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
@@ -28,8 +29,14 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased text-[1.125rem]">
-        {children}
-        <Toaster />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );

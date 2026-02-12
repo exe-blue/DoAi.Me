@@ -250,7 +250,7 @@ async function step4_createTask() {
   taskId = task.id;
   logOK(`Task created: ${taskId}`);
   logOK(`Status: ${task.status}`);
-  logOK(`Payload: watchPercent=${payload.watchPercent}%, devices=${devices.length}`);
+  logOK(`Payload: watchPercent=${payload.watchPercent}%, devices=${count}`);
   return true;
 }
 

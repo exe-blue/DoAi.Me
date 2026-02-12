@@ -20,45 +20,45 @@ import type { LogEntry, LogLevel } from "@/lib/types";
 function getLogIcon(level: LogLevel) {
   switch (level) {
     case "info":
-      return <Info className="h-3.5 w-3.5 text-blue-400" />;
+      return <Info className="h-3.5 w-3.5 text-status-info" />;
     case "warn":
-      return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />;
+      return <AlertTriangle className="h-3.5 w-3.5 text-status-warning" />;
     case "error":
-      return <AlertCircle className="h-3.5 w-3.5 text-red-400" />;
+      return <AlertCircle className="h-3.5 w-3.5 text-status-error" />;
     case "debug":
-      return <Bug className="h-3.5 w-3.5 text-zinc-400" />;
+      return <Bug className="h-3.5 w-3.5 text-status-neutral" />;
     case "success":
-      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
+      return <CheckCircle2 className="h-3.5 w-3.5 text-status-success" />;
   }
 }
 
 function getLogColor(level: LogLevel) {
   switch (level) {
     case "info":
-      return "text-blue-400";
+      return "text-status-info";
     case "warn":
-      return "text-amber-400";
+      return "text-status-warning";
     case "error":
-      return "text-red-400";
+      return "text-status-error";
     case "debug":
-      return "text-zinc-400";
+      return "text-status-neutral";
     case "success":
-      return "text-emerald-400";
+      return "text-status-success";
   }
 }
 
 function getLogBadgeColor(level: LogLevel) {
   switch (level) {
     case "info":
-      return "border-blue-500/30 text-blue-400";
+      return "border-status-info/30 text-status-info";
     case "warn":
-      return "border-amber-500/30 text-amber-400";
+      return "border-status-warning/30 text-status-warning";
     case "error":
-      return "border-red-500/30 text-red-400";
+      return "border-status-error/30 text-status-error";
     case "debug":
-      return "border-zinc-500/30 text-zinc-400";
+      return "border-status-neutral/30 text-status-neutral";
     case "success":
-      return "border-emerald-500/30 text-emerald-400";
+      return "border-status-success/30 text-status-success";
   }
 }
 
@@ -125,8 +125,8 @@ export function LogsPage({ logs }: { logs: LogEntry[] }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">실행내역</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-semibold text-foreground">실행내역</h1>
+        <p className="text-base text-muted-foreground">
           전체 시스템 로그를 레벨별로 확인합니다.
         </p>
       </div>
@@ -162,13 +162,13 @@ export function LogsPage({ logs }: { logs: LogEntry[] }) {
               placeholder="메시지, 소스, 디바이스 ID 검색..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 pl-8 text-xs bg-secondary"
+              className="h-8 pl-8 text-sm bg-secondary"
             />
           </div>
           <select
             value={nodeFilter}
             onChange={(e) => setNodeFilter(e.target.value)}
-            className="h-8 rounded-md border border-border bg-secondary px-2 text-xs text-foreground"
+            className="h-8 rounded-md border border-border bg-secondary px-2 text-sm text-foreground"
           >
             <option value="all">전체 노드</option>
             {nodeIds.map((id) => (
@@ -188,11 +188,11 @@ export function LogsPage({ logs }: { logs: LogEntry[] }) {
               key={log.id}
               className={cn(
                 "flex items-start gap-2 rounded px-2 py-1.5 font-mono text-xs transition-colors hover:bg-secondary/80",
-                log.level === "error" && "bg-red-500/5",
-                log.level === "warn" && "bg-amber-500/5",
+                log.level === "error" && "bg-status-error/5",
+                log.level === "warn" && "bg-status-warning/5",
               )}
             >
-              <span className="shrink-0 text-[11px] text-muted-foreground w-36">
+              <span className="shrink-0 text-xs text-muted-foreground w-36">
                 {new Date(log.timestamp).toLocaleString("ko-KR", {
                   month: "2-digit",
                   day: "2-digit",
@@ -204,19 +204,19 @@ export function LogsPage({ logs }: { logs: LogEntry[] }) {
               <Badge
                 variant="outline"
                 className={cn(
-                  "shrink-0 text-[10px] w-16 justify-center",
+                  "shrink-0 text-[11px] w-16 justify-center",
                   getLogBadgeColor(log.level),
                 )}
               >
                 {LOG_LEVEL_LABELS[log.level]}
               </Badge>
-              <span className="shrink-0 text-[11px] text-muted-foreground w-12">
+              <span className="shrink-0 text-xs text-muted-foreground w-12">
                 {log.nodeId}
               </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground w-12">
+              <span className="shrink-0 text-xs text-muted-foreground w-12">
                 {log.deviceId || "-"}
               </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground/70 w-24 truncate">
+              <span className="shrink-0 text-xs text-muted-foreground/70 w-24 truncate">
                 {log.source}
               </span>
               <span className={cn("flex-1 text-xs", getLogColor(log.level))}>
@@ -226,7 +226,7 @@ export function LogsPage({ logs }: { logs: LogEntry[] }) {
           ))}
 
           {filteredLogs.length === 0 && (
-            <div className="py-12 text-center text-sm text-muted-foreground">
+            <div className="py-12 text-center text-base text-muted-foreground">
               필터 조건에 맞는 로그가 없습니다.
             </div>
           )}

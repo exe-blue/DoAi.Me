@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-// Channel validation - accepts URL or handle
-export const channelCreateSchema = z.object({
-  youtubeUrl: z.string().min(1, "YouTube URL or handle is required"),
-});
-
 // Preset schemas
 export const presetCreateSchema = z.object({
   name: z.string().min(1, "Name is required").max(255, "Name too long"),
@@ -14,6 +9,13 @@ export const presetCreateSchema = z.object({
 });
 
 export const presetUpdateSchema = presetCreateSchema.partial();
+
+// Account schemas
+export const accountCreateSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  status: z.enum(["available", "in_use", "cooldown", "banned", "retired"]).optional(),
+  device_id: z.string().uuid("Invalid device ID").nullable().optional(),
+});
 
 // Task schemas
 export const taskCreateSchema = z.object({
@@ -38,33 +40,6 @@ export const taskUpdateSchema = z.object({
   priority: z.number().int().min(0).max(10).optional(),
   result: z.record(z.unknown()).optional(),
   error: z.string().optional(),
-});
-
-// Schedule schemas
-export const scheduleCreateSchema = z.object({
-  channelId: z.string().uuid("Invalid channel ID"),
-  name: z.string().min(1, "Name is required").max(255, "Name too long"),
-  taskType: z.string().min(1, "Task type is required"),
-  triggerType: z.string().min(1, "Trigger type is required"),
-  triggerConfig: z.record(z.unknown()).optional(),
-  deviceCount: z.number().int().min(1).max(1000).optional(),
-});
-
-export const scheduleUpdateSchema = z.object({
-  id: z.string().uuid("Invalid schedule ID"),
-  name: z.string().min(1).max(255).optional(),
-  taskType: z.string().min(1).optional(),
-  triggerType: z.string().min(1).optional(),
-  triggerConfig: z.record(z.unknown()).optional(),
-  deviceCount: z.number().int().min(1).max(1000).optional(),
-  is_active: z.boolean().optional(),
-});
-
-// Account schemas
-export const accountCreateSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  status: z.enum(["active", "inactive", "banned"]).optional(),
-  device_id: z.string().uuid("Invalid device ID").nullable().optional(),
 });
 
 // Worker heartbeat schema

@@ -8,7 +8,20 @@ require("dotenv").config({ path: require("path").join(__dirname, "../.env.local"
 const { createClient } = require("@supabase/supabase-js");
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!YOUTUBE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  const missing = [
+    !YOUTUBE_API_KEY && "YOUTUBE_API_KEY",
+    !SUPABASE_URL && "SUPABASE_URL",
+    !SUPABASE_SERVICE_ROLE_KEY && "SUPABASE_SERVICE_ROLE_KEY",
+  ].filter(Boolean);
+  console.error("Missing required env vars: " + missing.join(", "));
+  process.exit(1);
+}
+
+const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const handles = [
   "SUPERANT_AN",
@@ -140,7 +153,7 @@ async function registerChannel(handle) {
       } else {
         console.log(
           "    Video: " +
-            vid.title.substring(0, 60) +
+            (vid.title || "[untitled]").substring(0, 60) +
             " (" +
             vid.youtube_video_id +
             ") " +
@@ -158,11 +171,6 @@ async function registerChannel(handle) {
 }
 
 (async function () {
-  if (YOUTUBE_API_KEY === undefined) {
-    console.error("YOUTUBE_API_KEY is required");
-    process.exit(1);
-  }
-
   console.log("=== Registering YouTube Channels ===\n");
   for (var j = 0; j < handles.length; j++) {
     console.log("Processing @" + handles[j] + "...");

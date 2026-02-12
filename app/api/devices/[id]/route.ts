@@ -44,10 +44,10 @@ export async function PUT(
     const allowedFields: (keyof DeviceRow)[] = [
       "nickname",
       "status",
-      "proxy",
+      "proxy_id",
       "account_id",
       "connection_mode",
-      "current_task",
+      "current_task_id",
     ];
 
     const updates: Record<string, unknown> = {};
@@ -72,6 +72,40 @@ export async function PUT(
     console.error("Error updating device:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update device" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = createServerClient();
+    const { id } = await params;
+
+    const { data: device, error } = await supabase
+      .from("devices")
+      .delete()
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!device) {
+      return NextResponse.json(
+        { error: `Device not found: ${id}` },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting device:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to delete device" },
       { status: 500 }
     );
   }

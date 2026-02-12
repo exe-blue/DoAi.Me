@@ -116,7 +116,7 @@ export function SyncStatusBar({
       {newVideoCount > 0 && (
         <Badge
           variant="outline"
-          className="text-[10px] border-emerald-500/30 text-emerald-400 gap-1"
+          className="text-[10px] border-status-success/30 text-status-success gap-1"
         >
           <Bell className="h-2.5 w-2.5" />
           새 영상 {newVideoCount}건

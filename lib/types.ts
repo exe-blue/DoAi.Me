@@ -8,6 +8,7 @@ export interface Device {
   status: DeviceStatus;
   currentTask: string | null;
   nodeId: string;
+  nickname: string | null;
 }
 
 export interface NodePC {
@@ -97,6 +98,20 @@ export interface Content {
   registeredAt: string;
   taskId: string | null;
   status: ContentStatus;
+}
+
+// Proxy types
+export type ProxyType = "socks5" | "http" | "https";
+export type ProxyStatus = "active" | "inactive" | "error" | "banned" | "testing";
+
+export interface Proxy {
+  id: string;
+  address: string;
+  type: ProxyType;
+  status: ProxyStatus;
+  workerId: string | null;
+  deviceId: string | null;
+  createdAt: string;
 }
 
 // Log types

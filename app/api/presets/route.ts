@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("presets")
-      .insert({ name, type, description: description ?? null, config: config as Json })
+      .insert({ name, type, description: description ?? null, config: config as Json } as any)
       .select("*")
       .single()
       .returns<PresetRow>();
