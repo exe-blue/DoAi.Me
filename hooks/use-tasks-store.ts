@@ -16,30 +16,30 @@ interface TasksState {
   removeTask: (id: string) => void;
 }
 
-function mapTaskRow(row: TaskRow): Task {
+function mapTaskRow(row: any): Task {
   return {
     id: row.id,
-    title: row.video_title ?? "Untitled",
-    channelName: row.channel_name ?? "",
-    thumbnail: row.video_thumbnail ?? "",
-    duration: row.video_duration ?? "0:00",
-    videoId: row.video_id ?? "",
+    title: row.video_title ?? row.title ?? "Untitled",
+    channelName: row.channel_name ?? row.channelName ?? "",
+    thumbnail: row.video_thumbnail ?? row.thumbnail ?? "",
+    duration: row.video_duration ?? row.duration ?? "0:00",
+    videoId: row.video_id ?? row.videoId ?? "",
     status: (row.status as Task["status"]) || "queued",
     priority: row.priority ?? 0,
     isPriority: (row.priority ?? 0) > 0,
-    assignedDevices: 0,
-    totalDevices: 0,
-    progress: 0,
-    variables: {
+    assignedDevices: row.assignedDevices ?? 0,
+    totalDevices: row.totalDevices ?? 0,
+    progress: row.progress ?? 0,
+    variables: row.variables ?? {
       watchPercent: 80,
       commentProb: 10,
       likeProb: 40,
       saveProb: 5,
       subscribeToggle: false,
     },
-    createdAt: row.created_at,
-    completedAt: row.completed_at,
-    logs: [],
+    createdAt: row.created_at ?? row.createdAt,
+    completedAt: row.completed_at ?? row.completedAt,
+    logs: row.logs ?? [],
   };
 }
 

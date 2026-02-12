@@ -41,9 +41,18 @@ export async function POST(request: NextRequest) {
 
     const { videoId, channelId, deviceCount, variables } = result.data;
 
+    // Merge with defaults for variables
+    const fullVariables = variables ? {
+      watchPercent: variables.watchPercent ?? 80,
+      commentProb: variables.commentProb ?? 10,
+      likeProb: variables.likeProb ?? 40,
+      saveProb: variables.saveProb ?? 5,
+      subscribeToggle: variables.subscribeToggle ?? false,
+    } : undefined;
+
     const task = await createManualTask(videoId, channelId, {
       deviceCount: deviceCount ?? 20,
-      variables: variables as any,
+      variables: fullVariables,
     });
 
     return NextResponse.json(task, { status: 201 });
@@ -71,7 +80,7 @@ export async function PATCH(request: NextRequest) {
 
     const { id, ...fields } = result.data;
 
-    const updated = await updateTask(id, fields);
+    const updated = await updateTask(id, fields as any);
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating task:", error);
