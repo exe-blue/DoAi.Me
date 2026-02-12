@@ -1,0 +1,14 @@
+{
+  "name": "doai-me-agent",
+  "version": "0.1.0",
+  "private": true,
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  }
+}

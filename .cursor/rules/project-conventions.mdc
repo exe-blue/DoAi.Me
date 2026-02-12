@@ -1,0 +1,30 @@
+---
+description: DoAi.Me 프로젝트 전역 규칙 및 아키텍처 준수
+alwaysApply: true
+---
+
+# DoAi.Me 프로젝트 규칙
+
+## 아키텍처 원칙
+
+- **백엔드**: FastAPI ❌ 사용 금지. Vercel API Routes (Serverless) 사용
+- **태스크**: Celery/Redis ❌ 사용 금지. Supabase Realtime + Xiaowei
+- **디바이스 제어**: Xiaowei WebSocket API (`ws://127.0.0.1:22222/`)
+
+## 문서 우선
+
+- `ARCHITECTURE.md`: Single Source of Truth. 변경 시 이 문서를 먼저 업데이트
+- `docs/IMPLEMENTATION_PLAN.md`: Phase별 구현 계획 (Ultrawork/Ultrapilot/UltraQA)
+- `docs/ENV.md`: 환경 변수 정의
+- `docs/FOLDER_STRUCTURE.md`: 폴더 구조 및 규칙
+
+## 코드 규칙
+
+- 새 API Route 추가 시 `app/api/` 구조 준수 (route.ts)
+- Supabase 연동은 `lib/supabase/` 모듈 사용
+- 프론트 컴포넌트: `components/ui/` (shadcn), `components/farm/` (도메인)
+
+## 금지
+
+- FastAPI, Celery, Redis, uiautomator2 도입 금지
+- `SUPABASE_SERVICE_ROLE_KEY`를 클라이언트 코드에 노출 금지

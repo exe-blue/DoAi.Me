@@ -1,0 +1,33 @@
+---
+description: Ultrawork/Ultrapilot 플래너 워크플로우 및 Phase별 구현 가이드
+globs: ["docs/IMPLEMENTATION_PLAN.md", "tests/ultraqa/**"]
+---
+
+# Planner Workflow (Ultrawork + Ultrapilot + UltraQA)
+
+## 오케스트레이션
+
+1. **Planner**: `docs/IMPLEMENTATION_PLAN.md`를 Phase 단위로 순차 진행
+2. **Ultrapilot**: 각 Phase의 작업 항목을 순서대로 구현
+3. **UltraQA**: Phase 완료 후 `tests/ultraqa/phase-N.md` 체크리스트 실행
+4. **Review**: 충돌 발견 시 Plan 보완 후 다음 Phase로 진행
+
+## Phase 순서
+
+```
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
+```
+
+각 Phase는 이전 Phase 완료 + UltraQA 통과 후에만 시작.
+
+## 충돌 처리
+
+- 스펙(FastAPI, Celery, Redis) vs 기존(v2.1) 충돌 시 → **기존 아키텍처 우선**
+- DB 스키마 변경 시 기존 테이블과의 호환성 검토
+- Review 단계에서 충돌 해결 Plan 문서화
+
+## UltraQA 실행
+
+- Phase N 완료 후: `tests/ultraqa/phase-N.md` 체크리스트 확인
+- API 테스트: `npm run test:api` (개발 서버 실행 중)
+- 모든 항목 ✓ 후 다음 Phase 진행

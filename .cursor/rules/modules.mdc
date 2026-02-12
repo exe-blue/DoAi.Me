@@ -1,0 +1,33 @@
+---
+description: 모듈(lib, hooks) 구조 및 규칙
+globs: lib/**/*.ts, hooks/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# 모듈 규칙
+
+## 구조
+
+- **lib/utils.ts**: `cn()` 등 공통 유틸. clsx + tailwind-merge
+- **lib/types.ts**: 도메인 타입 (NodePC, Device, Task, CommandPreset 등)
+- **lib/mock-data.ts**: 개발용 목 데이터
+- **lib/supabase/**: Supabase 클라이언트, realtime, DB 타입
+- **hooks/**: `use-mobile`, `use-toast` 등 공통 훅
+
+## 규칙
+
+1. **lib/**: 순수 함수, 타입, 설정. React 의존성 최소화
+2. **hooks/**: `use` 접두사. 클라이언트 전용 훅은 `"use client"` 필요 시 상위에서 처리
+3. **import 경로**: `@/lib/utils`, `@/lib/types`, `@/hooks/use-mobile`
+4. **Supabase**: `lib/supabase/client.ts`만 사용. `SUPABASE_SERVICE_ROLE_KEY` 클라이언트 노출 금지
+
+## 예시
+
+```ts
+// lib/utils.ts
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+```

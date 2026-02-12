@@ -1,0 +1,32 @@
+---
+description: 컴포넌트 구조 및 사용 규칙 (UI, farm)
+globs: components/**/*.tsx
+alwaysApply: false
+---
+
+# 컴포넌트 규칙
+
+## 구조
+
+- **components/ui/**: shadcn/ui 기반 재사용 컴포넌트. Radix UI + tailwind. 새 UI 추가 시 `npx shadcn@latest add <component>` 사용
+- **components/farm/**: DoAi.Me 도메인 전용 컴포넌트 (device-grid, worker-card, task-creator 등)
+
+## 규칙
+
+1. **UI 컴포넌트**: `components/ui/` 아래에 둠. `cn()` 유틸로 className 병합
+2. **페이지 컴포넌트**: `app-sidebar.tsx`, `devices-page.tsx`, `presets-page.tsx` 등 탭별 페이지 컴포넌트는 `components/` 루트에 둠
+3. **import**: `@/components/ui/...`, `@/lib/utils` (cn) 사용
+4. **스타일**: Tailwind CSS 변수 (`--background`, `--foreground`, `--primary` 등) 사용. 일관된 토큰 유지
+5. **폰트**: Pretendard. `font-sans` 사용 시 자동 적용 (tailwind.config fontFamily)
+
+## 예시
+
+```tsx
+// ✅ GOOD
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+<Button className={cn("ml-2", isActive && "bg-primary")}>실행</Button>
+
+// ❌ BAD - 인라인 스타일
+<div style={{ color: "#22c55e" }}>...
+```
