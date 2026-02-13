@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- Enable Realtime on settings table (for agent config sync)
-ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 2. Seed default settings
 INSERT INTO settings (key, value, description) VALUES
