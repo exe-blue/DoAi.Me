@@ -217,3 +217,54 @@ export function useBroadcast<T = unknown>(
     };
   }, [channelName, events.join(",")]);
 }
+
+/**
+ * room:devices Broadcast 구독
+ * Agent가 heartbeat마다 디바이스 상태를 room:devices로 전송
+ */
+export function useDevicesBroadcast(handlers: {
+  onUpdate?: (workerId: string, devices: Array<{
+    serial: string;
+    status: string;
+    model?: string;
+    battery?: number;
+  }>) => void;
+}) {
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    channelRef.current = supabase
+      .channel("room:devices")
+      .on("broadcast", { event: "update" }, ({ payload }) => {
+        const data = payload as {
+          worker_id?: string;
+          devices?: Array<{
+            serial: string;
+            status: string;
+            model?: string;
+            battery?: number;
+          }>;
+        };
+        if (data?.worker_id && data?.devices) {
+          handlersRef.current.onUpdate?.(data.worker_id, data.devices);
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Realtime] Subscribed to room:devices");
+        }
+      });
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, []);
+}
