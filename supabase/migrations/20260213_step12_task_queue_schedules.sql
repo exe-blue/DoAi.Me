@@ -23,7 +23,10 @@ CREATE INDEX IF NOT EXISTS idx_task_queue_priority
   WHERE status = 'queued';
 
 -- Enable realtime for task_queue
-ALTER PUBLICATION supabase_realtime ADD TABLE task_queue;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE task_queue;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ═══ task_schedules ═══
 CREATE TABLE IF NOT EXISTS task_schedules (
@@ -48,4 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_task_schedules_next
   WHERE is_active = true;
 
 -- Enable realtime for task_schedules
-ALTER PUBLICATION supabase_realtime ADD TABLE task_schedules;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE task_schedules;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
