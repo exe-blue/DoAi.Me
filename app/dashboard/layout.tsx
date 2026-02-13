@@ -12,6 +12,7 @@ import {
   Settings,
   Terminal,
   ScrollText,
+  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +32,8 @@ import {
 } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
 import { ConnectionStatus } from "@/components/connection-status";
+import { useUser } from "@auth0/nextjs-auth0";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 const navItems = [
   { href: "/dashboard", label: "개요", icon: LayoutDashboard },
@@ -43,6 +46,42 @@ const navItems = [
   { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
   { href: "/dashboard/logs", label: "로그", icon: ScrollText },
 ];
+
+function UserMenu() {
+  const { user, isLoading } = useUser();
+
+  if (isLoading || !user) return null;
+
+  const initials = (user.name ?? user.email ?? "U")
+    .split(" ")
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <Avatar className="h-8 w-8">
+        {user.picture && <AvatarImage src={user.picture} alt={user.name ?? ""} />}
+        <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+      </Avatar>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{user.name ?? user.email}</p>
+        {user.name && user.email && (
+          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+        )}
+      </div>
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+      <a
+        href="/auth/logout"
+        className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        title="로그아웃"
+      >
+        <LogOut className="h-4 w-4" />
+      </a>
+    </div>
+  );
+}
 
 function DashboardSidebar() {
   const pathname = usePathname();
@@ -90,6 +129,7 @@ function DashboardSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <UserMenu />
         <div className="px-2 pb-2">
           <p className="text-[11px] text-muted-foreground">
             DoAi.Me Fleet Console v1.0

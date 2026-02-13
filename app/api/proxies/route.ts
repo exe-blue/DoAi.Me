@@ -66,7 +66,7 @@ export async function DELETE(request: NextRequest) {
 
     // Unassign devices first
     if (assigned && assigned.length > 0) {
-      const deviceIds = assigned.map((p) => p.device_id).filter(Boolean);
+      const deviceIds = assigned.map((p) => p.device_id).filter((id): id is string => id !== null);
       if (deviceIds.length > 0) {
         await supabase
           .from("devices")
