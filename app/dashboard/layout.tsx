@@ -130,10 +130,15 @@ function DashboardSidebar() {
 
       <SidebarFooter>
         <UserMenu />
-        <div className="px-2 pb-2">
+        <div className="px-2 pb-2 space-y-1">
           <p className="text-[11px] text-muted-foreground">
             DoAi.Me Fleet Console v1.0
           </p>
+          <div className="flex gap-2 text-[11px]">
+            <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">개인정보 취급방침</Link>
+            <span className="text-muted-foreground">·</span>
+            <Link href="/agreement" className="text-muted-foreground hover:text-foreground transition-colors">서비스 약관</Link>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
