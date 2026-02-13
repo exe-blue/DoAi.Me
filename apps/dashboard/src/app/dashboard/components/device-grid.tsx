@@ -125,7 +125,7 @@ export function DeviceGrid({ supabaseUrl, supabaseAnonKey }: DeviceGridProps) {
 
     // Subscribe to broadcast
     const channel = client.channel("room:devices");
-    channel.on("broadcast", { event: "device_batch" }, handleBroadcast);
+    channel.on("broadcast", { event: "update" }, handleBroadcast);
     channel.subscribe();
 
     return () => {
