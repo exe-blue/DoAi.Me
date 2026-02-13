@@ -14,6 +14,9 @@ let heartbeatHandle: ReturnType<typeof setInterval> | null = null;
 let taskPollHandle: ReturnType<typeof setInterval> | null = null;
 let shuttingDown = false;
 const runningTasks = new Set<string>();
+let prevSerials = new Set<string>();
+const errorCountMap = new Map<string, number>();
+const ERROR_THRESHOLD = 2;
 
 async function init(): Promise<void> {
   config = loadConfig();
@@ -63,15 +66,56 @@ async function heartbeat(): Promise<void> {
       }
     }
 
+    // Build current serials set
+    const currentSerials = new Set(devices.map(d => d.serial));
+
+    // Detect devices that disappeared
+    const errorSerials: string[] = [];
+    for (const serial of prevSerials) {
+      if (!currentSerials.has(serial)) {
+        // Device disappeared
+        if (xiaowei.connected) {
+          // Xiaowei is connected but device is missing → device-level error
+          const count = (errorCountMap.get(serial) || 0) + 1;
+          errorCountMap.set(serial, count);
+
+          if (count < ERROR_THRESHOLD) {
+            errorSerials.push(serial);
+          }
+          // If count >= ERROR_THRESHOLD, device will become "offline" automatically
+        }
+        // If Xiaowei is NOT connected, we don't increment error count
+        // (infrastructure problem, not device-level)
+      }
+    }
+
+    // Clear error counts for devices that came back
+    for (const serial of currentSerials) {
+      if (errorCountMap.has(serial)) {
+        errorCountMap.delete(serial);
+      }
+    }
+
+    // Clean up error counts that exceeded threshold
+    for (const [serial, count] of errorCountMap) {
+      if (count >= ERROR_THRESHOLD) {
+        errorCountMap.delete(serial);
+      }
+    }
+
+    // Update previous serials
+    prevSerials = currentSerials;
+
     // Supabase sync
     await sync.updateWorkerHeartbeat(devices.length, xiaowei.connected);
-    await sync.syncDevices(devices);
+    await sync.syncDevices(devices, errorSerials);
 
     // Broadcast
     await broadcaster.broadcastWorkerHeartbeat(devices.length, xiaowei.connected);
     await broadcaster.broadcastWorkerDevices(devices);
 
-    log.info(`Heartbeat OK — ${devices.length} device(s), xiaowei=${xiaowei.connected}`);
+    const errorInfo = errorSerials.length > 0 ? `, ${errorSerials.length} error` : '';
+    log.info(`Heartbeat OK — ${devices.length} device(s), xiaowei=${xiaowei.connected}${errorInfo}`);
   } catch (err) {
     log.error("Heartbeat error", { error: (err as Error).message });
   }

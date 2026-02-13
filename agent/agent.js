@@ -9,6 +9,7 @@ const SupabaseSync = require("./supabase-sync");
 const { startHeartbeat } = require("./heartbeat");
 const TaskExecutor = require("./task-executor");
 const ProxyManager = require("./proxy-manager");
+const AccountManager = require("./account-manager");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -16,6 +17,7 @@ let heartbeatHandle = null;
 let taskPollHandle = null;
 let taskExecutor = null;
 let proxyManager = null;
+let accountManager = null;
 let shuttingDown = false;
 
 function sleep(ms) {
