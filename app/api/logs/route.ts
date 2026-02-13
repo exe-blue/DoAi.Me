@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     const level = searchParams.get("level");
     if (level) {
-      const levels = level.split(",").map((l) => l.trim());
+      const levels = level.split(",").map((l) => l.trim()) as any[];
       query = query.in("level", levels);
     }
 
