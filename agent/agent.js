@@ -13,6 +13,8 @@ const AccountManager = require("./account-manager");
 const ScriptVerifier = require("./script-verifier");
 const DashboardBroadcaster = require("./dashboard-broadcaster");
 const AdbReconnectManager = require("./adb-reconnect");
+const QueueDispatcher = require("./queue-dispatcher");
+const ScheduleEvaluator = require("./schedule-evaluator");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -24,6 +26,8 @@ let accountManager = null;
 let scriptVerifier = null;
 let broadcaster = null;
 let reconnectManager = null;
+let queueDispatcher = null;
+let scheduleEvaluator = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -265,7 +269,16 @@ async function main() {
     console.log("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
   }
 
-  // 15. Wire up config-updated listeners for dynamic interval changes
+  // 15. Start queue dispatcher and schedule evaluator
+  queueDispatcher = new QueueDispatcher(supabaseSync, config, broadcaster);
+  queueDispatcher.start();
+  console.log("[Agent] ✓ Queue dispatcher started");
+
+  scheduleEvaluator = new ScheduleEvaluator(supabaseSync, broadcaster);
+  scheduleEvaluator.start();
+  console.log("[Agent] ✓ Schedule evaluator started");
+
+  // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
     // heartbeat_interval → restart heartbeat loop
     if (key === "heartbeat_interval" && heartbeatHandle) {
@@ -329,6 +342,16 @@ async function shutdown() {
   // Stop proxy manager check loop
   if (proxyManager && proxyManager.stopCheckLoop) {
     proxyManager.stopCheckLoop();
+  }
+
+  // Stop queue dispatcher
+  if (queueDispatcher) {
+    queueDispatcher.stop();
+  }
+
+  // Stop schedule evaluator
+  if (scheduleEvaluator) {
+    scheduleEvaluator.stop();
   }
 
   // Unsubscribe config Realtime
