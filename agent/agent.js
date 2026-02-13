@@ -82,6 +82,15 @@ async function main() {
     process.exit(1);
   }
 
+  // 2a. Load dynamic settings from DB and subscribe to changes
+  try {
+    await config.loadFromDB(supabaseSync.supabase);
+    config.subscribeToChanges(supabaseSync.supabase);
+    console.log("[Agent] ✓ Settings loaded and Realtime subscription active");
+  } catch (err) {
+    console.warn(`[Agent] ✗ Settings load failed: ${err.message}`);
+  }
+
   // 3. Register worker
   try {
     const workerId = await supabaseSync.getWorkerId(config.workerName);
@@ -138,7 +147,7 @@ async function main() {
   console.log(`[Agent] ✓ Worker registered: ${config.workerName} (heartbeat OK)`);
 
   // 9. Proxy setup — load assignments from Supabase and apply to devices
-  proxyManager = new ProxyManager(xiaowei, supabaseSync);
+  proxyManager = new ProxyManager(xiaowei, supabaseSync, config, broadcaster);
   if (xiaowei.connected) {
     try {
       const count = await proxyManager.loadAssignments(supabaseSync.workerId);
@@ -148,6 +157,9 @@ async function main() {
       } else {
         console.log("[Agent] - Proxy setup: no assignments (skipped)");
       }
+      // Start periodic proxy check loop
+      proxyManager.startCheckLoop(supabaseSync.workerId);
+      console.log("[Agent] ✓ Proxy check loop started");
     } catch (err) {
       console.warn(`[Agent] ✗ Proxy setup failed: ${err.message}`);
     }
@@ -253,6 +265,41 @@ async function main() {
     console.log("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
   }
 
+  // 15. Wire up config-updated listeners for dynamic interval changes
+  config.on("config-updated", ({ key, oldValue, newValue }) => {
+    // heartbeat_interval → restart heartbeat loop
+    if (key === "heartbeat_interval" && heartbeatHandle) {
+      clearInterval(heartbeatHandle);
+      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
+      console.log(`[Agent] Heartbeat restarted with interval ${newValue}ms`);
+    }
+
+    // adb_reconnect_interval → restart ADB reconnect loop
+    if (key === "adb_reconnect_interval" && reconnectManager) {
+      reconnectManager.stop();
+      reconnectManager.reconnectInterval = newValue;
+      reconnectManager.start();
+      console.log(`[Agent] ADB reconnect restarted with interval ${newValue}ms`);
+    }
+
+    // proxy_check_interval or proxy_policy → restart proxy check loop
+    if ((key === "proxy_check_interval" || key === "proxy_policy") && proxyManager) {
+      proxyManager.applyConfigChange(key, newValue);
+    }
+
+    // max_concurrent_tasks → update task executor limit
+    if (key === "max_concurrent_tasks" && taskExecutor) {
+      taskExecutor.maxConcurrent = newValue;
+      console.log(`[Agent] TaskExecutor maxConcurrent updated to ${newValue}`);
+    }
+
+    // max_retry_count → update task executor (if it uses it)
+    if (key === "max_retry_count" && taskExecutor) {
+      taskExecutor.maxRetryCount = newValue;
+      console.log(`[Agent] TaskExecutor maxRetryCount updated to ${newValue}`);
+    }
+  });
+
   console.log("[Agent] Ready and listening for tasks");
 }
 
@@ -277,6 +324,16 @@ async function shutdown() {
   // Stop ADB reconnect manager
   if (reconnectManager) {
     reconnectManager.stop();
+  }
+
+  // Stop proxy manager check loop
+  if (proxyManager && proxyManager.stopCheckLoop) {
+    proxyManager.stopCheckLoop();
+  }
+
+  // Unsubscribe config Realtime
+  if (supabaseSync) {
+    await config.unsubscribe(supabaseSync.supabase);
   }
 
   // Clean up broadcaster
