@@ -250,13 +250,76 @@ function RegisterTaskDialog({
   open,
   onClose,
   nodes,
+  onTaskCreated,
 }: {
   open: boolean;
   onClose: () => void;
   nodes: NodePC[];
+  onTaskCreated?: () => void;
 }) {
-  const [expandedNode, setExpandedNode] = useState<string | null>(null);
-  const [selectAll, setSelectAll] = useState(true);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [channelId, setChannelId] = useState("");
+  const [deviceCount, setDeviceCount] = useState(20);
+  const [workerId, setWorkerId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const extractVideoId = (url: string): string | null => {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+      /^([a-zA-Z0-9_-]{11})$/,
+    ];
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) return match[1];
+    }
+    return null;
+  };
+
+  const handleSubmit = async () => {
+    setError("");
+
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) {
+      setError("올바른 YouTube URL 또는 비디오 ID를 입력하세요");
+      return;
+    }
+
+    if (!channelId) {
+      setError("채널 ID를 입력하세요");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId,
+          channelId,
+          deviceCount,
+          workerId: workerId || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "작업 등록 실패");
+      }
+
+      setVideoUrl("");
+      setChannelId("");
+      setDeviceCount(20);
+      setWorkerId("");
+      onTaskCreated?.();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "작업 등록 중 오류 발생");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -269,78 +332,76 @@ function RegisterTaskDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between p-3 rounded-md border border-border">
-            <span className="text-sm">전체 기기 선택</span>
-            <Button
-              size="sm"
-              variant={selectAll ? "default" : "outline"}
-              className="h-7 text-xs"
-              onClick={() => setSelectAll(!selectAll)}
-            >
-              {selectAll ? (
-                <>
-                  <Check className="h-3 w-3 mr-1" />
-                  선택됨
-                </>
-              ) : (
-                "선택"
-              )}
-            </Button>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-sm">YouTube URL 또는 비디오 ID</Label>
+            <input
+              type="text"
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="https://youtube.com/watch?v=... 또는 비디오 ID"
+              className="px-3 py-2 text-sm rounded-md border border-border bg-background"
+              disabled={submitting}
+            />
           </div>
 
-          {!selectAll && (
-            <ScrollArea className="h-52">
-              <div className="flex flex-col gap-1.5 pr-3">
-                {nodes.map((node) => (
-                  <div
-                    key={node.id}
-                    className="rounded border border-border p-2.5"
-                  >
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 w-full text-left"
-                      onClick={() =>
-                        setExpandedNode(
-                          expandedNode === node.id ? null : node.id,
-                        )
-                      }
-                    >
-                      {expandedNode === node.id ? (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
-                      <Monitor className="h-3.5 w-3.5" />
-                      <span className="text-sm">{node.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        ({node.devices.length}대)
-                      </span>
-                    </button>
-                    {expandedNode === node.id && (
-                      <div className="grid grid-cols-10 gap-1 mt-2">
-                        {node.devices.slice(0, 20).map((d, idx) => (
-                          <button
-                            type="button"
-                            key={d.id}
-                            className="rounded border border-border bg-secondary p-1 text-[10px] font-mono text-muted-foreground hover:border-primary transition-colors"
-                          >
-                            {idx + 1}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-sm">채널 ID</Label>
+            <input
+              type="text"
+              value={channelId}
+              onChange={(e) => setChannelId(e.target.value)}
+              placeholder="채널 UUID"
+              className="px-3 py-2 text-sm rounded-md border border-border bg-background"
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-sm">기기 수 (선택)</Label>
+            <input
+              type="number"
+              value={deviceCount}
+              onChange={(e) => setDeviceCount(Number(e.target.value))}
+              min={1}
+              max={1000}
+              className="px-3 py-2 text-sm rounded-md border border-border bg-background"
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-sm">Worker ID (선택)</Label>
+            <input
+              type="text"
+              value={workerId}
+              onChange={(e) => setWorkerId(e.target.value)}
+              placeholder="특정 Worker 지정 (선택사항)"
+              className="px-3 py-2 text-sm rounded-md border border-border bg-background"
+              disabled={submitting}
+            />
+          </div>
+
+          {error && (
+            <div className="text-sm text-status-error bg-status-error/10 border border-status-error/20 rounded-md p-3">
+              {error}
+            </div>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
             취소
           </Button>
-          <Button onClick={onClose}>작업 등록</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                등록 중...
+              </>
+            ) : (
+              "작업 등록"
+            )}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -724,6 +785,7 @@ export function TasksPage({
         open={registerOpen}
         onClose={() => setRegisterOpen(false)}
         nodes={nodes}
+        onTaskCreated={fetchTasks}
       />
       <VariableDialog
         open={variableOpen}
