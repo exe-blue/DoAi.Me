@@ -48,13 +48,16 @@ interface ProxiesPageProps {
 }
 
 export function ProxiesPage({ nodes }: ProxiesPageProps) {
-  const { proxies, loading, fetch: fetchProxies, create, remove, assign, autoAssign } = useProxiesStore();
+  const { proxies, loading, fetch: fetchProxies, create, bulkCreate, bulkAssignToWorker, remove, assign, autoAssign } = useProxiesStore();
   const fetchWorkers = useWorkersStore((s) => s.fetch);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogNodeId, setAddDialogNodeId] = useState<string | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assigningProxyId, setAssigningProxyId] = useState<string | null>(null);
+  const [bulkAssignDialogOpen, setBulkAssignDialogOpen] = useState(false);
+  const [bulkAssignNodeId, setBulkAssignNodeId] = useState<string>("__none__");
+  const [bulkAssignCount, setBulkAssignCount] = useState("");
 
   // Add proxy form state
   const [selectedNodeId, setSelectedNodeId] = useState<string>("__none__");
@@ -95,9 +98,11 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
     const workerId = selectedNodeId && selectedNodeId !== "__none__" ? selectedNodeId : undefined;
 
     try {
-      for (const address of lines) {
+      if (lines.length > 1) {
+        await bulkCreate(lines, proxyType, workerId);
+      } else {
         await create({
-          address,
+          address: lines[0],
           type: proxyType,
           worker_id: workerId,
         });
@@ -134,6 +139,18 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
   const handleAutoAssign = async (nodeId: string) => {
     await autoAssign(nodeId);
     fetchWorkers();
+  };
+
+  const handleBulkAssignToWorker = async () => {
+    if (bulkAssignNodeId === "__none__") return;
+    const count = bulkAssignCount ? parseInt(bulkAssignCount, 10) : undefined;
+    try {
+      await bulkAssignToWorker(bulkAssignNodeId, count);
+      fetchWorkers();
+      setBulkAssignDialogOpen(false);
+    } catch {
+      // Toast shown by store
+    }
   };
 
   // Build device map with proxy info
@@ -238,8 +255,13 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                     <ChevronRight className="h-4 w-4 shrink-0" />
                   )}
                   <span className="font-medium">
-                    {node.name} ({node.id})
+                    {node.name}
                   </span>
+                  {node.ip && (
+                    <span className="text-sm font-mono text-muted-foreground">
+                      {node.ip}
+                    </span>
+                  )}
                   <StatusDot
                     variant={node.status === "connected" ? "success" : "neutral"}
                   />
@@ -425,20 +447,35 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                 statusBorderClass("neutral")
               )}
             >
-              <button
-                onClick={() => toggleNode("__unassigned__")}
-                className="flex w-full items-center gap-2 text-left hover:opacity-80"
-              >
-                {expandedNodes.has("__unassigned__") ? (
-                  <ChevronDown className="h-4 w-4 shrink-0" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0" />
-                )}
-                <span className="font-medium">미배정 프록시</span>
-                <StatusBadge variant="neutral">
-                  {unassignedProxies.length}개
-                </StatusBadge>
-              </button>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => toggleNode("__unassigned__")}
+                  className="flex items-center gap-2 text-left hover:opacity-80"
+                >
+                  {expandedNodes.has("__unassigned__") ? (
+                    <ChevronDown className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0" />
+                  )}
+                  <span className="font-medium">미배정 프록시</span>
+                  <StatusBadge variant="neutral">
+                    {unassignedProxies.length}개
+                  </StatusBadge>
+                </button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBulkAssignNodeId("__none__");
+                    setBulkAssignCount("");
+                    setBulkAssignDialogOpen(true);
+                  }}
+                  className="gap-1.5"
+                >
+                  <Link className="h-3.5 w-3.5" />
+                  워커에 배정
+                </Button>
+              </div>
 
               {expandedNodes.has("__unassigned__") && (
                 <div className="mt-3 space-y-1.5 pl-6">

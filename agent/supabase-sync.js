@@ -101,7 +101,7 @@ class SupabaseSync {
           worker_id: workerId,
           status,
           model: model || null,
-          battery: battery || null,
+          battery_level: battery || null,
           ip_intranet: ipIntranet || null,
           last_seen: new Date().toISOString(),
         },

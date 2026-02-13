@@ -226,8 +226,13 @@ function NodeSection({
             <span className="font-medium text-base text-foreground">
               {node.name}
             </span>
-            <span className="text-sm font-mono text-muted-foreground">
-              ({node.id})
+            {node.ip && (
+              <span className="text-sm font-mono text-muted-foreground">
+                {node.ip}
+              </span>
+            )}
+            <span className="text-xs font-mono text-muted-foreground/60">
+              {node.id.slice(0, 8)}
             </span>
           </div>
           {node.status === "connected" ? (

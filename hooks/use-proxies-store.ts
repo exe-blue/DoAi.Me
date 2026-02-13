@@ -25,6 +25,8 @@ interface ProxiesState {
     type?: string;
     worker_id?: string;
   }) => Promise<void>;
+  bulkCreate: (lines: string[], type?: string, workerId?: string) => Promise<number>;
+  bulkAssignToWorker: (workerId: string, count?: number) => Promise<number>;
   update: (
     id: string,
     fields: Partial<{
@@ -83,6 +85,66 @@ export const useProxiesStore = create<ProxiesState>((set, get) => ({
         title: "오류",
         description:
           err instanceof Error ? err.message : "프록시 생성에 실패했습니다",
+        variant: "destructive",
+      });
+      throw err;
+    }
+  },
+  bulkCreate: async (lines, type = "socks5", workerId?) => {
+    try {
+      const res = await fetch("/api/proxies/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proxies: lines,
+          type,
+          worker_id: workerId,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "프록시 일괄 등록에 실패했습니다");
+      }
+      const result = (await res.json()) as { inserted: number };
+      await get().fetch();
+      toast({
+        title: "프록시 일괄 등록 완료",
+        description: `${result.inserted}개의 프록시가 등록되었습니다`,
+      });
+      return result.inserted;
+    } catch (err) {
+      toast({
+        title: "오류",
+        description:
+          err instanceof Error ? err.message : "프록시 일괄 등록에 실패했습니다",
+        variant: "destructive",
+      });
+      throw err;
+    }
+  },
+  bulkAssignToWorker: async (workerId, count?) => {
+    try {
+      const res = await fetch("/api/proxies/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worker_id: workerId, count }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "워커 일괄 배정에 실패했습니다");
+      }
+      const result = (await res.json()) as { updated: number };
+      await get().fetch();
+      toast({
+        title: "워커 배정 완료",
+        description: `${result.updated}개의 프록시가 배정되었습니다`,
+      });
+      return result.updated;
+    } catch (err) {
+      toast({
+        title: "오류",
+        description:
+          err instanceof Error ? err.message : "워커 일괄 배정에 실패했습니다",
         variant: "destructive",
       });
       throw err;

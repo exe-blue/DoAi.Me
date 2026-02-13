@@ -105,54 +105,54 @@ async function step1_checkWorker() {
 // ─── Step 2: Devices ────────────────────────────────────
 
 async function step2_checkDevices() {
-  logStep(2, "Device check (expecting 3 phones)");
+  logStep(2, "Device check");
 
-  const { data, error } = await supabase
+  // Query ALL devices for this worker (any status)
+  const { data: allDevices, error } = await supabase
     .from("devices")
     .select("*")
-    .eq("worker_id", workerId)
-    .eq("status", "online");
+    .eq("worker_id", workerId);
 
   if (error) {
     logFail(`Failed to query devices: ${error.message}`);
     return false;
   }
 
-  devices = data || [];
-  logOK(`Online devices in DB: ${devices.length}`);
+  devices = allDevices || [];
+  const onlineCount = devices.filter((d) => d.status === "online").length;
+  const offlineCount = devices.filter((d) => d.status !== "online").length;
+  logOK(`Devices in DB: ${devices.length} (online=${onlineCount}, offline=${offlineCount})`);
 
   for (const d of devices) {
-    logOK(`  ${d.serial} | ${d.model || "unknown"} | battery=${d.battery ?? "?"}%`);
+    logOK(`  ${d.serial} | ${d.model || "unknown"} | status=${d.status} | battery=${d.battery ?? "?"}%`);
+  }
+
+  // Use DB devices if any exist (regardless of status — agent controls via Xiaowei, not DB status)
+  if (devices.length > 0) {
+    deviceCount = devices.length;
+    if (onlineCount === 0) {
+      logInfo(`All devices offline in DB, but agent uses Xiaowei directly. Continuing.`);
+    }
+    return true;
   }
 
   // Fallback: use worker's reported device_count when devices table is empty
-  if (devices.length === 0) {
-    const { data: worker } = await supabase
-      .from("workers")
-      .select("device_count")
-      .eq("id", workerId)
-      .single();
+  const { data: worker } = await supabase
+    .from("workers")
+    .select("device_count")
+    .eq("id", workerId)
+    .single();
 
-    const reported = worker ? worker.device_count : 0;
-    if (reported > 0) {
-      logInfo(`Devices table empty but worker reports ${reported} device(s). Using worker count.`);
-      logInfo(`(Device serial sync may be failing — Xiaowei list() response format issue)`);
-      // Create virtual device entries for task creation
-      deviceCount = reported;
-      return true;
-    }
-
-    logFail("No online devices. Is Xiaowei running with phones connected?");
-    return false;
+  const reported = worker ? worker.device_count : 0;
+  if (reported > 0) {
+    logInfo(`Devices table empty but worker reports ${reported} device(s). Using worker count.`);
+    logInfo(`(Device serial sync may be failing — Xiaowei list() response format issue)`);
+    deviceCount = reported;
+    return true;
   }
 
-  deviceCount = devices.length;
-
-  if (devices.length < 3) {
-    logInfo(`Warning: Expected 3 devices, found ${devices.length}. Continuing anyway.`);
-  }
-
-  return true;
+  logFail("No devices found. Is Xiaowei running with phones connected?");
+  return false;
 }
 
 // ─── Step 3: Find real channel + recent video ───────────

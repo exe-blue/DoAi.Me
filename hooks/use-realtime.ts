@@ -148,6 +148,7 @@ export function useTaskLogsBroadcast(
     if (!taskId) return;
 
     const supabase = createClient();
+    if (!supabase) return;
 
     channelRef.current = supabase
       .channel(`room:task:${taskId}:logs`)

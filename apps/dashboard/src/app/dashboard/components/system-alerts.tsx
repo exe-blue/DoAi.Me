@@ -52,6 +52,7 @@ const DEFAULT_SEVERITY = SEVERITY_CONFIG.info;
 
 function getRelativeTime(timestamp: string): string {
   const diff = Date.now() - new Date(timestamp).getTime();
+  if (diff < 0) return "방금";
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return `${seconds}초 전`;
   const minutes = Math.floor(seconds / 60);
