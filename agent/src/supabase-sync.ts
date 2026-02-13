@@ -126,9 +126,10 @@ export class SupabaseSync {
     return this.workerId;
   }
 
-  async syncDevices(devices: XiaoweiDevice[]): Promise<void> {
+  async syncDevices(devices: XiaoweiDevice[], errorSerials?: string[]): Promise<void> {
     const now = new Date().toISOString();
     const activeSerials: string[] = [];
+    const errorSerialsSet = new Set(errorSerials ?? []);
 
     for (const d of devices) {
       if (!d.serial) continue;
@@ -154,8 +155,19 @@ export class SupabaseSync {
       }
     }
 
-    // Mark missing devices offline
-    if (activeSerials.length === 0) {
+    // Mark devices with errors
+    if (errorSerialsSet.size > 0) {
+      const errorSerialsList = Array.from(errorSerialsSet);
+      await this.supabase
+        .from("devices")
+        .update({ status: "error" as DeviceStatus, last_seen: now })
+        .eq("worker_id", this.workerId)
+        .in("serial", errorSerialsList);
+    }
+
+    // Mark missing devices offline (excluding active and error serials)
+    const excludedSerials = [...activeSerials, ...Array.from(errorSerialsSet)];
+    if (excludedSerials.length === 0) {
       await this.supabase
         .from("devices")
         .update({ status: "offline" as DeviceStatus, last_seen: now })
@@ -165,7 +177,7 @@ export class SupabaseSync {
         .from("devices")
         .update({ status: "offline" as DeviceStatus, last_seen: now })
         .eq("worker_id", this.workerId)
-        .not("serial", "in", `(${activeSerials.join(",")})`);
+        .not("serial", "in", `(${excludedSerials.join(",")})`);
     }
   }
 

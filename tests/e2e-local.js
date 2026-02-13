@@ -71,8 +71,9 @@ function logInfo(msg) {
 // ─── Step 1: Worker ─────────────────────────────────────
 
 async function step1_checkWorker() {
-  logStep(1, "Worker registration check");
+  logStep(1, "Agent startup + Supabase/Xiaowei connection check");
 
+  // 1a. Check worker exists and is online
   const { data, error } = await supabase
     .from("workers")
     .select("*")
@@ -87,18 +88,36 @@ async function step1_checkWorker() {
 
   workerId = data.id;
   logOK(`Worker: ${data.hostname} (${workerId})`);
-  logOK(`Status: ${data.status}, Xiaowei: ${data.xiaowei_connected}`);
-  logOK(`Last heartbeat: ${data.last_heartbeat}`);
 
-  // Warn if heartbeat is stale (>2 minutes)
+  // 1b. Verify Supabase connection (worker exists = Supabase is working)
+  logOK(`Supabase connected (worker found in DB)`);
+
+  // 1c. Verify Xiaowei connection status
+  if (data.xiaowei_connected) {
+    logOK(`Xiaowei connected`);
+  } else {
+    logFail(`Xiaowei not connected (xiaowei_connected=${data.xiaowei_connected})`);
+    logInfo("Check: Is Xiaowei running? (ws://127.0.0.1:22222/)");
+    logInfo("Check: Firewall/port blocking?");
+    return false;
+  }
+
+  // 1d. Verify heartbeat freshness
   if (data.last_heartbeat) {
     const age = Date.now() - new Date(data.last_heartbeat).getTime();
     if (age > 120000) {
-      logFail(`Heartbeat is stale (${Math.round(age / 1000)}s ago). Agent may be down.`);
+      logFail(`Heartbeat stale (${Math.round(age / 1000)}s ago). Agent may be down.`);
+      logInfo("Check: Is agent process running? (node agent.js)");
       return false;
     }
+    logOK(`Heartbeat OK (${Math.round(age / 1000)}s ago)`);
+  } else {
+    logFail("No heartbeat recorded yet");
+    return false;
   }
 
+  // 1e. Summary
+  logOK(`Status: ${data.status}, devices: ${data.device_count}`);
   return true;
 }
 
@@ -124,7 +143,7 @@ async function step2_checkDevices() {
   logOK(`Devices in DB: ${devices.length} (online=${onlineCount}, offline=${offlineCount})`);
 
   for (const d of devices) {
-    logOK(`  ${d.serial} | ${d.model || "unknown"} | status=${d.status} | battery=${d.battery ?? "?"}%`);
+    logOK(`  ${d.serial} | ${d.model || "unknown"} | status=${d.status} | battery=${d.battery_level ?? "?"}%`);
   }
 
   // Use DB devices if any exist (regardless of status — agent controls via Xiaowei, not DB status)
@@ -155,10 +174,82 @@ async function step2_checkDevices() {
   return false;
 }
 
-// ─── Step 3: Find real channel + recent video ───────────
+// ─── Step 3: Proxy assignment check ──────────────────────
 
-async function step3_findRecentVideo() {
-  logStep(3, "Find channel & most recent video from DB");
+async function step3_checkProxies() {
+  logStep(3, "Proxy assignment + verification");
+
+  // 3a. Query proxies assigned to devices for this worker
+  const { data: proxies, error: proxyErr } = await supabase
+    .from("proxies")
+    .select("id, address, username, type, status, device_id")
+    .eq("worker_id", workerId)
+    .not("device_id", "is", null);
+
+  if (proxyErr) {
+    logFail(`Failed to query proxies: ${proxyErr.message}`);
+    return false;
+  }
+
+  if (!proxies || proxies.length === 0) {
+    logInfo("No proxy assignments found for this worker (skipping proxy checks)");
+    logInfo("To test proxies: Dashboard > Proxies > Bulk Import, then auto-assign");
+    return true; // Non-blocking — proxy setup is optional
+  }
+
+  logOK(`Found ${proxies.length} proxy assignment(s)`);
+
+  // 3b. Get device serials for each proxy
+  const deviceIds = proxies.map((p) => p.device_id);
+  const { data: proxyDevices, error: devErr } = await supabase
+    .from("devices")
+    .select("id, serial, proxy_id")
+    .in("id", deviceIds);
+
+  if (devErr) {
+    logFail(`Failed to query proxy devices: ${devErr.message}`);
+    return false;
+  }
+
+  const deviceMap = new Map();
+  for (const d of (proxyDevices || [])) {
+    deviceMap.set(d.id, d);
+  }
+
+  // 3c. Verify each proxy-device pair
+  let okCount = 0;
+  for (const proxy of proxies) {
+    const device = deviceMap.get(proxy.device_id);
+    const serial = device ? device.serial : "unknown";
+    const creds = proxy.username ? `${proxy.username}:***@` : "";
+    const proxyUrl = `${proxy.type || "socks5"}://${creds}${proxy.address}`;
+
+    // Check bidirectional FK consistency
+    const fkOk = device && device.proxy_id === proxy.id;
+
+    if (fkOk) {
+      logOK(`${serial} ← proxy: ${proxyUrl} ✓`);
+      okCount++;
+    } else if (device && !device.proxy_id) {
+      logFail(`${serial} ← proxy: ${proxyUrl} (device.proxy_id is null — FK mismatch)`);
+    } else {
+      logFail(`${serial} ← proxy: ${proxyUrl} (device not found or FK mismatch)`);
+    }
+  }
+
+  logOK(`${okCount}/${proxies.length} 프록시 배정 완료`);
+
+  if (okCount < proxies.length) {
+    logInfo("Some proxy-device FK links are inconsistent. Use Dashboard auto-assign to fix.");
+  }
+
+  return true;
+}
+
+// ─── Step 4: Find real channel + recent video ───────────
+
+async function step4_findRecentVideo() {
+  logStep(4, "Find channel & most recent video from DB");
 
   // Get channels with monitoring_enabled
   const { data: channels, error: chErr } = await supabase
@@ -212,11 +303,11 @@ async function step3_findRecentVideo() {
   return false;
 }
 
-// ─── Step 4: Create watch task ──────────────────────────
+// ─── Step 5: Create watch task ──────────────────────────
 
-async function step4_createTask() {
+async function step5_createTask() {
   const count = deviceCount || devices.length || 3;
-  logStep(4, `Create watch_video task (device_count=${count})`);
+  logStep(5, `Create watch_video task (device_count=${count})`);
 
   const payload = {
     watchPercent: 80,
@@ -254,10 +345,10 @@ async function step4_createTask() {
   return true;
 }
 
-// ─── Step 5: Track execution ────────────────────────────
+// ─── Step 6: Track execution ────────────────────────────
 
-async function step5_trackExecution() {
-  logStep(5, "Track execution: pending -> running -> completed/failed");
+async function step6_trackExecution() {
+  logStep(6, "Track execution: pending -> running -> completed/failed");
 
   // 5a. Wait for agent to claim the task
   process.stdout.write("  Waiting for agent to claim task");
@@ -352,10 +443,10 @@ async function step5_trackExecution() {
   }
 }
 
-// ─── Step 6: Verify logs ────────────────────────────────
+// ─── Step 7: Verify logs ────────────────────────────────
 
-async function step6_verifyLogs() {
-  logStep(6, "Verify task_logs pipeline (insert + query)");
+async function step7_verifyLogs() {
+  logStep(7, "Verify task_logs pipeline (insert + query)");
 
   // 6a. Check if agent created any logs
   const { data: agentLogs } = await supabase
@@ -417,10 +508,10 @@ async function step6_verifyLogs() {
   return true;
 }
 
-// ─── Step 7: Verify video status update ─────────────────
+// ─── Step 8: Verify video status update ─────────────────
 
-async function step7_verifyVideoStatus() {
-  logStep(7, "Verify video status was updated");
+async function step8_verifyVideoStatus() {
+  logStep(8, "Verify video status was updated");
 
   const { data, error } = await supabase
     .from("videos")
@@ -439,10 +530,10 @@ async function step7_verifyVideoStatus() {
   return true;
 }
 
-// ─── Step 8: Cleanup ────────────────────────────────────
+// ─── Step 9: Cleanup ────────────────────────────────────
 
-async function step8_cleanup() {
-  logStep(8, SKIP_CLEANUP ? "Cleanup SKIPPED (--no-cleanup)" : "Cleanup test task");
+async function step9_cleanup() {
+  logStep(9, SKIP_CLEANUP ? "Cleanup SKIPPED (--no-cleanup)" : "Cleanup test task");
 
   if (SKIP_CLEANUP) {
     logInfo(`Task ${taskId} left in DB for manual inspection`);
@@ -489,11 +580,12 @@ async function main() {
   const steps = [
     { name: "Worker check",       fn: step1_checkWorker,       critical: true },
     { name: "Device check",       fn: step2_checkDevices,      critical: true },
-    { name: "Find recent video",  fn: step3_findRecentVideo,   critical: true },
-    { name: "Create watch task",  fn: step4_createTask,        critical: true },
-    { name: "Track execution",    fn: step5_trackExecution,    critical: false },
-    { name: "Verify logs",        fn: step6_verifyLogs,        critical: false },
-    { name: "Verify video status",fn: step7_verifyVideoStatus, critical: false },
+    { name: "Proxy check",        fn: step3_checkProxies,      critical: false },
+    { name: "Find recent video",  fn: step4_findRecentVideo,   critical: true },
+    { name: "Create watch task",  fn: step5_createTask,        critical: true },
+    { name: "Track execution",    fn: step6_trackExecution,    critical: false },
+    { name: "Verify logs",        fn: step7_verifyLogs,        critical: false },
+    { name: "Verify video status",fn: step8_verifyVideoStatus, critical: false },
   ];
 
   const results = [];
@@ -514,7 +606,7 @@ async function main() {
   }
 
   // Always attempt cleanup
-  await step8_cleanup();
+  await step9_cleanup();
 
   // ─── Summary ────────────────────────────────────────
   console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");

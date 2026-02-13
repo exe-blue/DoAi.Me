@@ -31,17 +31,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse each line: host:port:username:password or host:port
+    const invalidLines: string[] = [];
     const rows = rawLines
       .map((line: string) => line.trim())
       .filter(Boolean)
-      .map((line: string) => {
+      .reduce<ProxyInsert[]>((acc, line, idx) => {
         const parts = line.split(":");
-        const host = parts[0];
-        const port = parts[1];
+        const host = parts[0]?.trim();
+        const port = parts[1]?.trim();
+
+        if (
+          !host ||
+          !port ||
+          parts.length < 2 ||
+          !/^\d+$/.test(port)
+        ) {
+          invalidLines.push(`Line ${idx + 1}: "${line}"`);
+          return acc;
+        }
+
+        const portNum = Number(port);
+        if (portNum < 1 || portNum > 65535) {
+          invalidLines.push(`Line ${idx + 1}: "${line}" (port out of range)`);
+          return acc;
+        }
+
         const username = parts[2] || null;
         const password = parts[3] || null;
 
-        return {
+        acc.push({
           address: `${host}:${port}`,
           username,
           password,
@@ -50,8 +68,19 @@ export async function POST(request: NextRequest) {
           worker_id,
           device_id: null,
           assigned_count: 0,
-        } satisfies ProxyInsert;
-      });
+        } satisfies ProxyInsert);
+        return acc;
+      }, []);
+
+    if (rows.length === 0) {
+      return NextResponse.json(
+        {
+          error: "No valid proxy lines found",
+          invalidLines,
+        },
+        { status: 400 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("proxies")

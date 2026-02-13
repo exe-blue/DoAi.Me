@@ -588,6 +588,62 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Bulk Assign Dialog */}
+      <Dialog open={bulkAssignDialogOpen} onOpenChange={setBulkAssignDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>워커에 프록시 배정</DialogTitle>
+            <DialogDescription>
+              미배정 프록시를 선택한 워커(노드)에 일괄 배정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">
+                워커 선택
+              </label>
+              <Select
+                value={bulkAssignNodeId}
+                onValueChange={setBulkAssignNodeId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="워커를 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__" disabled>워커를 선택하세요</SelectItem>
+                  {nodes.map((node) => (
+                    <SelectItem key={node.id} value={node.id}>
+                      {node.name} ({node.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">
+                배정 수량 (비우면 전체)
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={bulkAssignCount}
+                onChange={(e) => setBulkAssignCount(e.target.value)}
+                placeholder="전체"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleBulkAssignToWorker}
+              disabled={bulkAssignNodeId === "__none__"}
+            >
+              배정하기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Manual Assign Dialog */}
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent className="sm:max-w-lg">

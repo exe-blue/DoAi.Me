@@ -21,6 +21,22 @@ class SupabaseSync {
   }
 
   /**
+   * Verify Supabase connection is working
+   * @returns {Promise<boolean>}
+   */
+  async verifyConnection() {
+    const { error } = await this.supabase
+      .from("workers")
+      .select("id")
+      .limit(1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return true;
+  }
+
+  /**
    * Get or create worker by hostname, return its UUID
    * @param {string} hostname
    * @returns {Promise<string>} worker UUID
