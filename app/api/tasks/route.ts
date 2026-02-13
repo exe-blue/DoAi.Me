@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTasksWithDetails, createTask, updateTask, deleteTask, getTaskLogs } from "@/lib/db/tasks";
+import { getTasksWithDetails, createTask, updateTask, deleteTask } from "@/lib/db/tasks";
 import { createManualTask } from "@/lib/pipeline";
 import { mapTaskRow } from "@/lib/mappers";
 import type { Json } from "@/lib/supabase/types";
@@ -10,12 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const rows = await getTasksWithDetails();
-    const tasks = await Promise.all(
-      rows.map(async (row) => {
-        const logs = await getTaskLogs(row.id);
-        return mapTaskRow(row as any, logs);
-      })
-    );
+    const tasks = rows.map((row) => mapTaskRow(row as any));
     return NextResponse.json({ tasks });
   } catch (error) {
     console.error("Error fetching tasks:", error);
