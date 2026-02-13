@@ -8,11 +8,11 @@ import type { TaskLogRow } from "@/lib/supabase/types";
 function mapTaskLogRow(row: TaskLogRow): LogEntry {
   return {
     id: row.id,
-    timestamp: row.created_at,
-    level: (row.status === "error" ? "error" : row.status === "success" ? "success" : "info") as LogLevel,
+    timestamp: row.created_at ?? "",
+    level: (row.level === "error" ? "error" : row.level === "info" ? "info" : "info") as LogLevel,
     source: row.action ?? "System",
     nodeId: row.worker_id ?? "",
-    deviceId: row.device_serial,
+    deviceId: row.device_serial ?? "",
     message: row.message ?? "",
   };
 }

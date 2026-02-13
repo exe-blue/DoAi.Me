@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { create } from "zustand";
-import { useBroadcast } from "@/hooks/use-realtime";
+import { useBroadcast, useDevicesBroadcast } from "@/hooks/use-realtime";
 import type { NodePC, Device, DeviceStatus } from "@/lib/types";
 import type { WorkerRow, DeviceRow } from "@/lib/supabase/types";
 
@@ -9,10 +10,11 @@ function mapDeviceRow(row: DeviceRow): Device {
   return {
     id: row.id,
     serial: row.serial,
-    ip: row.ip_intranet ?? "",
+    ip: (row.ip_intranet as string) ?? "",
     status: (row.status as DeviceStatus) || "offline",
-    currentTask: row.current_task,
+    currentTask: row.current_task_id ?? "",
     nodeId: row.worker_id ?? "",
+    nickname: row.nickname ?? null,
   };
 }
 
@@ -20,7 +22,7 @@ function mapWorkerRow(row: WorkerRow, devices: DeviceRow[]): NodePC {
   return {
     id: row.id,
     name: row.hostname,
-    ip: row.ip_local ?? "",
+    ip: (row.ip_local as string) ?? "",
     status: row.status === "online" ? "connected" : "disconnected",
     devices: devices
       .filter((d) => d.worker_id === row.id)
@@ -28,14 +30,22 @@ function mapWorkerRow(row: WorkerRow, devices: DeviceRow[]): NodePC {
   };
 }
 
+interface BroadcastDevice {
+  serial: string;
+  status: string;
+  model?: string;
+  battery?: number;
+}
+
 interface WorkersState {
   nodes: NodePC[];
   loading: boolean;
   error: string | null;
   fetch: () => Promise<void>;
+  updateDevicesFromBroadcast: (workerId: string, devices: BroadcastDevice[]) => void;
 }
 
-export const useWorkersStore = create<WorkersState>((set) => ({
+export const useWorkersStore = create<WorkersState>((set, get) => ({
   nodes: [],
   loading: false,
   error: null,
@@ -61,6 +71,46 @@ export const useWorkersStore = create<WorkersState>((set) => ({
       });
     }
   },
+  updateDevicesFromBroadcast: (workerId: string, devices: BroadcastDevice[]) => {
+    const { nodes } = get();
+    const updatedNodes = nodes.map((node) => {
+      if (node.id !== workerId) return node;
+
+      const broadcastMap = new Map(devices.map((d) => [d.serial, d]));
+      const matchedSerials = new Set<string>();
+
+      const updatedDevices = node.devices.map((existing) => {
+        const update = broadcastMap.get(existing.serial);
+        if (update) {
+          matchedSerials.add(existing.serial);
+          return {
+            ...existing,
+            status: (update.status as DeviceStatus) || existing.status,
+          };
+        }
+        return existing;
+      });
+
+      // Add new devices not yet in the store
+      for (const [serial, d] of broadcastMap) {
+        if (!matchedSerials.has(serial)) {
+          updatedDevices.push({
+            id: serial,
+            serial,
+            ip: "",
+            status: (d.status as DeviceStatus) || "online",
+            currentTask: null,
+            nodeId: workerId,
+            nickname: null,
+          });
+        }
+      }
+
+      return { ...node, devices: updatedDevices };
+    });
+
+    set({ nodes: updatedNodes });
+  },
 }));
 
 /**
@@ -69,11 +119,28 @@ export const useWorkersStore = create<WorkersState>((set) => ({
  */
 export function useWorkersWithRealtime() {
   const store = useWorkersStore();
+  const fetchRef = useRef(store.fetch);
+  fetchRef.current = store.fetch;
 
+  // room:workers — refetch on worker-level changes
   useBroadcast("room:workers", ["insert", "update", "delete"], () => {
-    // On any worker update, refetch workers and devices
     store.fetch();
   });
+
+  // room:devices — incremental device status updates
+  useDevicesBroadcast({
+    onUpdate: (workerId, devices) => {
+      store.updateDevicesFromBroadcast(workerId, devices);
+    },
+  });
+
+  // Fallback: full refetch every 5 minutes
+  useEffect(() => {
+    const handle = setInterval(() => {
+      fetchRef.current();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(handle);
+  }, []);
 
   return store;
 }

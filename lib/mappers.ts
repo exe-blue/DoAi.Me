@@ -55,10 +55,10 @@ export function mapChannelRow(row: ChannelRow): Channel {
     youtubeId: row.youtube_channel_id,
     youtubeHandle: extractHandleFromUrl(row.channel_url),
     thumbnail: row.thumbnail_url || "/placeholder-channel.jpg",
-    subscriberCount: formatSubscriberCount(row.subscriber_count),
-    videoCount: row.video_count,
-    addedAt: row.created_at,
-    autoSync: row.monitoring_enabled,
+    subscriberCount: formatSubscriberCount(row.subscriber_count ?? 0),
+    videoCount: row.video_count ?? 0,
+    addedAt: row.created_at ?? "",
+    autoSync: row.monitoring_enabled ?? false,
   };
 }
 
@@ -70,14 +70,14 @@ export function mapVideoRow(
   return {
     id: row.id,
     videoId: row.youtube_video_id,
-    title: row.title,
+    title: row.title ?? "",
     thumbnail: row.thumbnail_url || `https://img.youtube.com/vi/${row.youtube_video_id}/mqdefault.jpg`,
     duration: formatDurationFromSeconds(row.duration_seconds),
     channelName,
-    publishedAt: row.published_at || row.created_at,
-    registeredAt: row.created_at,
+    publishedAt: row.published_at || (row.created_at ?? ""),
+    registeredAt: row.created_at ?? "",
     taskId,
-    status: mapVideoStatusToContentStatus(row.status),
+    status: mapVideoStatusToContentStatus(row.status ?? ""),
   };
 }
 
@@ -90,10 +90,10 @@ export function mapTaskRow(
 ): Task {
   const dbStatusToTaskStatus: Record<string, string> = {
     pending: "queued",
-    started: "running",
+    running: "running",
     completed: "completed",
     failed: "error",
-    stopped: "stopped",
+    cancelled: "stopped",
   };
   return {
     id: row.id,
@@ -102,15 +102,15 @@ export function mapTaskRow(
     thumbnail: row.videos?.thumbnail_url || (row.videos?.youtube_video_id ? `https://img.youtube.com/vi/${row.videos.youtube_video_id}/mqdefault.jpg` : ""),
     duration: formatDurationFromSeconds(row.videos?.duration_seconds ?? null),
     videoId: row.videos?.youtube_video_id ?? "",
-    status: (dbStatusToTaskStatus[row.status] ?? row.status) as Task["status"],
-    priority: row.priority,
-    isPriority: row.priority <= 3,
+    status: (dbStatusToTaskStatus[row.status ?? ""] ?? row.status) as Task["status"],
+    priority: row.priority ?? 5,
+    isPriority: (row.priority ?? 5) <= 3,
     assignedDevices: 0,
-    totalDevices: row.device_count,
-    progress: row.status === "completed" ? 100 : row.status === "started" ? 50 : 0,
+    totalDevices: row.device_count ?? 0,
+    progress: row.status === "completed" ? 100 : row.status === "running" ? 50 : 0,
     variables: extractVariables(row.payload),
-    createdAt: row.created_at,
-    completedAt: row.completed_at,
+    createdAt: row.created_at ?? "",
+    completedAt: row.completed_at ?? "",
     logs,
   };
 }

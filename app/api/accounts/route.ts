@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       .from("accounts")
       .insert({
         email,
-        status: status ?? "active",
+        status: status ?? "available",
         device_id: device_id ?? null,
       })
       .select("*")

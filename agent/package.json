@@ -1,14 +1,25 @@
 {
   "name": "doai-me-agent",
-  "version": "0.1.0",
+  "version": "2.1.0",
   "private": true,
-  "main": "agent.js",
+  "main": "dist/agent.js",
   "scripts": {
-    "start": "node agent.js"
+    "build": "tsc",
+    "start": "node dist/agent.js",
+    "dev": "tsc --watch",
+    "start:legacy": "node agent.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
     "dotenv": "^16.4.5",
+    "winston": "^3.17.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.16.0",
+    "@types/ws": "^8.5.13",
+    "pg": "^8.18.0",
+    "typescript": "^5.6.3"
   }
 }

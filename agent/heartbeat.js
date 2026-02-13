@@ -57,11 +57,13 @@ function normalizeDevice(d) {
  * @param {import('./xiaowei-client')} xiaowei
  * @param {import('./supabase-sync')} supabaseSync
  * @param {object} config
+ * @param {import('./task-executor')|null} taskExecutor - optional, for stats reporting
  * @returns {NodeJS.Timeout} interval handle
  */
-function startHeartbeat(xiaowei, supabaseSync, config) {
+function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor) {
   const workerId = supabaseSync.workerId;
   const interval = config.heartbeatInterval || 30000;
+  const startedAt = new Date().toISOString();
 
   console.log(
     `[Heartbeat] Starting (every ${interval / 1000}s) for worker ${workerId}`
@@ -80,15 +82,41 @@ function startHeartbeat(xiaowei, supabaseSync, config) {
         }
       }
 
-      // 2. Update worker status
+      // 2. Build metadata with execution stats
+      const metadata = {
+        started_at: startedAt,
+        uptime_sec: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
+        scripts_dir: config.scriptsDir || null,
+      };
+
+      // Task execution stats
+      if (taskExecutor) {
+        metadata.task_stats = taskExecutor.getStats();
+      }
+
+      // Subscription status
+      const subStatus = supabaseSync.getSubscriptionStatus();
+      metadata.subscriptions = {
+        broadcast: subStatus.broadcast,
+        pg_changes: subStatus.pgChanges,
+        broadcast_received: subStatus.broadcastReceived,
+        pg_changes_received: subStatus.pgChangesReceived,
+        last_via: subStatus.lastVia,
+      };
+
+      // Log pipeline stats
+      metadata.log_stats = supabaseSync.getLogStats();
+
+      // 3. Update worker status with metadata
       await supabaseSync.updateWorkerStatus(
         workerId,
         "online",
         devices.length,
-        xiaowei.connected
+        xiaowei.connected,
+        metadata
       );
 
-      // 3. Upsert each device
+      // 4. Upsert each device
       const activeSerials = [];
       for (const device of devices) {
         if (!device.serial) continue;
@@ -103,7 +131,7 @@ function startHeartbeat(xiaowei, supabaseSync, config) {
         );
       }
 
-      // 4. Mark disconnected devices as offline
+      // 5. Mark disconnected devices as offline
       await supabaseSync.markOfflineDevices(workerId, activeSerials);
 
       console.log(

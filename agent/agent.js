@@ -8,27 +8,62 @@ const XiaoweiClient = require("./xiaowei-client");
 const SupabaseSync = require("./supabase-sync");
 const { startHeartbeat } = require("./heartbeat");
 const TaskExecutor = require("./task-executor");
+const ProxyManager = require("./proxy-manager");
+const AccountManager = require("./account-manager");
+const ScriptVerifier = require("./script-verifier");
 
 let xiaowei = null;
 let supabaseSync = null;
 let heartbeatHandle = null;
 let taskPollHandle = null;
 let taskExecutor = null;
+let proxyManager = null;
+let accountManager = null;
+let scriptVerifier = null;
 let shuttingDown = false;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Wait for Xiaowei WebSocket to connect with timeout
+ * @param {XiaoweiClient} client
+ * @param {number} timeoutMs - Max time to wait for connection
+ * @returns {Promise<void>}
+ */
+function waitForXiaowei(client, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    if (client.connected) {
+      return resolve();
+    }
+
+    const timeout = setTimeout(() => {
+      client.removeListener("connected", onConnect);
+      reject(new Error(`Xiaowei did not connect within ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    function onConnect() {
+      clearTimeout(timeout);
+      resolve();
+    }
+
+    client.once("connected", onConnect);
+    client.connect();
+  });
+}
 
 async function main() {
   console.log(`[Agent] Starting worker: ${config.workerName}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
-  console.log(`[Agent] Heartbeat interval: ${config.heartbeatInterval}ms`);
-  console.log(`[Agent] Task poll interval: ${config.taskPollInterval}ms`);
 
   // 1. Validate required config
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
-    console.error("[Agent] SUPABASE_URL and SUPABASE_ANON_KEY are required");
+    console.error("[Agent] ✗ SUPABASE_URL and SUPABASE_ANON_KEY are required");
     process.exit(1);
   }
 
-  // 2. Initialize Supabase and register worker
+  // 2. Initialize and verify Supabase connection
   supabaseSync = new SupabaseSync(
     config.supabaseUrl,
     config.supabaseAnonKey,
@@ -36,37 +71,116 @@ async function main() {
   );
 
   try {
-    const workerId = await supabaseSync.getWorkerId(config.workerName);
-    console.log(`[Agent] Worker ID: ${workerId}`);
+    await supabaseSync.verifyConnection();
+    console.log("[Agent] ✓ Supabase connected");
   } catch (err) {
-    console.error(`[Agent] Failed to register worker: ${err.message}`);
+    console.error(`[Agent] ✗ Supabase connection failed: ${err.message}`);
     process.exit(1);
   }
 
-  // 3. Initialize Xiaowei WebSocket client
-  xiaowei = new XiaoweiClient(config.xiaoweiWsUrl);
+  // 3. Register worker
+  try {
+    const workerId = await supabaseSync.getWorkerId(config.workerName);
+    console.log(`[Agent] Worker ID: ${workerId}`);
+  } catch (err) {
+    console.error(`[Agent] ✗ Worker registration failed: ${err.message}`);
+    process.exit(1);
+  }
 
-  xiaowei.on("connected", () => {
-    console.log("[Agent] Xiaowei connection established");
-  });
+  // 4. Initialize Xiaowei WebSocket client and wait for connection
+  xiaowei = new XiaoweiClient(config.xiaoweiWsUrl);
 
   xiaowei.on("disconnected", () => {
     console.log("[Agent] Xiaowei connection lost, will reconnect...");
   });
 
   xiaowei.on("error", (err) => {
-    console.error(`[Agent] Xiaowei error: ${err.message}`);
+    // Only log non-ECONNREFUSED errors (reconnect handles refused)
+    if (!err.message.includes("ECONNREFUSED")) {
+      console.error(`[Agent] Xiaowei error: ${err.message}`);
+    }
   });
 
-  xiaowei.connect();
+  // Wait for Xiaowei connection with timeout
+  try {
+    await waitForXiaowei(xiaowei, 10000);
+    console.log(`[Agent] ✓ Xiaowei connected (${config.xiaoweiWsUrl})`);
+  } catch (err) {
+    console.warn(`[Agent] ✗ Xiaowei connection failed: ${err.message}`);
+    console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect");
+  }
 
-  // 4. Initialize task executor
+  // 5. Initialize task executor
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
 
-  // 5. Start heartbeat loop
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config);
+  // 6. Start heartbeat loop and wait for first beat
+  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor);
 
-  // 6. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
+  // Wait briefly for first heartbeat to complete
+  await sleep(2000);
+  console.log(`[Agent] ✓ Worker registered: ${config.workerName} (heartbeat OK)`);
+
+  // 7. Proxy setup — load assignments from Supabase and apply to devices
+  proxyManager = new ProxyManager(xiaowei, supabaseSync);
+  if (xiaowei.connected) {
+    try {
+      const count = await proxyManager.loadAssignments(supabaseSync.workerId);
+      if (count > 0) {
+        const { applied, total } = await proxyManager.applyAll();
+        console.log(`[Agent] ✓ Proxy setup: ${applied}/${total} devices`);
+      } else {
+        console.log("[Agent] - Proxy setup: no assignments (skipped)");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Proxy setup failed: ${err.message}`);
+    }
+  } else {
+    console.log("[Agent] - Proxy setup: Xiaowei offline (skipped)");
+  }
+
+  // 8. Account verification — check YouTube login on each device
+  accountManager = new AccountManager(xiaowei, supabaseSync);
+  if (xiaowei.connected) {
+    try {
+      const count = await accountManager.loadAssignments(supabaseSync.workerId);
+      if (count > 0) {
+        const { verified, total } = await accountManager.verifyAll();
+        console.log(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
+      } else {
+        console.log("[Agent] - Account check: no assignments (skipped)");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Account check failed: ${err.message}`);
+    }
+  } else {
+    console.log("[Agent] - Account check: Xiaowei offline (skipped)");
+  }
+
+  // 9. Script verification — check SCRIPTS_DIR and run test
+  scriptVerifier = new ScriptVerifier(xiaowei, config);
+  if (config.scriptsDir) {
+    try {
+      // Pick first known device serial for test run (if available)
+      const testSerial = xiaowei.connected
+        ? [...(proxyManager?.assignments?.keys() || accountManager?.assignments?.keys() || [])][0] || null
+        : null;
+      const { dirOk, requiredOk, testOk } = await scriptVerifier.verifyAll(testSerial);
+
+      if (dirOk && requiredOk) {
+        console.log(`[Agent] ✓ Script check: ${scriptVerifier.availableScripts.length} scripts, required OK`);
+      } else if (dirOk) {
+        console.warn("[Agent] ⚠ Script check: directory OK but missing required scripts");
+      } else {
+        console.warn("[Agent] ✗ Script check: SCRIPTS_DIR not accessible");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Script check failed: ${err.message}`);
+    }
+  } else {
+    console.log("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
+  }
+
+  // 10. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
   const taskCallback = (task) => {
     if (task.status === "pending") {
       taskExecutor.execute(task);
@@ -74,12 +188,22 @@ async function main() {
   };
 
   // Primary: Broadcast channel (room:tasks) — lower latency
-  supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  if (broadcastResult.status === "SUBSCRIBED") {
+    console.log("[Agent] ✓ Broadcast room:tasks 구독 완료");
+  } else {
+    console.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
+  }
 
   // Fallback: postgres_changes — in case Broadcast is not configured
-  supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  if (pgResult.status === "SUBSCRIBED") {
+    console.log("[Agent] ✓ postgres_changes 구독 완료");
+  } else {
+    console.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
+  }
 
-  // 7. Poll for pending tasks as fallback (Realtime may miss events)
+  // 11. Poll for pending tasks as triple-fallback (Realtime may miss events)
   taskPollHandle = setInterval(async () => {
     try {
       const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);

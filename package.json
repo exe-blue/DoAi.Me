@@ -2,6 +2,10 @@
   "name": "doai-me",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,7 +13,13 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:api": "node tests/run-api-tests.js"
+    "test:e2e": "node tests/e2e-local.js",
+    "test:api": "node tests/run-api-tests.js",
+    "agent:dev": "cd agent && npm run dev",
+    "agent:start": "cd agent && npm start",
+    "db:verify": "npx supabase db execute --file supabase/verify_schema.sql",
+    "clean": "rm -rf .next",
+    "clean:cache": "rm -rf .next/cache"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -46,8 +56,10 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
+    "framer-motion": "^12.34.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.544.0",
+    "motion": "^12.34.0",
     "next": "^15.5.12",
     "next-themes": "^0.4.6",
     "react": "^18.3.1",

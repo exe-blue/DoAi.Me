@@ -1,12 +1,14 @@
 // Xiaowei AutoJS - YouTube 시청 스크립트
-// farm_scripts/youtube_watch.js 로 동기화
+// Agent가 adbShell로 YouTube 앱을 먼저 실행한 후 이 스크립트를 autojsCreate로 호출
+// 파라미터는 Xiaowei autojsCreate의 execArgv로 전달됨
 
-// 파라미터는 클립보드 또는 config 파일로 전달
-var config = {
-  videoUrl: "https://youtube.com/watch?v=...",
-  watchDuration: 30000,
-  likeAfterWatch: false,
-};
+var videoUrl = engines.myEngine().execArgv.videoUrl || "";
+var watchDuration = engines.myEngine().execArgv.watchDuration || 30000;
 
-// 실제 구현 시 Xiaowei autojsCreate로 실행됨
-// shell("am start -a android.intent.action.VIEW -d '" + config.videoUrl + "'");
+if (videoUrl) {
+  // YouTube 앱에서 해당 영상 열기
+  shell("am start -a android.intent.action.VIEW -d '" + videoUrl + "'");
+}
+
+// 시청 시간 대기
+sleep(watchDuration);

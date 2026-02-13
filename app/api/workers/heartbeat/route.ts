@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
           status: "online",
           last_heartbeat: new Date().toISOString(),
           device_count: devices?.length ?? 0,
-        },
+        } as any,
         { onConflict: "hostname" }
       )
       .select("*")
@@ -69,11 +69,11 @@ export async function POST(request: NextRequest) {
               serial: dev.serial,
               worker_id: worker.id,
               model: dev.model ?? null,
-              status: dev.status ?? "online",
-              battery: dev.battery ?? null,
+              status: (dev.status as any) ?? "online",
+              battery_level: dev.battery ?? null,
               ip_intranet: dev.ip_intranet ?? null,
               last_seen: new Date().toISOString(),
-            },
+            } as any,
             { onConflict: "serial" }
           );
 

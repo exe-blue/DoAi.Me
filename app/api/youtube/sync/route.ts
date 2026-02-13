@@ -3,7 +3,6 @@ import { resolveChannelHandle, fetchRecentVideos } from "@/lib/youtube";
 import { getAllChannels, upsertChannel } from "@/lib/db/channels";
 import { getVideosWithChannelName, upsertVideo } from "@/lib/db/videos";
 import { getTaskByVideoId } from "@/lib/db/tasks";
-import { processNewVideos } from "@/lib/pipeline";
 import { mapChannelRow, mapVideoRow } from "@/lib/mappers";
 import type { ChannelRow, VideoRow } from "@/lib/supabase/types";
 
@@ -54,7 +53,6 @@ export async function GET(request: NextRequest) {
       : channels.filter((c) => c.monitoring_enabled);
 
     // Fetch and upsert videos for each channel
-    const newVideoIds: string[] = [];
     let totalNewVideos = 0;
 
     await Promise.allSettled(
@@ -94,10 +92,9 @@ export async function GET(request: NextRequest) {
             });
 
             // Check if this is a newly created video (created_at ~= updated_at)
-            const createdMs = new Date(upserted.created_at).getTime();
-            const updatedMs = new Date(upserted.updated_at).getTime();
+            const createdMs = new Date(upserted.created_at ?? "").getTime();
+            const updatedMs = new Date(upserted.updated_at ?? "").getTime();
             if (Math.abs(updatedMs - createdMs) < 5000) {
-              newVideoIds.push(upserted.id);
               totalNewVideos++;
             }
           }
@@ -106,13 +103,6 @@ export async function GET(request: NextRequest) {
         }
       })
     );
-
-    // Run pipeline on new videos
-    let autoCreatedTasks = 0;
-    if (newVideoIds.length > 0) {
-      const pipelineResult = await processNewVideos(newVideoIds);
-      autoCreatedTasks = pipelineResult.createdTasks.length;
-    }
 
     // Read final state from DB
     const finalChannels = await getAllChannels() as ChannelRow[];
@@ -133,7 +123,6 @@ export async function GET(request: NextRequest) {
       syncMeta: {
         syncedAt: new Date().toISOString(),
         newVideoCount: totalNewVideos,
-        autoCreatedTasks,
         channelsSynced: channelsToSync.length,
       },
     });

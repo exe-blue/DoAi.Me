@@ -157,7 +157,7 @@ function DeviceSelector({
                     <Button
                       size="sm"
                       variant={allSelected ? "default" : "outline"}
-                      className="h-6 text-[10px] px-2"
+                      className="h-6 text-[11px] px-2"
                       onClick={() => selectAllNode(node.id)}
                     >
                       {allSelected ? "전체해제" : "전체선택"}
@@ -165,7 +165,7 @@ function DeviceSelector({
                     {nodeSelected && nodeSelected.size > 0 && (
                       <Badge
                         variant="outline"
-                        className="text-[10px] border-primary/30 text-primary"
+                        className="text-[11px] border-primary/30 text-primary"
                       >
                         {nodeSelected.size}개
                       </Badge>
@@ -182,7 +182,7 @@ function DeviceSelector({
                               type="button"
                               key={device.id}
                               className={cn(
-                                "flex items-center justify-center rounded border p-1 text-[9px] font-mono transition-all cursor-pointer",
+                                "flex items-center justify-center rounded border p-1 text-[10px] font-mono transition-all cursor-pointer",
                                 isSelected
                                   ? "border-primary bg-primary/20 text-primary"
                                   : "border-border bg-secondary hover:border-muted-foreground text-muted-foreground",
@@ -352,10 +352,10 @@ export function PresetsPage({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">
+          <h1 className="text-2xl font-semibold text-foreground">
             명령 프리셋
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             ADB/JS 명령어를 등록하고 기기에 전송합니다.
           </p>
         </div>
@@ -366,8 +366,8 @@ export function PresetsPage({
       </div>
 
       {executedMessage && (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
-          <p className="text-sm text-emerald-400">{executedMessage}</p>
+        <div className="rounded-md border border-status-success/30 bg-status-success/10 p-3">
+          <p className="text-sm text-status-success">{executedMessage}</p>
         </div>
       )}
 
@@ -410,16 +410,16 @@ export function PresetsPage({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {preset.type === "adb" ? (
-                          <Terminal className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          <Terminal className="h-3.5 w-3.5 text-status-success shrink-0" />
                         ) : (
-                          <FileCode className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                          <FileCode className="h-3.5 w-3.5 text-status-info shrink-0" />
                         )}
                         <span className="text-sm font-medium text-foreground truncate">
                           {preset.name}
                         </span>
                         <Badge
                           variant="outline"
-                          className="text-[10px] shrink-0"
+                          className="text-[11px] shrink-0"
                         >
                           {preset.type.toUpperCase()}
                         </Badge>
@@ -470,13 +470,13 @@ export function PresetsPage({
                       <Badge
                         variant="outline"
                         className={cn(
-                          "text-[10px]",
+                          "text-[11px]",
                           h.status === "success" &&
-                            "border-emerald-500/30 text-emerald-400",
+                            "border-status-success/30 text-status-success",
                           h.status === "running" &&
-                            "border-amber-500/30 text-amber-400",
+                            "border-status-warning/30 text-status-warning",
                           h.status === "failed" &&
-                            "border-red-500/30 text-red-400",
+                            "border-status-error/30 text-status-error",
                         )}
                       >
                         {h.status === "success"
@@ -489,7 +489,7 @@ export function PresetsPage({
                         {h.presetName}
                       </span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                       {new Date(h.executedAt).toLocaleString("ko-KR")}
                     </span>
                   </div>

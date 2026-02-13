@@ -11,8 +11,8 @@ function mapPresetRow(row: PresetRow): CommandPreset {
     type: row.type as CommandPreset["type"],
     command: typeof config?.command === "string" ? config.command : "",
     description: row.description ?? "",
-    createdAt: row.created_at,
-    updatedAt: row.created_at,
+    createdAt: row.created_at ?? "",
+    updatedAt: row.created_at ?? "",
   };
 }
 

@@ -83,58 +83,6 @@ export function useTasksBroadcast(handlers: {
 }
 
 /**
- * room:task:<taskId>:logs Broadcast 구독
- * 특정 태스크의 실행 로그를 실시간 수신
- *
- * @example
- * ```tsx
- * useTaskLogsBroadcast(taskId, {
- *   onLog: (log) => appendLog(log),
- * });
- * ```
- */
-export function useTaskLogsBroadcast(
-  taskId: string | null,
-  handlers: {
-    onLog?: (log: TaskLogRow) => void;
-  }
-) {
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
-
-  useEffect(() => {
-    if (!taskId) return;
-
-    const supabase = createClient();
-    if (!supabase) return;
-
-    const channelName = `room:task:${taskId}:logs`;
-
-    channelRef.current = supabase
-      .channel(channelName)
-      .on("broadcast", { event: "insert" }, ({ payload }) => {
-        const data = payload as BroadcastPayload<TaskLogRow>;
-        if (data?.record) {
-          handlersRef.current.onLog?.(data.record);
-        }
-      })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log(`[Realtime] Subscribed to ${channelName}`);
-        }
-      });
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [taskId]);
-}
-
-/**
  * room:task_logs 전체 로그 Broadcast 구독 (대시보드 모니터링)
  *
  * @example
@@ -176,6 +124,49 @@ export function useAllTaskLogsBroadcast(handlers: {
       }
     };
   }, []);
+}
+
+/**
+ * room:task:<taskId>:logs 개별 태스크 로그 Broadcast 구독
+ *
+ * @example
+ * ```tsx
+ * useTaskLogsBroadcast(taskId, {
+ *   onLog: (log) => appendLog(log),
+ * });
+ * ```
+ */
+export function useTaskLogsBroadcast(
+  taskId: string | null,
+  handlers: { onLog?: (log: TaskLogRow) => void }
+) {
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  useEffect(() => {
+    if (!taskId) return;
+
+    const supabase = createClient();
+    if (!supabase) return;
+
+    channelRef.current = supabase
+      .channel(`room:task:${taskId}:logs`)
+      .on("broadcast", { event: "insert" }, ({ payload }) => {
+        const data = payload as BroadcastPayload<TaskLogRow>;
+        if (data?.record) {
+          handlersRef.current.onLog?.(data.record);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [taskId]);
 }
 
 /**
@@ -225,4 +216,55 @@ export function useBroadcast<T = unknown>(
       }
     };
   }, [channelName, events.join(",")]);
+}
+
+/**
+ * room:devices Broadcast 구독
+ * Agent가 heartbeat마다 디바이스 상태를 room:devices로 전송
+ */
+export function useDevicesBroadcast(handlers: {
+  onUpdate?: (workerId: string, devices: Array<{
+    serial: string;
+    status: string;
+    model?: string;
+    battery?: number;
+  }>) => void;
+}) {
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    channelRef.current = supabase
+      .channel("room:devices")
+      .on("broadcast", { event: "update" }, ({ payload }) => {
+        const data = payload as {
+          worker_id?: string;
+          devices?: Array<{
+            serial: string;
+            status: string;
+            model?: string;
+            battery?: number;
+          }>;
+        };
+        if (data?.worker_id && data?.devices) {
+          handlersRef.current.onUpdate?.(data.worker_id, data.devices);
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Realtime] Subscribed to room:devices");
+        }
+      });
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, []);
 }
