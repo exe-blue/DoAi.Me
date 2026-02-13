@@ -9,40 +9,53 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
 
-    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
     const taskId = searchParams.get("task_id");
-
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
+    if (!taskId) {
+      return NextResponse.json(
+        { error: "task_id is required" },
+        { status: 400 }
+      );
+    }
 
     let query = supabase
       .from("task_logs")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      .select("*")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false });
 
-    if (taskId) {
-      query = query.eq("task_id", taskId);
+    const deviceId = searchParams.get("device_id");
+    if (deviceId) query = query.eq("device_serial", deviceId);
+
+    const level = searchParams.get("level");
+    if (level) {
+      const levels = level.split(",").map((l) => l.trim());
+      query = query.in("level", levels);
     }
 
-    const { data, error, count } = await query.returns<TaskLogRow[]>();
+    const search = searchParams.get("search");
+    if (search) query = query.ilike("message", `%${search}%`);
+
+    const before = searchParams.get("before");
+    if (before) query = query.lt("created_at", before);
+
+    const limit = Math.min(
+      parseInt(searchParams.get("limit") || "200"),
+      1000
+    );
+    query = query.limit(limit);
+
+    const { data, error } = await query.returns<TaskLogRow[]>();
 
     if (error) throw error;
 
-    return NextResponse.json({
-      logs: data ?? [],
-      pagination: {
-        page,
-        limit,
-        total: count ?? 0,
-        totalPages: Math.ceil((count ?? 0) / limit),
-      },
-    });
+    return NextResponse.json({ logs: data ?? [] });
   } catch (error) {
     console.error("Error fetching logs:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch logs" },
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to fetch logs",
+      },
       { status: 500 }
     );
   }
