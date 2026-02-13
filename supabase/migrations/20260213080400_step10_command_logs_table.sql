@@ -23,7 +23,10 @@ CREATE INDEX IF NOT EXISTS idx_command_logs_created ON command_logs(created_at D
 CREATE INDEX IF NOT EXISTS idx_command_logs_status ON command_logs(status);
 
 -- 4. Enable Realtime on command_logs (agent subscribes to INSERT events with status='pending')
-ALTER PUBLICATION supabase_realtime ADD TABLE command_logs;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE command_logs;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Verify
 SELECT column_name, data_type, column_default

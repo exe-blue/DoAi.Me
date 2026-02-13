@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- 2. Enable Realtime on settings table (agent subscribes to UPDATE events)
-ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 3. Auto-update updated_at on changes
 CREATE OR REPLACE FUNCTION update_settings_updated_at()
