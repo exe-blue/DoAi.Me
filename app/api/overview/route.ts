@@ -5,19 +5,35 @@ export async function GET() {
   const supabase = createServerClient();
 
   // Query workers
-  const { data: workers } = await supabase
+  const { data: workers, error: workersError } = await supabase
     .from('workers')
     .select('*')
     .returns<any[]>();
 
+  if (workersError) {
+    console.error('[API /overview] Workers query failed:', workersError.message);
+    return NextResponse.json(
+      { error: 'Failed to fetch workers', details: workersError.message },
+      { status: 500 }
+    );
+  }
+
   const onlineWorker = workers?.find(w => w.status === 'online');
 
   // Query devices - count by status
-  const { data: devices } = await supabase
+  const { data: devices, error: devicesError } = await supabase
     .from('devices')
     .select('status')
     .eq('worker_id', onlineWorker?.id || '')
     .returns<any[]>();
+
+  if (devicesError) {
+    console.error('[API /overview] Devices query failed:', devicesError.message);
+    return NextResponse.json(
+      { error: 'Failed to fetch devices', details: devicesError.message },
+      { status: 500 }
+    );
+  }
 
   const deviceCounts = {
     total: devices?.length || 0,
@@ -27,27 +43,43 @@ export async function GET() {
     offline: devices?.filter(d => ['offline', 'disconnected'].includes(d.status)).length || 0,
   };
 
-  // Query tasks - today's stats
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Query tasks - today's stats (UTC-based cutoff)
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const { data: tasks } = await supabase
+  const { data: tasks, error: tasksError } = await supabase
     .from('tasks')
     .select('status, created_at, completed_at')
     .returns<any[]>();
 
+  if (tasksError) {
+    console.error('[API /overview] Tasks query failed:', tasksError.message);
+    return NextResponse.json(
+      { error: 'Failed to fetch tasks', details: tasksError.message },
+      { status: 500 }
+    );
+  }
+
   const taskCounts = {
     running: tasks?.filter(t => t.status === 'running').length || 0,
     pending: tasks?.filter(t => t.status === 'pending').length || 0,
-    completed_today: tasks?.filter(t => t.status === 'completed' && t.completed_at && new Date(t.completed_at) >= today).length || 0,
-    failed_today: tasks?.filter(t => t.status === 'failed' && t.completed_at && new Date(t.completed_at) >= today).length || 0,
+    completed_today: tasks?.filter(t => t.status === 'completed' && t.completed_at && new Date(t.completed_at) >= todayUtc).length || 0,
+    failed_today: tasks?.filter(t => t.status === 'failed' && t.completed_at && new Date(t.completed_at) >= todayUtc).length || 0,
   };
 
   // Query proxies
-  const { data: proxies } = await supabase
+  const { data: proxies, error: proxiesError } = await supabase
     .from('proxies')
     .select('status, device_serial')
     .returns<any[]>();
+
+  if (proxiesError) {
+    console.error('[API /overview] Proxies query failed:', proxiesError.message);
+    return NextResponse.json(
+      { error: 'Failed to fetch proxies', details: proxiesError.message },
+      { status: 500 }
+    );
+  }
 
   const proxyCounts = {
     total: proxies?.length || 0,

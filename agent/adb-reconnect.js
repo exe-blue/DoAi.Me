@@ -19,6 +19,7 @@ class AdbReconnectManager {
     this.maxRetries = 2; // Max retries per device per cycle
     this.reconnectTimeout = 5000; // 5 second timeout per reconnect attempt
     this.deadThreshold = 10; // Flag as dead after 10 consecutive failures
+    this._reconnectRunning = false; // Guard flag to prevent overlapping cycles
   }
 
   /**
@@ -27,8 +28,10 @@ class AdbReconnectManager {
   start() {
     console.log(`[ADB Reconnect] Starting (every ${this.reconnectInterval / 1000}s)`);
 
-    // Run immediately, then on interval
-    this.reconnectCycle();
+    // Run immediately (unless already running), then on interval
+    if (!this._reconnectRunning) {
+      this.reconnectCycle();
+    }
     this.reconnectHandle = setInterval(() => this.reconnectCycle(), this.reconnectInterval);
   }
 
@@ -55,6 +58,13 @@ class AdbReconnectManager {
    * Main reconnect cycle - detect disconnected devices and reconnect
    */
   async reconnectCycle() {
+    // Guard: skip if a previous cycle is still running
+    if (this._reconnectRunning) {
+      console.log('[ADB Reconnect] Previous cycle still running, skipping');
+      return;
+    }
+    this._reconnectRunning = true;
+
     try {
       // Skip if Xiaowei is not connected
       if (!this.xiaowei.connected) {
@@ -141,6 +151,8 @@ class AdbReconnectManager {
 
     } catch (err) {
       console.error(`[ADB Reconnect] Cycle error: ${err.message}`);
+    } finally {
+      this._reconnectRunning = false;
     }
   }
 

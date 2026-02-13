@@ -138,7 +138,7 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
           const proxyCounts = await supabaseSync.getProxyCounts(workerId);
 
           // Detect and publish device state changes
-          broadcaster.detectAndPublishChanges(devices);
+          await broadcaster.detectAndPublishChanges(devices);
 
           // Build and publish dashboard snapshot
           await broadcaster.publishDashboardSnapshot({

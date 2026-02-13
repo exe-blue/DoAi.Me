@@ -87,7 +87,7 @@ class DashboardBroadcaster {
    * @param {Array<{serial: string, status: string}>} currentDevices
    * @returns {{offline: string[], recovered: string[]}}
    */
-  detectAndPublishChanges(currentDevices) {
+  async detectAndPublishChanges(currentDevices) {
     const changes = { offline: [], recovered: [] };
     const currentMap = new Map(currentDevices.map(d => [d.serial, d.status]));
 
@@ -108,12 +108,12 @@ class DashboardBroadcaster {
 
     // Batch publish (1 event per type, not per device)
     if (changes.offline.length > 0) {
-      this.publishSystemEvent('device_offline',
+      await this.publishSystemEvent('device_offline',
         `${changes.offline.length} device(s) disconnected`,
         { serials: changes.offline, count: changes.offline.length });
     }
     if (changes.recovered.length > 0) {
-      this.publishSystemEvent('device_recovered',
+      await this.publishSystemEvent('device_recovered',
         `${changes.recovered.length} device(s) reconnected`,
         { serials: changes.recovered, count: changes.recovered.length });
     }
