@@ -41,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Task, NodePC, TaskStatus, TaskVariables } from "@/lib/types";
 import { statusTextClass, statusBadgeClass, statusDotClass } from "@/components/ui/status-indicator";
+import { TaskDeviceGrid } from "@/components/task-device-grid";
 
 /* ──────────── Status helpers ──────────── */
 
@@ -423,6 +424,8 @@ function TaskItem({
   onDeleteTask: (taskId: string) => void;
   onStopTask: (taskId: string) => void;
 }) {
+  const [showDeviceGrid, setShowDeviceGrid] = useState(false);
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 hover:border-muted-foreground/20 transition-colors">
       <div className="flex items-start gap-4">
@@ -583,6 +586,15 @@ function TaskItem({
             variant="outline"
             size="sm"
             className="h-7 text-xs px-3 bg-transparent"
+            onClick={() => setShowDeviceGrid(!showDeviceGrid)}
+          >
+            <Monitor className="h-3 w-3 mr-1" />
+            기기 현황
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs px-3 bg-transparent"
             onClick={() => onViewLog(task)}
           >
             <ScrollText className="h-3 w-3 mr-1" />
@@ -602,6 +614,13 @@ function TaskItem({
           </Button>
         </div>
       </div>
+
+      {/* Device Grid (expandable) */}
+      {showDeviceGrid && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <TaskDeviceGrid taskId={task.id} taskStatus={task.status} />
+        </div>
+      )}
     </div>
   );
 }
