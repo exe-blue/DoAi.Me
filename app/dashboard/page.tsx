@@ -9,10 +9,8 @@ import { HealthBar } from "@/components/overview/health-bar";
 import { StatCards } from "@/components/overview/stat-cards";
 import { WorkerDetail } from "@/components/overview/worker-detail";
 import { ActivityFeed } from "@/components/overview/activity-feed";
-import { Card, CardContent } from "@/components/ui/card";
-
 export default function DashboardOverviewPage() {
-  const { worker, devices, tasks, proxies, events, loading, error, fetchInitial } = useDashboardStore();
+  const { worker, devices, tasks, proxies, events, fetchInitial } = useDashboardStore();
 
   // Select action functions with useShallow so their references stay stable across re-renders
   const { updateFromSnapshot, addEvent } = useDashboardStore(
@@ -70,42 +68,6 @@ export default function DashboardOverviewPage() {
       supabase.removeChannel(systemChannel);
     };
   }, [updateFromSnapshot, addEvent]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">개요 대시보드</h1>
-          <p className="text-base text-muted-foreground">
-            시스템 전체 상태를 한눈에 확인합니다.
-          </p>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground text-center">로딩 중...</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">개요 대시보드</h1>
-          <p className="text-base text-muted-foreground">
-            시스템 전체 상태를 한눈에 확인합니다.
-          </p>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-red-600">오류: {error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-6">
