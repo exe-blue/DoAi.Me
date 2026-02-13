@@ -18,6 +18,17 @@ class SupabaseSync {
     this.taskSubscription = null;
     this.broadcastSubscription = null;
     this.logSubscriptions = new Map(); // task_id → channel
+
+    // Subscription status tracking
+    this.broadcastStatus = null;
+    this.pgChangesStatus = null;
+    this.broadcastReceivedCount = 0;
+    this.pgChangesReceivedCount = 0;
+    this.lastTaskReceivedAt = null;
+    this.lastTaskReceivedVia = null; // 'broadcast' | 'pg_changes' | 'poll'
+
+    // Log pipeline stats
+    this.logStats = { inserted: 0, failed: 0 };
   }
 
   /**
@@ -82,16 +93,23 @@ class SupabaseSync {
    * @param {string} status - 'online' | 'offline' | 'error'
    * @param {number} deviceCount
    * @param {boolean} xiaoweiConnected
+   * @param {object|null} metadata - optional metadata (execution stats, subscription status, etc.)
    */
-  async updateWorkerStatus(workerId, status, deviceCount, xiaoweiConnected) {
+  async updateWorkerStatus(workerId, status, deviceCount, xiaoweiConnected, metadata) {
+    const update = {
+      status,
+      device_count: deviceCount,
+      xiaowei_connected: xiaoweiConnected,
+      last_heartbeat: new Date().toISOString(),
+    };
+
+    if (metadata !== undefined && metadata !== null) {
+      update.metadata = metadata;
+    }
+
     const { error } = await this.supabase
       .from("workers")
-      .update({
-        status,
-        device_count: deviceCount,
-        xiaowei_connected: xiaoweiConnected,
-        last_heartbeat: new Date().toISOString(),
-      })
+      .update(update)
       .eq("id", workerId);
 
     if (error) {
@@ -273,124 +291,174 @@ class SupabaseSync {
   }
 
   /**
-   * Insert a task execution log entry
+   * Insert a task execution log entry.
+   * Returns success status and the inserted log ID.
    * @param {string} taskId
    * @param {string} deviceSerial
    * @param {string} workerId
    * @param {string} action
    * @param {object} request
    * @param {object} response
-   * @param {string} status
+   * @param {string} status - 'success' | 'error' | 'warning' | 'info'
    * @param {string} message
+   * @returns {Promise<{ok: boolean, logId: string|null}>}
    */
   async insertTaskLog(taskId, deviceSerial, workerId, action, request, response, status, message) {
     // Map status to log_level enum: debug/info/warn/error/fatal
     const levelMap = { success: "info", error: "error", warning: "warn", info: "info" };
     const level = levelMap[status] || "info";
 
-    const { error } = await this.supabase.from("task_logs").insert({
-      task_id: taskId,
-      device_serial: deviceSerial,
-      worker_id: workerId,
-      action,
-      request: request || null,
-      response: response || null,
-      level,
-      message: message || null,
-    });
+    const { data, error } = await this.supabase
+      .from("task_logs")
+      .insert({
+        task_id: taskId,
+        device_serial: deviceSerial,
+        worker_id: workerId,
+        action,
+        request: request || null,
+        response: response || null,
+        level,
+        message: message || null,
+      })
+      .select("id")
+      .single();
 
     if (error) {
-      console.error(`[Supabase] Failed to insert task log: ${error.message}`);
+      this.logStats.failed++;
+      console.error(`[Supabase] ✗ task_log 기록 실패: ${error.message}`);
+      return { ok: false, logId: null };
     }
+
+    this.logStats.inserted++;
+    console.log(`[Supabase] ✓ task_log 기록: task=${taskId}, level=${level}, action=${action}`);
+    return { ok: true, logId: data.id };
   }
 
   /**
-   * Subscribe to tasks via Broadcast channel (primary)
-   * DB trigger broadcasts to room:tasks on every INSERT/UPDATE/DELETE
+   * Get log pipeline stats for diagnostics.
+   * @returns {{inserted: number, failed: number}}
+   */
+  getLogStats() {
+    return { ...this.logStats };
+  }
+
+  /**
+   * Subscribe to tasks via Broadcast channel (primary).
+   * Returns a Promise that resolves when subscription is confirmed or times out.
    * @param {string} workerId
    * @param {function} callback - called with new/updated task row
-   * @returns {object} subscription channel
+   * @param {number} timeoutMs - max time to wait for SUBSCRIBED status
+   * @returns {Promise<{status: string, channel: object}>}
    */
-  subscribeToBroadcast(workerId, callback) {
+  subscribeToBroadcast(workerId, callback, timeoutMs = 10000) {
     console.log(`[Supabase] Subscribing to Broadcast room:tasks for worker ${workerId}`);
 
-    this.broadcastSubscription = this.supabase
-      .channel("room:tasks")
-      .on("broadcast", { event: "insert" }, ({ payload }) => {
-        const task = payload?.record;
-        if (!task) return;
-        // Filter for this worker
-        if (task.worker_id === workerId && task.status === "pending") {
-          console.log(`[Supabase] [Broadcast] New task: ${task.id}`);
-          callback(task);
-        }
-      })
-      .on("broadcast", { event: "update" }, ({ payload }) => {
-        const task = payload?.record;
-        const oldTask = payload?.old_record;
-        if (!task) return;
-        // Task reassigned to this worker and became pending
-        if (
-          task.worker_id === workerId &&
-          task.status === "pending" &&
-          (!oldTask || oldTask.status !== "pending")
-        ) {
-          console.log(`[Supabase] [Broadcast] Task reassigned: ${task.id}`);
-          callback(task);
-        }
-      })
-      .subscribe((status) => {
-        console.log(`[Supabase] Broadcast room:tasks status: ${status}`);
-      });
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ status: this.broadcastStatus || "TIMEOUT", channel: this.broadcastSubscription });
+      }, timeoutMs);
 
-    return this.broadcastSubscription;
+      this.broadcastSubscription = this.supabase
+        .channel("room:tasks")
+        .on("broadcast", { event: "insert" }, ({ payload }) => {
+          const task = payload?.record;
+          if (!task) return;
+          if (task.worker_id === workerId && task.status === "pending") {
+            this.broadcastReceivedCount++;
+            this.lastTaskReceivedAt = Date.now();
+            this.lastTaskReceivedVia = "broadcast";
+            console.log(`[Supabase] [Broadcast] 태스크 수신: ${task.id}`);
+            callback(task);
+          }
+        })
+        .on("broadcast", { event: "update" }, ({ payload }) => {
+          const task = payload?.record;
+          const oldTask = payload?.old_record;
+          if (!task) return;
+          if (
+            task.worker_id === workerId &&
+            task.status === "pending" &&
+            (!oldTask || oldTask.status !== "pending")
+          ) {
+            this.broadcastReceivedCount++;
+            this.lastTaskReceivedAt = Date.now();
+            this.lastTaskReceivedVia = "broadcast";
+            console.log(`[Supabase] [Broadcast] 태스크 재배정 수신: ${task.id}`);
+            callback(task);
+          }
+        })
+        .subscribe((status) => {
+          this.broadcastStatus = status;
+          console.log(`[Supabase] Broadcast room:tasks status: ${status}`);
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            clearTimeout(timeout);
+            resolve({ status, channel: this.broadcastSubscription });
+          }
+        });
+    });
   }
 
   /**
-   * Subscribe to new tasks via postgres_changes (fallback)
+   * Subscribe to new tasks via postgres_changes (fallback).
+   * Returns a Promise that resolves when subscription is confirmed or times out.
    * @param {string} workerId
    * @param {function} callback - called with new task row
-   * @returns {object} subscription channel
+   * @param {number} timeoutMs - max time to wait for SUBSCRIBED status
+   * @returns {Promise<{status: string, channel: object}>}
    */
-  subscribeToTasks(workerId, callback) {
+  subscribeToTasks(workerId, callback, timeoutMs = 10000) {
     console.log(`[Supabase] Subscribing to postgres_changes for worker ${workerId}`);
 
-    this.taskSubscription = this.supabase
-      .channel("tasks-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "tasks",
-          filter: `worker_id=eq.${workerId}`,
-        },
-        (payload) => {
-          console.log(`[Supabase] [pg_changes] New task received: ${payload.new.id}`);
-          callback(payload.new);
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "tasks",
-          filter: `worker_id=eq.${workerId}`,
-        },
-        (payload) => {
-          // Only trigger for tasks that just became pending (e.g. reassigned)
-          if (payload.new.status === "pending" && payload.old.status !== "pending") {
-            console.log(`[Supabase] [pg_changes] Task reassigned: ${payload.new.id}`);
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ status: this.pgChangesStatus || "TIMEOUT", channel: this.taskSubscription });
+      }, timeoutMs);
+
+      this.taskSubscription = this.supabase
+        .channel("tasks-realtime")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "tasks",
+            filter: `worker_id=eq.${workerId}`,
+          },
+          (payload) => {
+            this.pgChangesReceivedCount++;
+            this.lastTaskReceivedAt = Date.now();
+            this.lastTaskReceivedVia = "pg_changes";
+            console.log(`[Supabase] [pg_changes] 태스크 수신: ${payload.new.id}`);
             callback(payload.new);
           }
-        }
-      )
-      .subscribe((status) => {
-        console.log(`[Supabase] postgres_changes subscription status: ${status}`);
-      });
-
-    return this.taskSubscription;
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "tasks",
+            filter: `worker_id=eq.${workerId}`,
+          },
+          (payload) => {
+            if (payload.new.status === "pending" && payload.old.status !== "pending") {
+              this.pgChangesReceivedCount++;
+              this.lastTaskReceivedAt = Date.now();
+              this.lastTaskReceivedVia = "pg_changes";
+              console.log(`[Supabase] [pg_changes] 태스크 재배정 수신: ${payload.new.id}`);
+              callback(payload.new);
+            }
+          }
+        )
+        .subscribe((status) => {
+          this.pgChangesStatus = status;
+          console.log(`[Supabase] postgres_changes status: ${status}`);
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            clearTimeout(timeout);
+            resolve({ status, channel: this.taskSubscription });
+          }
+        });
+    });
   }
 
   /**
@@ -453,6 +521,19 @@ class SupabaseSync {
       console.log(`[Supabase] Unsubscribed from room:task:${taskId}:logs`);
     }
     this.logSubscriptions.clear();
+  }
+  /**
+   * Get current subscription status for diagnostics.
+   * @returns {{broadcast: string|null, pgChanges: string|null, broadcastReceived: number, pgChangesReceived: number, lastVia: string|null}}
+   */
+  getSubscriptionStatus() {
+    return {
+      broadcast: this.broadcastStatus,
+      pgChanges: this.pgChangesStatus,
+      broadcastReceived: this.broadcastReceivedCount,
+      pgChangesReceived: this.pgChangesReceivedCount,
+      lastVia: this.lastTaskReceivedVia,
+    };
   }
 }
 

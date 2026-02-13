@@ -16,6 +16,9 @@ class TaskExecutor {
     this.config = config;
     this.running = new Set();
     this.maxConcurrent = 20;
+
+    // Execution stats for monitoring
+    this.stats = { total: 0, succeeded: 0, failed: 0 };
   }
 
   /**
@@ -35,8 +38,12 @@ class TaskExecutor {
     }
 
     this.running.add(task.id);
+    this.stats.total++;
     const taskType = task.task_type || task.type;
-    console.log(`[TaskExecutor] Executing task ${task.id} (${taskType})`);
+    const devices = this._resolveDevices(task);
+    const startTime = Date.now();
+
+    console.log(`[TaskExecutor] ▶ ${task.id} (${taskType}) → devices=${devices}`);
 
     try {
       // 1. Mark as running
@@ -47,11 +54,12 @@ class TaskExecutor {
         throw new Error("Xiaowei is not connected");
       }
 
-      // 3. Determine target devices
-      const devices = this._resolveDevices(task);
-
-      // 4. Execute based on task type
+      // 3. Execute based on task type — _dispatch logs the specific Xiaowei command
       const result = await this._dispatch(taskType, task, devices);
+      const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      // 4. Extract response summary for logging
+      const summary = _extractResponseSummary(result);
 
       // 5. Log success
       await this.supabaseSync.insertTaskLog(
@@ -62,14 +70,17 @@ class TaskExecutor {
         task.payload,
         result,
         "success",
-        "Task completed"
+        `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`
       );
 
       // 6. Mark completed
       await this.supabaseSync.updateTaskStatus(task.id, "completed", result, null);
-      console.log(`[TaskExecutor] Task ${task.id} completed`);
+      this.stats.succeeded++;
+      console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`);
     } catch (err) {
-      console.error(`[TaskExecutor] Task ${task.id} failed: ${err.message}`);
+      const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.stats.failed++;
+      console.error(`[TaskExecutor] ✗ ${task.id} failed: ${err.message} (${durationSec}s)`);
 
       // Log failure
       await this.supabaseSync.insertTaskLog(
@@ -80,7 +91,7 @@ class TaskExecutor {
         task.payload,
         null,
         "error",
-        err.message
+        `${err.message} (${durationSec}s)`
       );
 
       // Mark failed and increment retry
@@ -122,19 +133,17 @@ class TaskExecutor {
       case "watch_video":
         return this._executeWatchVideo(devices, payload, options);
 
-      case "subscribe":
-        return this.xiaowei.actionCreate(
-          devices,
-          payload.actionName || "YouTube_구독",
-          options
-        );
+      case "subscribe": {
+        const actionName = payload.actionName || "YouTube_구독";
+        console.log(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+        return this.xiaowei.actionCreate(devices, actionName, options);
+      }
 
-      case "like":
-        return this.xiaowei.actionCreate(
-          devices,
-          payload.actionName || "YouTube_좋아요",
-          options
-        );
+      case "like": {
+        const actionName = payload.actionName || "YouTube_좋아요";
+        console.log(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+        return this.xiaowei.actionCreate(devices, actionName, options);
+      }
 
       case "comment":
         return this._executeComment(devices, payload, options);
@@ -143,23 +152,24 @@ class TaskExecutor {
         return this._executeCustom(devices, payload, options);
 
       case "action":
-        // Generic action execution
         if (!payload.actionName) {
           throw new Error("actionName is required for action type");
         }
+        console.log(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
         return this.xiaowei.actionCreate(devices, payload.actionName, options);
 
       case "script":
-        // Generic script execution
         if (!payload.scriptPath) {
           throw new Error("scriptPath is required for script type");
         }
+        console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
         return this.xiaowei.autojsCreate(devices, payload.scriptPath, options);
 
       case "adb":
         if (!payload.command) {
           throw new Error("command is required for adb type");
         }
+        console.log(`[TaskExecutor]   Xiaowei adbShell: "${payload.command}" → ${devices}`);
         return this.xiaowei.adbShell(devices, payload.command);
 
       default:
@@ -168,13 +178,14 @@ class TaskExecutor {
   }
 
   async _executeWatchVideo(devices, payload, options) {
-    // Prefer action if specified, otherwise use script
     if (payload.actionName) {
+      console.log(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
       return this.xiaowei.actionCreate(devices, payload.actionName, options);
     }
 
     const scriptName = payload.scriptPath || "youtube_watch.js";
     const scriptPath = this._resolveScriptPath(scriptName);
+    console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${scriptName} → ${devices}`);
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
       taskInterval: payload.taskInterval || [2000, 5000],
@@ -185,15 +196,13 @@ class TaskExecutor {
   async _executeComment(devices, payload, options) {
     if (payload.scriptPath) {
       const scriptPath = this._resolveScriptPath(payload.scriptPath);
+      console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
       return this.xiaowei.autojsCreate(devices, scriptPath, options);
     }
 
-    // Fallback: use action
-    return this.xiaowei.actionCreate(
-      devices,
-      payload.actionName || "YouTube_댓글",
-      options
-    );
+    const actionName = payload.actionName || "YouTube_댓글";
+    console.log(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+    return this.xiaowei.actionCreate(devices, actionName, options);
   }
 
   async _executeCustom(devices, payload, options) {
@@ -201,6 +210,7 @@ class TaskExecutor {
       throw new Error("scriptPath is required for custom task type");
     }
     const scriptPath = this._resolveScriptPath(payload.scriptPath);
+    console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
       taskInterval: payload.taskInterval || [2000, 5000],
@@ -227,6 +237,30 @@ class TaskExecutor {
   get runningCount() {
     return this.running.size;
   }
+
+  /** Get execution stats */
+  getStats() {
+    return { ...this.stats, running: this.running.size };
+  }
+}
+
+/**
+ * Extract a short summary from Xiaowei response for logging.
+ * @param {object} result
+ * @returns {string|null}
+ */
+function _extractResponseSummary(result) {
+  if (!result) return null;
+  if (typeof result === "string") return result.substring(0, 100);
+
+  // Common Xiaowei response patterns
+  if (result.msg) return String(result.msg).substring(0, 100);
+  if (result.message) return String(result.message).substring(0, 100);
+  if (result.status) return `status=${result.status}`;
+  if (result.code !== undefined) return `code=${result.code}`;
+  if (result.success !== undefined) return result.success ? "success=true" : "success=false";
+
+  return null;
 }
 
 module.exports = TaskExecutor;

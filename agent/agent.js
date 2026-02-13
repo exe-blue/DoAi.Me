@@ -10,6 +10,7 @@ const { startHeartbeat } = require("./heartbeat");
 const TaskExecutor = require("./task-executor");
 const ProxyManager = require("./proxy-manager");
 const AccountManager = require("./account-manager");
+const ScriptVerifier = require("./script-verifier");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -18,6 +19,7 @@ let taskPollHandle = null;
 let taskExecutor = null;
 let proxyManager = null;
 let accountManager = null;
+let scriptVerifier = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -112,7 +114,7 @@ async function main() {
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
 
   // 6. Start heartbeat loop and wait for first beat
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config);
+  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor);
 
   // Wait briefly for first heartbeat to complete
   await sleep(2000);
@@ -136,7 +138,49 @@ async function main() {
     console.log("[Agent] - Proxy setup: Xiaowei offline (skipped)");
   }
 
-  // 8. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
+  // 8. Account verification — check YouTube login on each device
+  accountManager = new AccountManager(xiaowei, supabaseSync);
+  if (xiaowei.connected) {
+    try {
+      const count = await accountManager.loadAssignments(supabaseSync.workerId);
+      if (count > 0) {
+        const { verified, total } = await accountManager.verifyAll();
+        console.log(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
+      } else {
+        console.log("[Agent] - Account check: no assignments (skipped)");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Account check failed: ${err.message}`);
+    }
+  } else {
+    console.log("[Agent] - Account check: Xiaowei offline (skipped)");
+  }
+
+  // 9. Script verification — check SCRIPTS_DIR and run test
+  scriptVerifier = new ScriptVerifier(xiaowei, config);
+  if (config.scriptsDir) {
+    try {
+      // Pick first known device serial for test run (if available)
+      const testSerial = xiaowei.connected
+        ? [...(proxyManager?.assignments?.keys() || accountManager?.assignments?.keys() || [])][0] || null
+        : null;
+      const { dirOk, requiredOk, testOk } = await scriptVerifier.verifyAll(testSerial);
+
+      if (dirOk && requiredOk) {
+        console.log(`[Agent] ✓ Script check: ${scriptVerifier.availableScripts.length} scripts, required OK`);
+      } else if (dirOk) {
+        console.warn("[Agent] ⚠ Script check: directory OK but missing required scripts");
+      } else {
+        console.warn("[Agent] ✗ Script check: SCRIPTS_DIR not accessible");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Script check failed: ${err.message}`);
+    }
+  } else {
+    console.log("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
+  }
+
+  // 10. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
   const taskCallback = (task) => {
     if (task.status === "pending") {
       taskExecutor.execute(task);
@@ -144,12 +188,22 @@ async function main() {
   };
 
   // Primary: Broadcast channel (room:tasks) — lower latency
-  supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  if (broadcastResult.status === "SUBSCRIBED") {
+    console.log("[Agent] ✓ Broadcast room:tasks 구독 완료");
+  } else {
+    console.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
+  }
 
   // Fallback: postgres_changes — in case Broadcast is not configured
-  supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  if (pgResult.status === "SUBSCRIBED") {
+    console.log("[Agent] ✓ postgres_changes 구독 완료");
+  } else {
+    console.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
+  }
 
-  // 8. Poll for pending tasks as fallback (Realtime may miss events)
+  // 11. Poll for pending tasks as triple-fallback (Realtime may miss events)
   taskPollHandle = setInterval(async () => {
     try {
       const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);

@@ -246,10 +246,142 @@ async function step3_checkProxies() {
   return true;
 }
 
-// ─── Step 4: Find real channel + recent video ───────────
+// ─── Step 4: Account assignment + YouTube login check ────
 
-async function step4_findRecentVideo() {
-  logStep(4, "Find channel & most recent video from DB");
+async function step4_checkAccounts() {
+  logStep(4, "Account assignment + YouTube login check");
+
+  // 4a. Query accounts assigned to devices for this worker
+  const { data: accounts, error: accErr } = await supabase
+    .from("accounts")
+    .select("id, email, status, device_id, last_login")
+    .eq("worker_id", workerId)
+    .not("device_id", "is", null);
+
+  if (accErr) {
+    logFail(`Failed to query accounts: ${accErr.message}`);
+    return false;
+  }
+
+  if (!accounts || accounts.length === 0) {
+    logInfo("No account assignments found for this worker (skipping account checks)");
+    logInfo("To test accounts: Dashboard > Accounts > Add, then assign to devices");
+    return true; // Non-blocking
+  }
+
+  logOK(`Found ${accounts.length} account assignment(s)`);
+
+  // 4b. Get device serials for each account
+  const deviceIds = accounts.map((a) => a.device_id);
+  const { data: accDevices, error: devErr } = await supabase
+    .from("devices")
+    .select("id, serial, account_id")
+    .in("id", deviceIds);
+
+  if (devErr) {
+    logFail(`Failed to query account devices: ${devErr.message}`);
+    return false;
+  }
+
+  const deviceMap = new Map();
+  for (const d of (accDevices || [])) {
+    deviceMap.set(d.id, d);
+  }
+
+  // 4c. Verify each account-device pair
+  let okCount = 0;
+  for (const account of accounts) {
+    const device = deviceMap.get(account.device_id);
+    const serial = device ? device.serial : "unknown";
+
+    // Check bidirectional FK consistency
+    const fkOk = device && device.account_id === account.id;
+
+    // Check account status is usable
+    const statusOk = ["available", "in_use"].includes(account.status);
+
+    if (fkOk && statusOk) {
+      const loginAge = account.last_login
+        ? `${Math.round((Date.now() - new Date(account.last_login).getTime()) / 3600000)}h ago`
+        : "never";
+      logOK(`${serial} ← ${account.email} (status=${account.status}, login=${loginAge}) ✓`);
+      okCount++;
+    } else if (!fkOk) {
+      logFail(`${serial} ← ${account.email} (device.account_id FK mismatch)`);
+    } else {
+      logFail(`${serial} ← ${account.email} (status=${account.status} — not usable)`);
+    }
+  }
+
+  logOK(`${okCount}/${accounts.length} 계정 배정 확인 완료`);
+
+  if (okCount < accounts.length) {
+    logInfo("Some accounts have issues. Check status (banned/cooldown) or FK consistency.");
+  }
+
+  return true;
+}
+
+// ─── Step 5: Script deployment check ─────────────────────
+
+async function step5_checkScripts() {
+  logStep(5, "AutoJS script deployment check");
+
+  // 5a. Check worker metadata for SCRIPTS_DIR
+  const { data: worker, error: wErr } = await supabase
+    .from("workers")
+    .select("*")
+    .eq("id", workerId)
+    .single();
+
+  if (wErr) {
+    logFail(`Failed to query worker: ${wErr.message}`);
+    return false;
+  }
+
+  const meta = worker.metadata || {};
+  if (meta.scripts_dir) {
+    logOK(`SCRIPTS_DIR configured: ${meta.scripts_dir}`);
+  } else {
+    logInfo("SCRIPTS_DIR not reported in worker metadata (agent logs to stdout)");
+  }
+
+  // 5b. Check task_logs for script verification entries
+  const { data: scriptLogs } = await supabase
+    .from("task_logs")
+    .select("*")
+    .eq("worker_id", workerId)
+    .like("message", "%script%")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (scriptLogs && scriptLogs.length > 0) {
+    logOK(`Found ${scriptLogs.length} script-related log(s)`);
+    for (const log of scriptLogs) {
+      const ts = new Date(log.created_at).toLocaleTimeString("ko-KR");
+      logOK(`  [${ts}] ${log.message}`);
+    }
+  } else {
+    logInfo("No script-related logs in DB (agent logs to stdout, not DB)");
+  }
+
+  // 5c. Verify agent has script execution capability
+  if (worker.status === "online" && worker.xiaowei_connected) {
+    logOK("Agent online + Xiaowei connected → script execution capable");
+    logInfo("Agent-side: ScriptVerifier checks SCRIPTS_DIR, required scripts (youtube_watch.js), test execution");
+  } else {
+    logInfo(`Agent status=${worker.status}, xiaowei=${worker.xiaowei_connected}`);
+    logInfo("Script execution may not be available until agent is fully connected");
+  }
+
+  logOK("Script deployment check complete");
+  return true;
+}
+
+// ─── Step 6: Find real channel + recent video ───────────
+
+async function step6_findRecentVideo() {
+  logStep(6, "Find channel & most recent video from DB");
 
   // Get channels with monitoring_enabled
   const { data: channels, error: chErr } = await supabase
@@ -303,11 +435,11 @@ async function step4_findRecentVideo() {
   return false;
 }
 
-// ─── Step 5: Create watch task ──────────────────────────
+// ─── Step 7: Create watch task ──────────────────────────
 
-async function step5_createTask() {
+async function step7_createTask() {
   const count = deviceCount || devices.length || 3;
-  logStep(5, `Create watch_video task (device_count=${count})`);
+  logStep(7, `Create watch_video task (device_count=${count})`);
 
   const payload = {
     watchPercent: 80,
@@ -345,12 +477,13 @@ async function step5_createTask() {
   return true;
 }
 
-// ─── Step 6: Track execution ────────────────────────────
+// ─── Step 8: Track execution ────────────────────────────
 
-async function step6_trackExecution() {
-  logStep(6, "Track execution: pending -> running -> completed/failed");
+async function step8_trackExecution() {
+  logStep(8, "Track execution: pending -> running -> completed/failed");
 
-  // 5a. Wait for agent to claim the task
+  // 8a. Wait for agent to claim the task + measure latency
+  const claimStart = Date.now();
   process.stdout.write("  Waiting for agent to claim task");
   let claimed;
   try {
@@ -363,7 +496,18 @@ async function step6_trackExecution() {
       return data?.worker_id ? data : null;
     }, 60000, 2000);
     console.log("");
+    const claimMs = Date.now() - claimStart;
+    const claimSec = (claimMs / 1000).toFixed(1);
     logOK(`Agent claimed task (worker_id set)`);
+
+    // Broadcast/Realtime typically responds in <5s; polling interval is 30s+
+    if (claimMs < 8000) {
+      logOK(`수신 방식: Broadcast/Realtime (${claimSec}s — 빠른 응답)`);
+    } else if (claimMs < 35000) {
+      logInfo(`수신 방식: polling 가능성 (${claimSec}s — Broadcast가 비활성일 수 있음)`);
+    } else {
+      logInfo(`수신 지연: ${claimSec}s — Realtime/Broadcast 연결 확인 필요`);
+    }
   } catch {
     console.log("");
     logFail("Agent did not claim the task within 60s. Is the agent running and polling?");
@@ -443,12 +587,12 @@ async function step6_trackExecution() {
   }
 }
 
-// ─── Step 7: Verify logs ────────────────────────────────
+// ─── Step 9: Verify logs ────────────────────────────────
 
-async function step7_verifyLogs() {
-  logStep(7, "Verify task_logs pipeline (insert + query)");
+async function step9_verifyLogs() {
+  logStep(9, "Verify task_logs pipeline (insert + query + field check)");
 
-  // 6a. Check if agent created any logs
+  // 9a. Check if agent created any logs for this task
   const { data: agentLogs } = await supabase
     .from("task_logs")
     .select("*")
@@ -459,10 +603,48 @@ async function step7_verifyLogs() {
   logOK(`Agent log entries: ${agentCount}`);
 
   if (agentCount === 0) {
-    logInfo("Agent uses old code (status column). Verifying log pipeline directly.");
+    logInfo("No agent logs yet. Verifying log pipeline directly.");
   }
 
-  // 6b. Insert test log entry to verify the pipeline works
+  // 9b. Validate agent log field completeness
+  if (agentCount > 0) {
+    const requiredFields = ["task_id", "worker_id", "level", "action", "message", "created_at"];
+    let fieldOkCount = 0;
+
+    for (const log of agentLogs) {
+      const missing = requiredFields.filter((f) => !log[f]);
+      if (missing.length === 0) {
+        fieldOkCount++;
+      } else {
+        logFail(`  Log ${log.id}: missing fields: ${missing.join(", ")}`);
+      }
+    }
+
+    if (fieldOkCount === agentCount) {
+      logOK(`필수 필드 검증: ${fieldOkCount}/${agentCount} OK (task_id, worker_id, level, action, message)`);
+    } else {
+      logInfo(`필수 필드 검증: ${fieldOkCount}/${agentCount} — some logs have missing fields`);
+    }
+
+    // 9c. Check log level mapping (success → info, error → error)
+    const validLevels = ["debug", "info", "warn", "error", "fatal"];
+    const invalidLevelLogs = agentLogs.filter((l) => l.level && !validLevels.includes(l.level));
+    if (invalidLevelLogs.length === 0) {
+      logOK(`log_level 매핑: 모든 로그가 유효한 enum 값 사용 (${validLevels.join("/")})`);
+    } else {
+      logFail(`log_level 매핑: ${invalidLevelLogs.length}개 로그에 잘못된 level 값`);
+    }
+
+    // 9d. Check for duration in message (from STEP 6 TaskExecutor enhancement)
+    const withDuration = agentLogs.filter((l) => l.message && /\(\d+\.\d+s\)/.test(l.message));
+    if (withDuration.length > 0) {
+      logOK(`실행 시간 기록: ${withDuration.length}개 로그에 duration 포함`);
+    } else {
+      logInfo("실행 시간 기록: duration 정보 없음 (이전 버전 agent일 수 있음)");
+    }
+  }
+
+  // 9e. Insert test log entry to verify the pipeline works end-to-end
   const { data: testLog, error: insertErr } = await supabase
     .from("task_logs")
     .insert({
@@ -485,7 +667,7 @@ async function step7_verifyLogs() {
 
   logOK(`Test log inserted: ${testLog.id}`);
 
-  // 6c. Read back and verify
+  // 9f. Read back all logs and display
   const { data: allLogs, error: readErr } = await supabase
     .from("task_logs")
     .select("*")
@@ -505,35 +687,137 @@ async function step7_verifyLogs() {
     logOK(`  [${ts}] ${level.padEnd(7)} | ${log.action || "-"} | device=${device} | ${log.message || ""}`);
   }
 
+  // 9g. Verify round-trip: inserted log should appear in read-back
+  const found = allLogs.find((l) => l.id === testLog.id);
+  if (found) {
+    logOK("Pipeline round-trip: insert → read OK ✓");
+  } else {
+    logFail("Pipeline round-trip: inserted log not found in read-back ✗");
+  }
+
   return true;
 }
 
-// ─── Step 8: Verify video status update ─────────────────
+// ─── Step 10: Final status verification + result aggregation ─
 
-async function step8_verifyVideoStatus() {
-  logStep(8, "Verify video status was updated");
+async function step10_finalStatus() {
+  logStep(10, "Final status verification + result aggregation");
 
-  const { data, error } = await supabase
-    .from("videos")
-    .select("status, updated_at")
-    .eq("id", video.id)
+  // 10a. Re-check worker status (still online after execution?)
+  const { data: worker, error: wErr } = await supabase
+    .from("workers")
+    .select("*")
+    .eq("id", workerId)
     .single();
 
-  if (error) {
-    logFail(`Failed to query video: ${error.message}`);
+  if (wErr) {
+    logFail(`Failed to query worker: ${wErr.message}`);
     return false;
   }
 
-  logOK(`Video status: ${data.status} (was: ${video.status})`);
-  logOK(`Updated at: ${data.updated_at}`);
+  if (worker.status === "online") {
+    logOK(`Worker status: online ✓`);
+  } else {
+    logFail(`Worker status: ${worker.status} (expected online)`);
+  }
+
+  if (worker.xiaowei_connected) {
+    logOK(`Xiaowei: connected ✓`);
+  } else {
+    logFail(`Xiaowei: disconnected (expected connected)`);
+  }
+
+  // 10b. Check worker metadata (execution stats from heartbeat)
+  const meta = worker.metadata || {};
+  if (meta.task_stats) {
+    const ts = meta.task_stats;
+    logOK(`Task stats: total=${ts.total}, succeeded=${ts.succeeded}, failed=${ts.failed}, running=${ts.running}`);
+  } else {
+    logInfo("Task stats: not reported in worker metadata (heartbeat may not have fired yet)");
+  }
+
+  if (meta.subscriptions) {
+    const sub = meta.subscriptions;
+    logOK(`Subscriptions: broadcast=${sub.broadcast}, pg_changes=${sub.pg_changes}`);
+    if (sub.broadcast_received > 0 || sub.pg_changes_received > 0) {
+      logOK(`  Received: broadcast=${sub.broadcast_received}, pg_changes=${sub.pg_changes_received} (last via: ${sub.last_via || "n/a"})`);
+    }
+  } else {
+    logInfo("Subscription status: not reported in worker metadata");
+  }
+
+  if (meta.log_stats) {
+    logOK(`Log pipeline: inserted=${meta.log_stats.inserted}, failed=${meta.log_stats.failed}`);
+  }
+
+  if (meta.uptime_sec) {
+    const upMin = (meta.uptime_sec / 60).toFixed(1);
+    logOK(`Agent uptime: ${upMin}min (started: ${meta.started_at || "unknown"})`);
+  }
+
+  // 10c. Verify task final status
+  if (taskId) {
+    const { data: task, error: tErr } = await supabase
+      .from("tasks")
+      .select("status, started_at, completed_at, error, retry_count, result")
+      .eq("id", taskId)
+      .single();
+
+    if (tErr) {
+      logFail(`Failed to query task: ${tErr.message}`);
+    } else {
+      const status = task.status;
+      if (status === "completed" || status === "done") {
+        logOK(`Task final status: ${status} ✓`);
+      } else {
+        logFail(`Task final status: ${status} (expected completed/done)`);
+      }
+
+      if (task.started_at && task.completed_at) {
+        const durationMs = new Date(task.completed_at) - new Date(task.started_at);
+        logOK(`Task duration: ${(durationMs / 1000).toFixed(1)}s (${task.started_at} → ${task.completed_at})`);
+      }
+
+      if (task.error) {
+        logFail(`Task error: ${task.error}`);
+      }
+      if (task.retry_count > 0) {
+        logInfo(`Retry count: ${task.retry_count}`);
+      }
+    }
+
+    // 10d. Count log entries for this task
+    const { count: logCount } = await supabase
+      .from("task_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("task_id", taskId);
+
+    logOK(`Task log entries: ${logCount || 0}`);
+  }
+
+  // 10e. Verify video status
+  if (video) {
+    const { data: vid, error: vErr } = await supabase
+      .from("videos")
+      .select("status, updated_at")
+      .eq("id", video.id)
+      .single();
+
+    if (vErr) {
+      logFail(`Failed to query video: ${vErr.message}`);
+    } else {
+      logOK(`Video status: ${vid.status} (was: ${video.status})`);
+      logOK(`Video updated at: ${vid.updated_at}`);
+    }
+  }
 
   return true;
 }
 
-// ─── Step 9: Cleanup ────────────────────────────────────
+// ─── Step 11: Cleanup ───────────────────────────────────
 
-async function step9_cleanup() {
-  logStep(9, SKIP_CLEANUP ? "Cleanup SKIPPED (--no-cleanup)" : "Cleanup test task");
+async function step11_cleanup() {
+  logStep(11, SKIP_CLEANUP ? "Cleanup SKIPPED (--no-cleanup)" : "Cleanup test task");
 
   if (SKIP_CLEANUP) {
     logInfo(`Task ${taskId} left in DB for manual inspection`);
@@ -581,14 +865,17 @@ async function main() {
     { name: "Worker check",       fn: step1_checkWorker,       critical: true },
     { name: "Device check",       fn: step2_checkDevices,      critical: true },
     { name: "Proxy check",        fn: step3_checkProxies,      critical: false },
-    { name: "Find recent video",  fn: step4_findRecentVideo,   critical: true },
-    { name: "Create watch task",  fn: step5_createTask,        critical: true },
-    { name: "Track execution",    fn: step6_trackExecution,    critical: false },
-    { name: "Verify logs",        fn: step7_verifyLogs,        critical: false },
-    { name: "Verify video status",fn: step8_verifyVideoStatus, critical: false },
+    { name: "Account check",      fn: step4_checkAccounts,     critical: false },
+    { name: "Script check",       fn: step5_checkScripts,      critical: false },
+    { name: "Find recent video",  fn: step6_findRecentVideo,   critical: true },
+    { name: "Create watch task",  fn: step7_createTask,        critical: true },
+    { name: "Track execution",    fn: step8_trackExecution,    critical: false },
+    { name: "Verify logs",        fn: step9_verifyLogs,        critical: false },
+    { name: "Final status",      fn: step10_finalStatus,       critical: false },
   ];
 
   const results = [];
+  const e2eStartTime = Date.now();
 
   try {
     for (const step of steps) {
@@ -606,33 +893,42 @@ async function main() {
   }
 
   // Always attempt cleanup
-  await step9_cleanup();
+  await step11_cleanup();
 
   // ─── Summary ────────────────────────────────────────
+  const e2eDuration = ((Date.now() - e2eStartTime) / 1000).toFixed(1);
+  let passCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+
   console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
   console.log("\u2551  Test Summary                                    \u2551");
   console.log("\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d");
 
-  let allPassed = true;
   for (let i = 0; i < steps.length; i++) {
     const passed = results[i] === true;
     const skipped = results[i] === undefined;
     const icon = skipped ? "- SKIP" : passed ? "\u2713 PASS" : "\u2717 FAIL";
-    if (!passed && !skipped) allPassed = false;
+    if (passed) passCount++;
+    else if (skipped) skipCount++;
+    else failCount++;
     console.log(`  ${icon}  ${i + 1}. ${steps[i].name}`);
   }
 
+  console.log(`\n  Results: ${passCount} passed, ${failCount} failed, ${skipCount} skipped (${e2eDuration}s)`);
+
   if (channel && video) {
-    console.log(`\n  Channel: ${channel.channel_name}`);
+    console.log(`  Channel: ${channel.channel_name}`);
     console.log(`  Video:   ${video.title}`);
     console.log(`  Task:    ${taskId || "not created"}`);
   }
 
+  const allPassed = failCount === 0;
   console.log("");
   if (allPassed) {
-    console.log("  All tests passed!");
+    console.log(`  \u2713 All tests passed! (${e2eDuration}s)`);
   } else {
-    console.log("  Some tests failed. Check the output above.");
+    console.log(`  \u2717 ${failCount} test(s) failed. Check the output above.`);
   }
 
   process.exit(allPassed ? 0 : 1);
