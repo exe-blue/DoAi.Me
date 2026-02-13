@@ -34,6 +34,30 @@ export const taskCreateSchema = z.object({
     .optional(),
 });
 
+// Batch task creation schema (content-aware distribution)
+export const batchTaskCreateSchema = z.object({
+  contentMode: z.enum(["single", "channel", "playlist"]),
+  // single mode
+  videoId: z.string().uuid().optional(),
+  // channel mode
+  channelId: z.string().uuid().optional(),
+  distribution: z.enum(["round_robin", "random", "by_priority"]).optional(),
+  // playlist mode
+  videoIds: z.array(z.string().uuid()).optional(),
+  // common
+  workerId: z.string().uuid().optional(),
+  deviceCount: z.number().int().min(1).max(1000).optional(),
+  variables: z
+    .object({
+      watchPercent: z.number().min(0).max(100).optional(),
+      commentProb: z.number().min(0).max(100).optional(),
+      likeProb: z.number().min(0).max(100).optional(),
+      saveProb: z.number().min(0).max(100).optional(),
+      subscribeToggle: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 export const taskUpdateSchema = z.object({
   id: z.string().uuid("Invalid task ID"),
   status: z.enum(["running", "queued", "completed", "stopped", "error"]).optional(),

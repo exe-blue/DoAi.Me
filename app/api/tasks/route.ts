@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTasksWithDetails, createTask, updateTask, deleteTask } from "@/lib/db/tasks";
-import { createManualTask } from "@/lib/pipeline";
+import { createManualTask, createBatchTask } from "@/lib/pipeline";
 import { mapTaskRow } from "@/lib/mappers";
 import type { Json } from "@/lib/supabase/types";
-import { taskCreateSchema, taskUpdateSchema } from "@/lib/schemas";
+import { taskCreateSchema, taskUpdateSchema, batchTaskCreateSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,43 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate request body
+    // Check if this is a batch task (has contentMode field)
+    if ("contentMode" in body) {
+      // Validate as batch task
+      const result = batchTaskCreateSchema.safeParse(body);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: result.error.issues },
+          { status: 400 }
+        );
+      }
+
+      const { contentMode, videoId, channelId, videoIds, distribution, workerId, deviceCount, variables } = result.data;
+
+      // Merge with defaults for variables
+      const fullVariables = variables ? {
+        watchPercent: variables.watchPercent ?? 80,
+        commentProb: variables.commentProb ?? 10,
+        likeProb: variables.likeProb ?? 40,
+        saveProb: variables.saveProb ?? 5,
+        subscribeToggle: variables.subscribeToggle ?? false,
+      } : undefined;
+
+      const task = await createBatchTask({
+        contentMode,
+        videoId,
+        channelId,
+        videoIds,
+        distribution,
+        deviceCount: deviceCount ?? 20,
+        variables: fullVariables,
+        workerId,
+      });
+
+      return NextResponse.json(task, { status: 201 });
+    }
+
+    // Fall back to regular task creation (backward compatible)
     const result = taskCreateSchema.safeParse(body);
     if (!result.success) {
       return NextResponse.json(

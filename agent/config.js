@@ -156,4 +156,6 @@ class AgentConfig extends EventEmitter {
 }
 
 // Export singleton (preserves backward compatibility: config.heartbeatInterval works)
-module.exports = new AgentConfig();
+const instance = new AgentConfig();
+instance.AgentConfig = AgentConfig; // Expose class for testing
+module.exports = instance;

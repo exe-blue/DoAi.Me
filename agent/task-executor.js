@@ -40,10 +40,9 @@ class TaskExecutor {
     this.running.add(task.id);
     this.stats.total++;
     const taskType = task.task_type || task.type;
-    const devices = this._resolveDevices(task);
     const startTime = Date.now();
 
-    console.log(`[TaskExecutor] ▶ ${task.id} (${taskType}) → devices=${devices}`);
+    console.log(`[TaskExecutor] ▶ ${task.id} (${taskType})`);
 
     try {
       // 1. Mark as running
@@ -54,14 +53,18 @@ class TaskExecutor {
         throw new Error("Xiaowei is not connected");
       }
 
-      // 3. Execute based on task type — _dispatch logs the specific Xiaowei command
-      const result = await this._dispatch(taskType, task, devices);
+      // 3. Fetch per-device configs from task_devices (if batch task)
+      const deviceConfigs = await this._fetchDeviceConfigs(task.id);
+
+      // 4. Execute based on task type — _dispatch logs the specific Xiaowei command
+      const devices = this._resolveDevices(task);
+      const result = await this._dispatch(taskType, task, devices, deviceConfigs);
       const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      // 4. Extract response summary for logging
+      // 5. Extract response summary for logging
       const summary = _extractResponseSummary(result);
 
-      // 5. Log success
+      // 6. Log success
       await this.supabaseSync.insertTaskLog(
         task.id,
         devices,
@@ -73,7 +76,12 @@ class TaskExecutor {
         `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`
       );
 
-      // 6. Mark completed
+      // 7. Update video play_count if this was a batch task
+      if (deviceConfigs.size > 0) {
+        await this._updateVideoPlayCounts(deviceConfigs);
+      }
+
+      // 8. Mark completed
       await this.supabaseSync.updateTaskStatus(task.id, "completed", result, null);
       this.stats.succeeded++;
       console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`);
@@ -103,6 +111,60 @@ class TaskExecutor {
   }
 
   /**
+   * Fetch per-device configs from task_devices table
+   * @param {string} taskId
+   * @returns {Promise<Map<string, {video_url: string, video_id: string}>>}
+   */
+  async _fetchDeviceConfigs(taskId) {
+    const { data, error } = await this.supabaseSync.supabase
+      .from("task_devices")
+      .select("device_serial, config")
+      .eq("task_id", taskId);
+
+    if (error) {
+      console.warn(`[TaskExecutor] Failed to fetch task_devices: ${error.message}`);
+      return new Map();
+    }
+
+    if (!data || data.length === 0) {
+      return new Map();
+    }
+
+    const configs = new Map();
+    for (const row of data) {
+      if (row.config && row.config.video_url && row.config.video_id) {
+        configs.set(row.device_serial, row.config);
+      }
+    }
+
+    console.log(`[TaskExecutor] Loaded ${configs.size} per-device configs`);
+    return configs;
+  }
+
+  /**
+   * Update video play counts after task completion
+   * @param {Map<string, {video_url: string, video_id: string}>} deviceConfigs
+   */
+  async _updateVideoPlayCounts(deviceConfigs) {
+    const videoIdCounts = new Map();
+    for (const config of deviceConfigs.values()) {
+      const count = videoIdCounts.get(config.video_id) ?? 0;
+      videoIdCounts.set(config.video_id, count + 1);
+    }
+
+    for (const [videoId, count] of videoIdCounts) {
+      const { error } = await this.supabaseSync.supabase
+        .from("videos")
+        .update({ play_count: this.supabaseSync.supabase.rpc("increment", { x: count }) })
+        .eq("id", videoId);
+
+      if (error) {
+        console.warn(`[TaskExecutor] Failed to increment play_count for video ${videoId}: ${error.message}`);
+      }
+    }
+  }
+
+  /**
    * Resolve which devices to target
    * @param {object} task
    * @returns {string} comma-separated serials or "all"
@@ -119,9 +181,10 @@ class TaskExecutor {
    * @param {string} taskType
    * @param {object} task
    * @param {string} devices
+   * @param {Map<string, {video_url: string, video_id: string}>} deviceConfigs
    * @returns {Promise<object>}
    */
-  async _dispatch(taskType, task, devices) {
+  async _dispatch(taskType, task, devices, deviceConfigs) {
     const payload = task.payload || {};
     const options = {
       count: payload.count || 1,
@@ -131,7 +194,8 @@ class TaskExecutor {
 
     switch (taskType) {
       case "watch_video":
-        return this._executeWatchVideo(devices, payload, options);
+      case "view_farm":
+        return this._executeWatchVideo(devices, payload, options, deviceConfigs);
 
       case "subscribe": {
         const actionName = payload.actionName || "YouTube_구독";
@@ -177,7 +241,35 @@ class TaskExecutor {
     }
   }
 
-  async _executeWatchVideo(devices, payload, options) {
+  async _executeWatchVideo(devices, payload, options, deviceConfigs) {
+    // If we have per-device configs (batch task), execute individually for each device
+    if (deviceConfigs && deviceConfigs.size > 0) {
+      console.log(`[TaskExecutor]   Batch execution: ${deviceConfigs.size} devices with individual videos`);
+      const results = [];
+
+      for (const [deviceSerial, config] of deviceConfigs) {
+        const devicePayload = { ...payload, video_url: config.video_url };
+        console.log(`[TaskExecutor]   Device ${deviceSerial} → ${config.video_url}`);
+
+        if (payload.actionName) {
+          const result = await this.xiaowei.actionCreate(deviceSerial, payload.actionName, options);
+          results.push({ device: deviceSerial, result });
+        } else {
+          const scriptName = payload.scriptPath || "youtube_watch.js";
+          const scriptPath = this._resolveScriptPath(scriptName);
+          const result = await this.xiaowei.autojsCreate(deviceSerial, scriptPath, {
+            ...options,
+            taskInterval: payload.taskInterval || [2000, 5000],
+            deviceInterval: payload.deviceInterval || "1000",
+          });
+          results.push({ device: deviceSerial, result });
+        }
+      }
+
+      return { batch: true, results };
+    }
+
+    // Fall back to standard execution (all devices get same video)
     if (payload.actionName) {
       console.log(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
       return this.xiaowei.actionCreate(devices, payload.actionName, options);

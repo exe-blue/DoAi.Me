@@ -134,12 +134,14 @@ export type Database = {
       channels: {
         Row: {
           api_key_encrypted: string | null
+          category: string | null
           channel_name: string
           channel_url: string
           created_at: string | null
           id: string
           monitoring_enabled: boolean | null
           monitoring_interval_minutes: number | null
+          notes: string | null
           subscriber_count: number | null
           thumbnail_url: string | null
           updated_at: string | null
@@ -148,12 +150,14 @@ export type Database = {
         }
         Insert: {
           api_key_encrypted?: string | null
+          category?: string | null
           channel_name: string
           channel_url: string
           created_at?: string | null
           id?: string
           monitoring_enabled?: boolean | null
           monitoring_interval_minutes?: number | null
+          notes?: string | null
           subscriber_count?: number | null
           thumbnail_url?: string | null
           updated_at?: string | null
@@ -162,12 +166,14 @@ export type Database = {
         }
         Update: {
           api_key_encrypted?: string | null
+          category?: string | null
           channel_name?: string
           channel_url?: string
           created_at?: string | null
           id?: string
           monitoring_enabled?: boolean | null
           monitoring_interval_minutes?: number | null
+          notes?: string | null
           subscriber_count?: number | null
           thumbnail_url?: string | null
           updated_at?: string | null
@@ -964,13 +970,17 @@ export type Database = {
           description: string | null
           duration_seconds: number | null
           id: string
+          is_active: boolean | null
           like_count: number | null
+          play_count: number | null
+          priority: number | null
           published_at: string | null
           status: string | null
           thumbnail_url: string | null
           title: string
           updated_at: string | null
           view_count: number | null
+          youtube_url: string | null
           youtube_video_id: string
         }
         Insert: {
@@ -980,13 +990,17 @@ export type Database = {
           description?: string | null
           duration_seconds?: number | null
           id?: string
+          is_active?: boolean | null
           like_count?: number | null
+          play_count?: number | null
+          priority?: number | null
           published_at?: string | null
           status?: string | null
           thumbnail_url?: string | null
           title: string
           updated_at?: string | null
           view_count?: number | null
+          youtube_url?: string | null
           youtube_video_id: string
         }
         Update: {
@@ -996,13 +1010,17 @@ export type Database = {
           description?: string | null
           duration_seconds?: number | null
           id?: string
+          is_active?: boolean | null
           like_count?: number | null
+          play_count?: number | null
+          priority?: number | null
           published_at?: string | null
           status?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string | null
           view_count?: number | null
+          youtube_url?: string | null
           youtube_video_id?: string
         }
         Relationships: [
@@ -1072,6 +1090,75 @@ export type Database = {
           updated_at?: string | null
           xiaowei_connected?: boolean | null
           xiaowei_version?: string | null
+        }
+        Relationships: []
+      }
+      settings: {
+        Row: {
+          id: string
+          key: string
+          value: string
+          description: string | null
+          updated_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          key: string
+          value: string
+          description?: string | null
+          updated_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          key?: string
+          value?: string
+          description?: string | null
+          updated_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      command_logs: {
+        Row: {
+          id: string
+          command: string
+          target_type: string
+          target_ids: string[] | null
+          target_serials: string[] | null
+          status: string
+          results: Json | null
+          initiated_by: string | null
+          worker_id: string | null
+          created_at: string | null
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          command: string
+          target_type?: string
+          target_ids?: string[] | null
+          target_serials?: string[] | null
+          status?: string
+          results?: Json | null
+          initiated_by?: string | null
+          worker_id?: string | null
+          created_at?: string | null
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          command?: string
+          target_type?: string
+          target_ids?: string[] | null
+          target_serials?: string[] | null
+          status?: string
+          results?: Json | null
+          initiated_by?: string | null
+          worker_id?: string | null
+          created_at?: string | null
+          completed_at?: string | null
         }
         Relationships: []
       }

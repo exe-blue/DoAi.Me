@@ -64,3 +64,57 @@ export async function updateChannelMonitoring(
   if (error) throw error;
   return data;
 }
+
+export async function getChannelById(id: string) {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("channels")
+    .select("*")
+    .eq("id", id)
+    .returns<ChannelRow[]>()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createChannel(channel: {
+  channel_name: string;
+  youtube_channel_id?: string | null;
+  channel_url?: string | null;
+  category?: string | null;
+  notes?: string | null;
+}) {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("channels")
+    .insert(channel as any)
+    .select()
+    .returns<ChannelRow[]>()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateChannel(
+  id: string,
+  updates: {
+    channel_name?: string;
+    youtube_channel_id?: string | null;
+    channel_url?: string | null;
+    category?: string | null;
+    notes?: string | null;
+    monitoring_enabled?: boolean;
+    monitoring_interval_minutes?: number | null;
+  }
+) {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("channels")
+    .update({ ...updates, updated_at: new Date().toISOString() } as any)
+    .eq("id", id)
+    .select()
+    .returns<ChannelRow[]>()
+    .single();
+  if (error) throw error;
+  return data;
+}

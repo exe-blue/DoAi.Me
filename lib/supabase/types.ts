@@ -24,6 +24,8 @@ export type ProxyRow = Tables["proxies"]["Row"];
 export type ChannelRow = Tables["channels"]["Row"];
 export type VideoRow = Tables["videos"]["Row"];
 export type ScheduleRow = Tables["schedules"]["Row"];
+export type SettingRow = Tables["settings"]["Row"];
+export type CommandLogRow = Tables["command_logs"]["Row"];
 
 // Insert type aliases
 export type WorkerInsert = Tables["workers"]["Insert"];
@@ -35,6 +37,8 @@ export type ProxyInsert = Tables["proxies"]["Insert"];
 export type ChannelInsert = Tables["channels"]["Insert"];
 export type VideoInsert = Tables["videos"]["Insert"];
 export type ScheduleInsert = Tables["schedules"]["Insert"];
+export type SettingInsert = Tables["settings"]["Insert"];
+export type CommandLogInsert = Tables["command_logs"]["Insert"];
 
 // Update type aliases
 export type WorkerUpdate = Tables["workers"]["Update"];
@@ -42,3 +46,5 @@ export type DeviceUpdate = Tables["devices"]["Update"];
 export type TaskUpdate = Tables["tasks"]["Update"];
 export type TaskLogUpdate = Tables["task_logs"]["Update"];
 export type TaskDeviceUpdate = Tables["task_devices"]["Update"];
+export type SettingUpdate = Tables["settings"]["Update"];
+export type CommandLogUpdate = Tables["command_logs"]["Update"];
