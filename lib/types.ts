@@ -108,7 +108,7 @@ export interface Content {
 
 // Proxy types
 export type ProxyType = "socks5" | "http" | "https";
-export type ProxyStatus = "active" | "inactive" | "error" | "banned" | "testing";
+export type ProxyStatus = "active" | "inactive" | "error" | "banned" | "testing" | "valid" | "invalid";
 
 export interface Proxy {
   id: string;
@@ -117,6 +117,7 @@ export interface Proxy {
   status: ProxyStatus;
   workerId: string | null;
   deviceId: string | null;
+  failCount: number;
   createdAt: string;
 }
 

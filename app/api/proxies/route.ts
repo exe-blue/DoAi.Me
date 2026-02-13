@@ -40,6 +40,64 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * DELETE /api/proxies
+ * Body: { ids: ["uuid", ...] }
+ * Bulk delete. Unassigns devices first.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = createServerClient();
+    const { ids } = await request.json();
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: "ids array is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get proxies that are assigned to devices
+    const { data: assigned } = await supabase
+      .from("proxies")
+      .select("id, device_id")
+      .in("id", ids)
+      .not("device_id", "is", null);
+
+    // Unassign devices first
+    if (assigned && assigned.length > 0) {
+      const deviceIds = assigned.map((p) => p.device_id).filter(Boolean);
+      if (deviceIds.length > 0) {
+        await supabase
+          .from("devices")
+          .update({ proxy_id: null } as any)
+          .in("id", deviceIds);
+      }
+      // Clear device_id on proxies before delete
+      await supabase
+        .from("proxies")
+        .update({ device_id: null })
+        .in("id", assigned.map((p) => p.id));
+    }
+
+    // Delete proxies
+    const { error } = await supabase
+      .from("proxies")
+      .delete()
+      .in("id", ids);
+
+    if (error) throw error;
+
+    return NextResponse.json({ deleted: ids.length });
+  } catch (error) {
+    console.error("Error bulk deleting proxies:", error);
+    return NextResponse.json(
+      { error: "Failed to delete proxies" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = createServerClient();

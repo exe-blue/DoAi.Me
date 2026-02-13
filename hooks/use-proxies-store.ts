@@ -11,6 +11,7 @@ function mapProxyRow(row: ProxyRow): Proxy {
     status: (row.status ?? "active") as Proxy["status"],
     workerId: row.worker_id,
     deviceId: row.device_id,
+    failCount: (row as any).fail_count ?? 0,
     createdAt: row.created_at ?? "",
   };
 }
@@ -41,6 +42,8 @@ interface ProxiesState {
   autoAssign: (
     workerId: string
   ) => Promise<{ assigned: number; remaining: number }>;
+  swap: (oldProxyId: string, newProxyId: string) => Promise<void>;
+  bulkDelete: (ids: string[]) => Promise<void>;
 }
 
 export const useProxiesStore = create<ProxiesState>((set, get) => ({
@@ -255,6 +258,58 @@ export const useProxiesStore = create<ProxiesState>((set, get) => ({
         title: "오류",
         description:
           err instanceof Error ? err.message : "자동 할당에 실패했습니다",
+        variant: "destructive",
+      });
+      throw err;
+    }
+  },
+  swap: async (oldProxyId, newProxyId) => {
+    try {
+      const res = await fetch(`/api/proxies/${oldProxyId}/swap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_proxy_id: newProxyId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "프록시 교체에 실패했습니다");
+      }
+      await get().fetch();
+      toast({
+        title: "프록시 교체 완료",
+        description: "프록시가 교체되었습니다",
+      });
+    } catch (err) {
+      toast({
+        title: "오류",
+        description:
+          err instanceof Error ? err.message : "프록시 교체에 실패했습니다",
+        variant: "destructive",
+      });
+      throw err;
+    }
+  },
+  bulkDelete: async (ids) => {
+    try {
+      const res = await fetch("/api/proxies", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "프록시 일괄 삭제에 실패했습니다");
+      }
+      await get().fetch();
+      toast({
+        title: "프록시 삭제 완료",
+        description: `${ids.length}개의 프록시가 삭제되었습니다`,
+      });
+    } catch (err) {
+      toast({
+        title: "오류",
+        description:
+          err instanceof Error ? err.message : "프록시 일괄 삭제에 실패했습니다",
         variant: "destructive",
       });
       throw err;

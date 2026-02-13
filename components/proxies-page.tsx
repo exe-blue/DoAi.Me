@@ -11,6 +11,10 @@ import {
   Wand2,
   Globe,
   Shield,
+  ArrowLeftRight,
+  AlertTriangle,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,8 +42,11 @@ import {
   statusBgSubtleClass,
   statusBadgeClass,
 } from "@/components/ui/status-indicator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useProxiesStore } from "@/hooks/use-proxies-store";
 import { useWorkersStore } from "@/hooks/use-workers-store";
+import { useSettingsStore } from "@/hooks/use-settings-store";
 import type { NodePC, Device, Proxy, ProxyType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -48,8 +55,10 @@ interface ProxiesPageProps {
 }
 
 export function ProxiesPage({ nodes }: ProxiesPageProps) {
-  const { proxies, loading, fetch: fetchProxies, create, bulkCreate, bulkAssignToWorker, remove, assign, autoAssign } = useProxiesStore();
+  const { proxies, loading, fetch: fetchProxies, create, bulkCreate, bulkAssignToWorker, remove, assign, autoAssign, swap, bulkDelete } = useProxiesStore();
   const fetchWorkers = useWorkersStore((s) => s.fetch);
+  const proxyPolicy = useSettingsStore((s) => s.getValue<string>("proxy_policy", "sticky"));
+  const fetchSettings = useSettingsStore((s) => s.fetch);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogNodeId, setAddDialogNodeId] = useState<string | null>(null);
@@ -58,6 +67,9 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
   const [bulkAssignDialogOpen, setBulkAssignDialogOpen] = useState(false);
   const [bulkAssignNodeId, setBulkAssignNodeId] = useState<string>("__none__");
   const [bulkAssignCount, setBulkAssignCount] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [swapDialogOpen, setSwapDialogOpen] = useState(false);
+  const [swappingProxyId, setSwappingProxyId] = useState<string | null>(null);
 
   // Add proxy form state
   const [selectedNodeId, setSelectedNodeId] = useState<string>("__none__");
@@ -66,7 +78,8 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
 
   useEffect(() => {
     fetchProxies();
-  }, [fetchProxies]);
+    fetchSettings();
+  }, [fetchProxies, fetchSettings]);
 
   const toggleNode = (nodeId: string) => {
     setExpandedNodes((prev) => {
@@ -153,6 +166,35 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
     }
   };
 
+  const toggleSelect = (proxyId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(proxyId)) next.delete(proxyId);
+      else next.add(proxyId);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    await bulkDelete(Array.from(selectedIds));
+    setSelectedIds(new Set());
+    fetchWorkers();
+  };
+
+  const openSwapDialog = (proxyId: string) => {
+    setSwappingProxyId(proxyId);
+    setSwapDialogOpen(true);
+  };
+
+  const handleSwapProxy = async (newProxyId: string) => {
+    if (!swappingProxyId) return;
+    await swap(swappingProxyId, newProxyId);
+    fetchWorkers();
+    setSwapDialogOpen(false);
+    setSwappingProxyId(null);
+  };
+
   // Build device map with proxy info
   const deviceMap = useMemo(() => {
     const map = new Map<string, Device & { proxyId?: string | null }>();
@@ -165,12 +207,23 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
     return map;
   }, [nodes, proxies]);
 
+  // Available proxies for swap (unassigned, active/valid)
+  const availableForSwap = useMemo(() => {
+    return proxies.filter(
+      (p) =>
+        p.deviceId === null &&
+        (p.status === "active" || p.status === "valid")
+    );
+  }, [proxies]);
+
   // Stats
   const stats = useMemo(() => {
     const total = proxies.length;
     const assigned = proxies.filter((p) => p.deviceId !== null).length;
     const unassigned = total - assigned;
-    return { total, assigned, unassigned };
+    const invalid = proxies.filter((p) => p.status === "invalid" || p.status === "error" || p.status === "banned").length;
+    const failing = proxies.filter((p) => p.failCount > 0).length;
+    return { total, assigned, unassigned, invalid, failing };
   }, [proxies]);
 
   // Group proxies by node
@@ -214,10 +267,31 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
       </div>
 
       {/* Summary Stats */}
-      <div className="flex items-center gap-3 text-sm">
+      <div className="flex items-center gap-3 text-sm flex-wrap">
         <span className="text-muted-foreground">총 {stats.total}개</span>
         <StatusBadge variant="success">할당됨 {stats.assigned}</StatusBadge>
         <StatusBadge variant="neutral">미할당 {stats.unassigned}</StatusBadge>
+        {stats.invalid > 0 && (
+          <StatusBadge variant="error">비정상 {stats.invalid}</StatusBadge>
+        )}
+        {stats.failing > 0 && (
+          <StatusBadge variant="warning">실패감지 {stats.failing}</StatusBadge>
+        )}
+        <Badge variant="outline" className="text-xs gap-1">
+          <Shield className="h-3 w-3" />
+          {proxyPolicy === "sticky" ? "Sticky" : proxyPolicy === "rotate_on_failure" ? "Rotate on Failure" : proxyPolicy === "rotate_daily" ? "Rotate Daily" : proxyPolicy}
+        </Badge>
+        {selectedIds.size > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleBulkDelete}
+            className="gap-1.5 ml-auto"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            선택 삭제 ({selectedIds.size})
+          </Button>
+        )}
       </div>
 
       {/* Nodes */}
@@ -293,18 +367,33 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                         <div className="space-y-1.5">
                           {assignedPxs.map((px) => {
                             const device = deviceMap.get(px.deviceId!);
+                            const isInvalid = px.status === "invalid" || px.status === "error" || px.status === "banned";
                             return (
                               <div
                                 key={px.id}
                                 className={cn(
                                   "flex items-center gap-2 rounded border p-2 text-sm",
-                                  statusBorderClass("success")
+                                  isInvalid ? statusBorderClass("error") : statusBorderClass("success")
                                 )}
                               >
+                                <Checkbox
+                                  checked={selectedIds.has(px.id)}
+                                  onCheckedChange={() => toggleSelect(px.id)}
+                                  className="shrink-0"
+                                />
                                 <ProxyTypeBadge type={px.type} />
                                 <code className="flex-1 font-mono text-xs">
                                   {px.address}
                                 </code>
+                                {px.failCount > 0 && (
+                                  <Badge variant="destructive" className="text-xs gap-1 py-0">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {px.failCount}
+                                  </Badge>
+                                )}
+                                {isInvalid && (
+                                  <StatusBadge variant="error">{px.status}</StatusBadge>
+                                )}
                                 <span className="text-muted-foreground">→</span>
                                 <span
                                   className={cn(
@@ -314,6 +403,17 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                                 >
                                   {device?.nickname || device?.serial || "Unknown"}
                                 </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openSwapDialog(px.id)}
+                                  disabled={availableForSwap.length === 0}
+                                  className="h-7 gap-1 px-2"
+                                  title="프록시 교체"
+                                >
+                                  <ArrowLeftRight className="h-3 w-3" />
+                                  교체
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -375,38 +475,55 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                           미할당 프록시 ({unassignedPxs.length})
                         </h3>
                         <div className="space-y-1.5">
-                          {unassignedPxs.map((px) => (
-                            <div
-                              key={px.id}
-                              className={cn(
-                                "flex items-center gap-2 rounded border p-2 text-sm",
-                                statusBorderClass("neutral")
-                              )}
-                            >
-                              <ProxyTypeBadge type={px.type} />
-                              <code className="flex-1 font-mono text-xs">
-                                {px.address}
-                              </code>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openAssignDialog(px.id)}
-                                className="h-7 gap-1 px-2"
+                          {unassignedPxs.map((px) => {
+                            const isInvalid = px.status === "invalid" || px.status === "error" || px.status === "banned";
+                            return (
+                              <div
+                                key={px.id}
+                                className={cn(
+                                  "flex items-center gap-2 rounded border p-2 text-sm",
+                                  isInvalid ? statusBorderClass("error") : statusBorderClass("neutral")
+                                )}
                               >
-                                <Link className="h-3 w-3" />
-                                할당
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveProxy(px.id)}
-                                className="h-7 gap-1 px-2"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                삭제
-                              </Button>
-                            </div>
-                          ))}
+                                <Checkbox
+                                  checked={selectedIds.has(px.id)}
+                                  onCheckedChange={() => toggleSelect(px.id)}
+                                  className="shrink-0"
+                                />
+                                <ProxyTypeBadge type={px.type} />
+                                <code className="flex-1 font-mono text-xs">
+                                  {px.address}
+                                </code>
+                                {px.failCount > 0 && (
+                                  <Badge variant="destructive" className="text-xs gap-1 py-0">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {px.failCount}
+                                  </Badge>
+                                )}
+                                {isInvalid && (
+                                  <StatusBadge variant="error">{px.status}</StatusBadge>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openAssignDialog(px.id)}
+                                  className="h-7 gap-1 px-2"
+                                >
+                                  <Link className="h-3 w-3" />
+                                  할당
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveProxy(px.id)}
+                                  className="h-7 gap-1 px-2"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                  삭제
+                                </Button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -487,10 +604,21 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                         statusBorderClass("neutral")
                       )}
                     >
+                      <Checkbox
+                        checked={selectedIds.has(px.id)}
+                        onCheckedChange={() => toggleSelect(px.id)}
+                        className="shrink-0"
+                      />
                       <ProxyTypeBadge type={px.type} />
                       <code className="flex-1 font-mono text-xs">
                         {px.address}
                       </code>
+                      {px.failCount > 0 && (
+                        <Badge variant="destructive" className="text-xs gap-1 py-0">
+                          <AlertTriangle className="h-3 w-3" />
+                          {px.failCount}
+                        </Badge>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -687,6 +815,44 @@ export function ProxiesPage({ nodes }: ProxiesPageProps) {
                     </div>
                   </button>
                 ))}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proxy Swap Dialog */}
+      <Dialog open={swapDialogOpen} onOpenChange={setSwapDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>프록시 교체</DialogTitle>
+            <DialogDescription>
+              교체할 새 프록시를 선택하세요 (미할당 active/valid 프록시만 표시됩니다).
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-96">
+            <div className="space-y-1.5 pr-3">
+              {availableForSwap.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  사용 가능한 프록시가 없습니다.
+                </p>
+              ) : (
+                availableForSwap.map((px) => (
+                  <button
+                    key={px.id}
+                    onClick={() => handleSwapProxy(px.id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded border p-2 text-left text-sm hover:bg-accent",
+                      statusBorderClass("neutral")
+                    )}
+                  >
+                    <ProxyTypeBadge type={px.type} />
+                    <code className="flex-1 font-mono text-xs">
+                      {px.address}
+                    </code>
+                    <StatusBadge variant="success">{px.status}</StatusBadge>
+                  </button>
+                ))
+              )}
             </div>
           </ScrollArea>
         </DialogContent>
