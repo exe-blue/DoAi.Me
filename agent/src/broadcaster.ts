@@ -58,6 +58,21 @@ export class Broadcaster {
     });
   }
 
+  async broadcastTaskProgress(
+    taskId: string,
+    done: number,
+    failed: number,
+    total: number
+  ): Promise<void> {
+    await this.sendBroadcast(`room:task:${taskId}`, "progress", {
+      task_id: taskId,
+      done,
+      failed,
+      total,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   private async sendBroadcast(
     topic: string,
     event: string,

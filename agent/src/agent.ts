@@ -249,6 +249,7 @@ async function executeYouTubeTask(task: TaskRow): Promise<void> {
     await sync.updateTaskStatus(task.id, "running", {
       done: doneCount, failed: failCount, total: serials.length,
     });
+    await broadcaster.broadcastTaskProgress(task.id, doneCount, failCount, serials.length);
   }
 
   // 3. Final status
@@ -256,6 +257,7 @@ async function executeYouTubeTask(task: TaskRow): Promise<void> {
   await sync.updateTaskStatus(task.id, finalStatus as "failed" | "completed", {
     total: serials.length, done: doneCount, failed: failCount,
   });
+  await broadcaster.broadcastTaskProgress(task.id, doneCount, failCount, serials.length);
 }
 
 async function executeTask(task: TaskRow): Promise<void> {
