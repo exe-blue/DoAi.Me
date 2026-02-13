@@ -58,9 +58,11 @@ function normalizeDevice(d) {
  * @param {import('./supabase-sync')} supabaseSync
  * @param {object} config
  * @param {import('./task-executor')|null} taskExecutor - optional, for stats reporting
+ * @param {import('./dashboard-broadcaster')|null} broadcaster - optional, for real-time dashboard updates
+ * @param {import('./adb-reconnect')|null} reconnectManager - optional, for updating registered devices
  * @returns {NodeJS.Timeout} interval handle
  */
-function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor) {
+function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager) {
   const workerId = supabaseSync.workerId;
   const interval = config.heartbeatInterval || 30000;
   const startedAt = new Date().toISOString();
@@ -116,23 +118,47 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor) {
         metadata
       );
 
-      // 4. Upsert each device
-      const activeSerials = [];
-      for (const device of devices) {
-        if (!device.serial) continue;
-        activeSerials.push(device.serial);
-        await supabaseSync.upsertDevice(
-          device.serial,
-          workerId,
-          device.status,
-          device.model,
-          device.battery,
-          device.ipIntranet
-        );
+      // 4. Batch upsert all devices in a single query
+      const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
+      await supabaseSync.batchUpsertDevices(devices, workerId);
+
+      // 4a. Update reconnect manager with current device list
+      if (reconnectManager) {
+        reconnectManager.updateRegisteredDevices(devices);
       }
 
       // 5. Mark disconnected devices as offline
       await supabaseSync.markOfflineDevices(workerId, activeSerials);
+
+      // 6. Get aggregate counts for dashboard snapshot
+      if (broadcaster) {
+        try {
+          const deviceCounts = await supabaseSync.getDeviceCounts(workerId);
+          const taskCounts = await supabaseSync.getTaskCounts(workerId);
+          const proxyCounts = await supabaseSync.getProxyCounts(workerId);
+
+          // Detect and publish device state changes
+          broadcaster.detectAndPublishChanges(devices);
+
+          // Build and publish dashboard snapshot
+          await broadcaster.publishDashboardSnapshot({
+            type: 'dashboard_snapshot',
+            worker: {
+              id: workerId,
+              name: config.workerName,
+              status: 'online',
+              uptime_seconds: metadata.uptime_sec,
+              last_heartbeat: new Date().toISOString()
+            },
+            devices: deviceCounts,
+            tasks: taskCounts,
+            proxies: proxyCounts,
+            timestamp: new Date().toISOString()
+          });
+        } catch (err) {
+          console.error(`[Heartbeat] Broadcaster error: ${err.message}`);
+        }
+      }
 
       console.log(
         `[Heartbeat] OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`

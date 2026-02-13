@@ -148,6 +148,172 @@ class SupabaseSync {
   }
 
   /**
+   * Batch upsert multiple devices in a single query
+   * @param {Array<{serial: string, status: string, model?: string, battery?: number, ipIntranet?: string}>} devices
+   * @param {string} workerId
+   * @returns {Promise<boolean>} success status
+   */
+  async batchUpsertDevices(devices, workerId) {
+    if (!devices || devices.length === 0) {
+      return true;
+    }
+
+    const rows = devices.map(d => ({
+      serial: d.serial,
+      worker_id: workerId,
+      status: d.status || 'online',
+      model: d.model || null,
+      battery_level: d.battery || null,
+      ip_intranet: d.ipIntranet || null,
+      last_seen: new Date().toISOString(),
+    }));
+
+    const { error } = await this.supabase
+      .from('devices')
+      .upsert(rows, { onConflict: 'serial' });
+
+    if (error) {
+      console.error(`[Supabase] Batch upsert failed: ${error.message}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Get task counts for a worker
+   * @param {string} workerId
+   * @returns {Promise<{running: number, pending: number, completed_today: number, failed_today: number}>}
+   */
+  async getTaskCounts(workerId) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString();
+
+    // Running tasks
+    const { count: running } = await this.supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'running');
+
+    // Pending tasks
+    const { count: pending } = await this.supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'pending');
+
+    // Completed today
+    const { count: completed_today } = await this.supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'completed')
+      .gte('completed_at', todayIso);
+
+    // Failed today
+    const { count: failed_today } = await this.supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'failed')
+      .gte('updated_at', todayIso);
+
+    return {
+      running: running || 0,
+      pending: pending || 0,
+      completed_today: completed_today || 0,
+      failed_today: failed_today || 0,
+    };
+  }
+
+  /**
+   * Get proxy counts for a worker
+   * @param {string} workerId
+   * @returns {Promise<{total: number, valid: number, invalid: number, unassigned: number}>}
+   */
+  async getProxyCounts(workerId) {
+    // Total proxies assigned to this worker
+    const { count: total } = await this.supabase
+      .from('proxies')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId);
+
+    // Valid proxies
+    const { count: valid } = await this.supabase
+      .from('proxies')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'valid');
+
+    // Invalid proxies
+    const { count: invalid } = await this.supabase
+      .from('proxies')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'invalid');
+
+    // Unassigned proxies (no device_serial)
+    const { count: unassigned } = await this.supabase
+      .from('proxies')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .is('device_serial', null);
+
+    return {
+      total: total || 0,
+      valid: valid || 0,
+      invalid: invalid || 0,
+      unassigned: unassigned || 0,
+    };
+  }
+
+  /**
+   * Get device counts for a worker
+   * @param {string} workerId
+   * @returns {Promise<{total: number, online: number, busy: number, error: number, offline: number}>}
+   */
+  async getDeviceCounts(workerId) {
+    const { count: total } = await this.supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId);
+
+    const { count: online } = await this.supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'online');
+
+    const { count: busy } = await this.supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'busy');
+
+    const { count: error } = await this.supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'error');
+
+    const { count: offline } = await this.supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('worker_id', workerId)
+      .eq('status', 'offline');
+
+    return {
+      total: total || 0,
+      online: online || 0,
+      busy: busy || 0,
+      error: error || 0,
+      offline: offline || 0,
+    };
+  }
+
+  /**
    * Mark devices not in the current list as offline
    * @param {string} workerId
    * @param {string[]} activeSerials - serials currently connected

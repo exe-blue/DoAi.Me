@@ -11,6 +11,8 @@ const TaskExecutor = require("./task-executor");
 const ProxyManager = require("./proxy-manager");
 const AccountManager = require("./account-manager");
 const ScriptVerifier = require("./script-verifier");
+const DashboardBroadcaster = require("./dashboard-broadcaster");
+const AdbReconnectManager = require("./adb-reconnect");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -20,6 +22,8 @@ let taskExecutor = null;
 let proxyManager = null;
 let accountManager = null;
 let scriptVerifier = null;
+let broadcaster = null;
+let reconnectManager = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -113,14 +117,27 @@ async function main() {
   // 5. Initialize task executor
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
 
-  // 6. Start heartbeat loop and wait for first beat
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor);
+  // 6. Initialize dashboard broadcaster
+  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.workerId);
+  try {
+    await broadcaster.init();
+    console.log("[Agent] ✓ Dashboard broadcaster initialized");
+  } catch (err) {
+    console.warn(`[Agent] ✗ Broadcaster init failed: ${err.message}`);
+    broadcaster = null; // Disable if initialization fails
+  }
+
+  // 7. Initialize ADB reconnect manager (needs to exist before heartbeat)
+  reconnectManager = new AdbReconnectManager(xiaowei, supabaseSync, broadcaster, config);
+
+  // 8. Start heartbeat loop and wait for first beat
+  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
 
   // Wait briefly for first heartbeat to complete
   await sleep(2000);
   console.log(`[Agent] ✓ Worker registered: ${config.workerName} (heartbeat OK)`);
 
-  // 7. Proxy setup — load assignments from Supabase and apply to devices
+  // 9. Proxy setup — load assignments from Supabase and apply to devices
   proxyManager = new ProxyManager(xiaowei, supabaseSync);
   if (xiaowei.connected) {
     try {
@@ -138,7 +155,7 @@ async function main() {
     console.log("[Agent] - Proxy setup: Xiaowei offline (skipped)");
   }
 
-  // 8. Account verification — check YouTube login on each device
+  // 10. Account verification — check YouTube login on each device
   accountManager = new AccountManager(xiaowei, supabaseSync);
   if (xiaowei.connected) {
     try {
@@ -156,7 +173,7 @@ async function main() {
     console.log("[Agent] - Account check: Xiaowei offline (skipped)");
   }
 
-  // 9. Script verification — check SCRIPTS_DIR and run test
+  // 11. Script verification — check SCRIPTS_DIR and run test
   scriptVerifier = new ScriptVerifier(xiaowei, config);
   if (config.scriptsDir) {
     try {
@@ -180,7 +197,7 @@ async function main() {
     console.log("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 10. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
+  // 12. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
   const taskCallback = (task) => {
     if (task.status === "pending") {
       taskExecutor.execute(task);
@@ -203,7 +220,7 @@ async function main() {
     console.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
   }
 
-  // 11. Poll for pending tasks as triple-fallback (Realtime may miss events)
+  // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
   taskPollHandle = setInterval(async () => {
     try {
       const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);
@@ -228,6 +245,14 @@ async function main() {
     console.error(`[Agent] Initial task poll error: ${err.message}`);
   }
 
+  // 14. Start ADB reconnect monitoring (manager already initialized above)
+  if (xiaowei.connected) {
+    reconnectManager.start();
+    console.log("[Agent] ✓ ADB reconnect manager started");
+  } else {
+    console.log("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
+  }
+
   console.log("[Agent] Ready and listening for tasks");
 }
 
@@ -247,6 +272,16 @@ async function shutdown() {
   if (heartbeatHandle) {
     clearInterval(heartbeatHandle);
     heartbeatHandle = null;
+  }
+
+  // Stop ADB reconnect manager
+  if (reconnectManager) {
+    reconnectManager.stop();
+  }
+
+  // Clean up broadcaster
+  if (broadcaster) {
+    await broadcaster.cleanup();
   }
 
   // Unsubscribe from Realtime
