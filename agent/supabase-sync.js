@@ -467,8 +467,8 @@ class SupabaseSync {
   }
 
   /**
-   * Insert a task execution log entry.
-   * Returns success status and the inserted log ID.
+   * Insert a task execution log entry (buffered — batched INSERT).
+   * Returns immediately with { ok: true, logId: null }.
    * @param {string} taskId
    * @param {string} deviceSerial
    * @param {string} workerId
@@ -477,45 +477,145 @@ class SupabaseSync {
    * @param {object} response
    * @param {string} status - 'success' | 'error' | 'warning' | 'info'
    * @param {string} message
-   * @returns {Promise<{ok: boolean, logId: string|null}>}
+   * @returns {{ok: boolean, logId: string|null}}
    */
-  async insertTaskLog(taskId, deviceSerial, workerId, action, request, response, status, message) {
+  insertTaskLog(taskId, deviceSerial, workerId, action, request, response, status, message) {
     // Map status to log_level enum: debug/info/warn/error/fatal
     const levelMap = { success: "info", error: "error", warning: "warn", info: "info" };
     const level = levelMap[status] || "info";
 
-    const { data, error } = await this.supabase
-      .from("task_logs")
-      .insert({
-        task_id: taskId,
-        device_serial: deviceSerial,
-        worker_id: workerId,
-        action,
-        request: request || null,
-        response: response || null,
-        level,
-        message: message || null,
-      })
-      .select("id")
-      .single();
+    const entry = {
+      task_id: taskId,
+      device_serial: deviceSerial,
+      worker_id: workerId,
+      action,
+      request: request || null,
+      response: response || null,
+      level,
+      message: message || null,
+    };
 
-    if (error) {
-      this.logStats.failed++;
-      console.error(`[Supabase] ✗ task_log 기록 실패: ${error.message}`);
-      return { ok: false, logId: null };
+    // Drop oldest entries if buffer exceeds hard cap
+    if (this._logBuffer.length >= this._LOG_MAX_BUFFER) {
+      const dropped = this._logBuffer.splice(0, this._logBuffer.length - this._LOG_MAX_BUFFER + 1);
+      console.warn(`[Supabase] Log buffer overflow — dropped ${dropped.length} oldest entries`);
     }
 
-    this.logStats.inserted++;
-    console.log(`[Supabase] ✓ task_log 기록: task=${taskId}, level=${level}, action=${action}`);
-    return { ok: true, logId: data.id };
+    this._logBuffer.push(entry);
+
+    // Flush if batch size reached
+    if (this._logBuffer.length >= this._LOG_BATCH_SIZE) {
+      this._flushLogBuffer().catch(() => {});
+    }
+
+    // Ensure flush timer is running
+    this._startFlushTimer();
+
+    return { ok: true, logId: null };
+  }
+
+  /**
+   * Flush buffered log entries to Supabase in a single batch INSERT.
+   */
+  async _flushLogBuffer() {
+    if (this._logBuffer.length === 0 || this._flushing) return;
+    this._flushing = true;
+
+    const entries = this._logBuffer.splice(0);
+
+    try {
+      const { error } = await this.supabase
+        .from("task_logs")
+        .insert(entries);
+
+      if (error) {
+        // Put entries back for retry
+        this._logBuffer.unshift(...entries);
+        this.logStats.failed += entries.length;
+        console.error(`[Supabase] Batch log insert failed (${entries.length} entries): ${error.message}`);
+        this._flushing = false;
+        return;
+      }
+
+      this.logStats.inserted += entries.length;
+      console.log(`[Supabase] ✓ Batch log insert: ${entries.length} entries`);
+
+      // Broadcast logs grouped by task_id
+      const grouped = {};
+      for (const entry of entries) {
+        if (!grouped[entry.task_id]) grouped[entry.task_id] = [];
+        grouped[entry.task_id].push(entry);
+      }
+      for (const [taskId, logs] of Object.entries(grouped)) {
+        await this.supabase.rpc("broadcast_to_channel", {
+          p_channel: `room:task:${taskId}:logs`,
+          p_event: "batch",
+          p_payload: { logs, count: logs.length },
+        }).catch(err => console.error(`[Supabase] broadcast logs failed: ${err.message}`));
+      }
+
+      // Append to local log file (non-blocking)
+      try {
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const logDir = nodePath.join(process.cwd(), "farm_logs");
+        const logFile = nodePath.join(logDir, `${dateStr}.log`);
+        if (!fs.existsSync(logDir)) {
+          fs.mkdirSync(logDir, { recursive: true });
+        }
+        const lines = entries.map(e =>
+          `${new Date().toISOString()} [${e.level}] task=${e.task_id} device=${e.device_serial} action=${e.action} ${e.message || ""}`
+        ).join("\n") + "\n";
+        fs.appendFile(logFile, lines, () => {});
+      } catch (_) {
+        // Local file logging is best-effort
+      }
+    } catch (err) {
+      // Network-level failure — put entries back
+      this._logBuffer.unshift(...entries);
+      this.logStats.failed += entries.length;
+      console.error(`[Supabase] Batch log flush error: ${err.message}`);
+    } finally {
+      this._flushing = false;
+    }
+  }
+
+  /** Start the periodic flush timer if not already running */
+  _startFlushTimer() {
+    if (this._logFlushTimer) return;
+    this._logFlushTimer = setInterval(() => {
+      this._flushLogBuffer().catch(() => {});
+    }, this._LOG_FLUSH_INTERVAL);
+    // Allow process to exit even if timer is running
+    if (this._logFlushTimer.unref) {
+      this._logFlushTimer.unref();
+    }
+  }
+
+  /** Stop the periodic flush timer */
+  _stopFlushTimer() {
+    if (this._logFlushTimer) {
+      clearInterval(this._logFlushTimer);
+      this._logFlushTimer = null;
+    }
+  }
+
+  /**
+   * Flush remaining buffer and stop timer. Call on shutdown.
+   */
+  async flushAndClose() {
+    this._stopFlushTimer();
+    if (this._logBuffer.length > 0) {
+      console.log(`[Supabase] Flushing ${this._logBuffer.length} remaining log entries...`);
+      await this._flushLogBuffer();
+    }
   }
 
   /**
    * Get log pipeline stats for diagnostics.
-   * @returns {{inserted: number, failed: number}}
+   * @returns {{inserted: number, failed: number, buffered: number}}
    */
   getLogStats() {
-    return { ...this.logStats };
+    return { ...this.logStats, buffered: this._logBuffer.length };
   }
 
   /**
@@ -675,8 +775,10 @@ class SupabaseSync {
     }
   }
 
-  /** Unsubscribe from all Realtime channels */
+  /** Unsubscribe from all Realtime channels and flush logs */
   async unsubscribe() {
+    // Flush remaining log buffer before disconnecting
+    await this.flushAndClose();
     // Broadcast channel
     if (this.broadcastSubscription) {
       await this.supabase.removeChannel(this.broadcastSubscription);
