@@ -4,6 +4,8 @@
  * Supports both postgres_changes (fallback) and Broadcast channels (primary)
  */
 const { createClient } = require("@supabase/supabase-js");
+const fs = require("fs");
+const nodePath = require("path");
 
 class SupabaseSync {
   constructor(supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey) {
@@ -29,6 +31,14 @@ class SupabaseSync {
 
     // Log pipeline stats
     this.logStats = { inserted: 0, failed: 0 };
+
+    // Batch log buffer
+    this._logBuffer = [];
+    this._logFlushTimer = null;
+    this._LOG_BATCH_SIZE = 50;
+    this._LOG_FLUSH_INTERVAL = 3000;
+    this._LOG_MAX_BUFFER = 500;
+    this._flushing = false;
   }
 
   /**
