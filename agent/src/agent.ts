@@ -18,6 +18,39 @@ let prevSerials = new Set<string>();
 const errorCountMap = new Map<string, number>();
 const ERROR_THRESHOLD = 2;
 
+const CHUNK_SIZE = 5;
+const APP_LAUNCH_DELAY = 3000;
+
+interface YouTubePayload {
+  videoUrl?: string;
+  scriptPath?: string;
+  watchDuration?: number;
+  actionName?: string;
+  variables?: Record<string, unknown>;
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function resolveDeviceSerials(task: TaskRow): string[] {
+  if (task.target_devices && task.target_devices.length > 0) {
+    return task.target_devices;
+  }
+  if (xiaowei.connected) {
+    return xiaowei.lastDevices?.map((d) => d.serial).filter(Boolean) as string[] ?? [];
+  }
+  return [];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function init(): Promise<void> {
   config = loadConfig();
 
@@ -144,6 +177,87 @@ function startTaskPolling(): void {
   taskPollHandle = setInterval(pollTasks, config.taskPollInterval);
 }
 
+async function executeYouTubeTask(task: TaskRow): Promise<void> {
+  const serials = resolveDeviceSerials(task);
+  if (serials.length === 0) throw new Error("No target devices available");
+
+  const payload = (task.payload ?? {}) as YouTubePayload;
+  const scriptPath = payload.scriptPath || "youtube_watch.js";
+
+  // 1. Insert task_device rows
+  const deviceRowIds = new Map<string, string>();
+  for (const serial of serials) {
+    const id = await sync.insertTaskDevice({
+      task_id: task.id,
+      device_serial: serial,
+      worker_id: sync.workerId,
+      status: "running",
+      xiaowei_action: "youtube_watch",
+    });
+    if (id) deviceRowIds.set(serial, id);
+  }
+
+  // 2. Chunk and execute
+  const chunks = chunkArray(serials, CHUNK_SIZE);
+  let doneCount = 0;
+  let failCount = 0;
+
+  for (const chunk of chunks) {
+    const devicesStr = chunk.join(",");
+
+    try {
+      // Step A: Launch YouTube app
+      await xiaowei.adbShell(devicesStr,
+        "am start -n com.google.android.youtube/.HomeActivity");
+      await sleep(APP_LAUNCH_DELAY);
+
+      // Step B: Run watch script
+      await xiaowei.autojsCreate(devicesStr, scriptPath, {
+        count: 1,
+        taskInterval: [2000, 5000] as [number, number],
+        deviceInterval: "1000",
+      });
+
+      // Step C: Mark chunk devices done
+      for (const serial of chunk) {
+        const rowId = deviceRowIds.get(serial);
+        if (rowId) {
+          await sync.updateTaskDevice(rowId, "done", { videoUrl: payload.videoUrl });
+        }
+        doneCount++;
+      }
+    } catch (err) {
+      const errMsg = (err as Error).message;
+      for (const serial of chunk) {
+        const rowId = deviceRowIds.get(serial);
+        if (rowId) {
+          await sync.updateTaskDevice(rowId, "failed", undefined, errMsg);
+        }
+        failCount++;
+      }
+
+      await sync.insertTaskLog({
+        task_id: task.id,
+        worker_id: sync.workerId,
+        action: "youtube_watch_chunk_failed",
+        level: "error",
+        message: `Chunk [${chunk.join(",")}] failed: ${errMsg}`,
+      });
+    }
+
+    // Step D: Update progress in task result
+    await sync.updateTaskStatus(task.id, "running", {
+      done: doneCount, failed: failCount, total: serials.length,
+    });
+  }
+
+  // 3. Final status
+  const finalStatus = failCount === serials.length ? "failed" : "completed";
+  await sync.updateTaskStatus(task.id, finalStatus as "failed" | "completed", {
+    total: serials.length, done: doneCount, failed: failCount,
+  });
+}
+
 async function executeTask(task: TaskRow): Promise<void> {
   if (runningTasks.size >= config.maxConcurrentTasks) {
     log.warn(`Max concurrent tasks (${config.maxConcurrentTasks}), skipping ${task.id}`);
@@ -162,6 +276,14 @@ async function executeTask(task: TaskRow): Promise<void> {
       throw new Error("Xiaowei is not connected");
     }
 
+    // Route YouTube tasks to specialized handler
+    if (taskType === "youtube" || taskType === "watch_video") {
+      await executeYouTubeTask(task);
+      log.info(`Task ${task.id} completed`);
+      return;
+    }
+
+    // Generic dispatch for other task types
     const devices = resolveDevices(task);
     const result = await dispatchTask(taskType, task, devices);
 

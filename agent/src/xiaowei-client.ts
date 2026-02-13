@@ -39,6 +39,7 @@ export class XiaoweiClient extends EventEmitter {
   private readonly maxReconnectDelay = 30000;
   private readonly pending = new Map<number, PendingRequest>();
   private requestId = 0;
+  public lastDevices: XiaoweiDevice[] = [];
 
   constructor(private readonly wsUrl: string) {
     super();
@@ -157,7 +158,9 @@ export class XiaoweiClient extends EventEmitter {
 
   async list(): Promise<XiaoweiDevice[]> {
     const resp = await this.send({ action: "list" });
-    return this.parseDeviceList(resp);
+    const devices = this.parseDeviceList(resp);
+    this.lastDevices = devices;
+    return devices;
   }
 
   async actionCreate(
