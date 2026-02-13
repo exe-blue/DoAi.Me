@@ -69,6 +69,12 @@ export interface Task {
   createdAt: string;
   completedAt: string | null;
   logs: string[];
+  result?: {
+    total?: number;
+    done?: number;
+    failed?: number;
+    [key: string]: unknown;
+  } | null;
 }
 
 // Channel types

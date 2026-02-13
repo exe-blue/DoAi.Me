@@ -48,6 +48,19 @@ function extractVariables(payload: Json): TaskVariables {
   };
 }
 
+function calculateProgress(status: string, result: Record<string, unknown> | null): number {
+  if (status === "completed" || status === "done") return 100;
+  if (status === "failed") return 100;
+  if (status === "pending" || status === "assigned") return 0;
+  // running — check result for per-device progress
+  if (result && typeof result.total === "number" && result.total > 0) {
+    const done = (result.done as number) || 0;
+    const failed = (result.failed as number) || 0;
+    return Math.round(((done + failed) / result.total) * 100);
+  }
+  return 0;
+}
+
 export function mapChannelRow(row: ChannelRow): Channel {
   return {
     id: row.id,
@@ -95,6 +108,7 @@ export function mapTaskRow(
     failed: "error",
     cancelled: "stopped",
   };
+  const result = row.result && typeof row.result === "object" && !Array.isArray(row.result) ? row.result as Record<string, unknown> : null;
   return {
     id: row.id,
     title: row.videos?.title ?? "",
@@ -107,10 +121,11 @@ export function mapTaskRow(
     isPriority: (row.priority ?? 5) <= 3,
     assignedDevices: 0,
     totalDevices: row.device_count ?? 0,
-    progress: row.status === "completed" ? 100 : row.status === "running" ? 50 : 0,
+    progress: calculateProgress(row.status || "pending", result),
     variables: extractVariables(row.payload),
     createdAt: row.created_at ?? "",
     completedAt: row.completed_at ?? "",
     logs,
+    result,
   };
 }

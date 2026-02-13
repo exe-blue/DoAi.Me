@@ -454,11 +454,21 @@ function TaskItem({
           </div>
 
           {task.status === "running" && (
-            <div className="flex items-center gap-2">
-              <Progress value={task.progress} className="h-1.5 flex-1" />
-              <span className="text-xs font-mono text-muted-foreground">
-                {task.progress}%
-              </span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Progress value={task.progress} className="h-1.5 flex-1" />
+                <span className="text-xs font-mono text-muted-foreground">
+                  {task.progress}%
+                </span>
+              </div>
+              {task.result?.total != null && (
+                <span className="text-xs text-gray-400">
+                  {task.result.done || 0}/{task.result.total} 성공
+                  {(task.result.failed as number) > 0 && (
+                    <span className="text-red-400 ml-1">{task.result.failed} 실패</span>
+                  )}
+                </span>
+              )}
             </div>
           )}
 
