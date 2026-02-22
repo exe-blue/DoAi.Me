@@ -27,8 +27,7 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.workerName = process.env.WORKER_NAME || "node-pc-01";
-    this.workerId = process.env.WORKER_ID || null;
+    this.pcNumber = process.env.PC_NUMBER || "PC00";  // ^PC[0-9]{2}$ format (DB constraint)
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;

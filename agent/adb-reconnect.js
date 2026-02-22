@@ -227,7 +227,7 @@ class AdbReconnectManager {
       status: c.status,
     }));
 
-    await this.supabaseSync.batchUpsertDevices(devices, this.supabaseSync.workerId);
+    await this.supabaseSync.batchUpsertDevices(devices, this.supabaseSync.pcId);
     console.log(`[ADB Reconnect] Updated ${changes.length} device status(es) in DB`);
   }
 

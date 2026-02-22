@@ -19,9 +19,9 @@ class StaleTaskCleaner {
    * @returns {Promise<number>} number of recovered tasks
    */
   async recoverStaleTasks() {
-    const workerId = this.supabaseSync.workerId;
-    if (!workerId) {
-      console.warn('[StaleTaskCleaner] No workerId — skipping recovery');
+    const pcId = this.supabaseSync.pcId;
+    if (!pcId) {
+      console.warn('[StaleTaskCleaner] No pcId — skipping recovery');
       return 0;
     }
 
@@ -30,7 +30,7 @@ class StaleTaskCleaner {
       .from('tasks')
       .select('*')
       .eq('status', 'running')
-      .eq('worker_id', workerId);
+      .eq('pc_id', pcId);
 
     if (error) {
       console.error(`[StaleTaskCleaner] Failed to query stale tasks: ${error.message}`);
@@ -75,7 +75,7 @@ class StaleTaskCleaner {
 
     // Also fail any running task_devices for these tasks
     const { error: deviceErr } = await this.supabaseSync.supabase
-      .from('task_devices')
+      .from('job_assignments')
       .update({
         status: 'failed',
         error_message: 'Agent restarted during execution',
@@ -85,7 +85,7 @@ class StaleTaskCleaner {
       .eq('status', 'running');
 
     if (deviceErr) {
-      console.error(`[StaleTaskCleaner] Failed to update task_devices: ${deviceErr.message}`);
+      console.error(`[StaleTaskCleaner] Failed to update job_assignments: ${deviceErr.message}`);
     }
 
     console.log(`[StaleTaskCleaner] Recovered ${staleIds.length} stale task(s): ${staleIds.join(', ')}`);
@@ -94,7 +94,7 @@ class StaleTaskCleaner {
     await this._publishEvent('stale_task_recovered', {
       count: staleIds.length,
       taskIds: staleIds,
-      workerId,
+      pcId,
     });
 
     return staleIds.length;
@@ -127,15 +127,15 @@ class StaleTaskCleaner {
    * Periodic check: find tasks running > 2x stale threshold and mark as 'timeout'.
    */
   async _periodicCheck() {
-    const workerId = this.supabaseSync.workerId;
-    if (!workerId) return;
+    const pcId = this.supabaseSync.pcId;
+    if (!pcId) return;
 
     try {
       const { data: runningTasks, error } = await this.supabaseSync.supabase
         .from('tasks')
         .select('id, started_at')
         .eq('status', 'running')
-        .eq('worker_id', workerId);
+        .eq('pc_id', pcId);
 
       if (error || !runningTasks) return;
 
@@ -172,7 +172,7 @@ class StaleTaskCleaner {
       await this._publishEvent('task_timeout', {
         count: timeoutIds.length,
         taskIds: timeoutIds,
-        workerId,
+        pcId,
       });
     } catch (err) {
       console.error(`[StaleTaskCleaner] Periodic check error: ${err.message}`);

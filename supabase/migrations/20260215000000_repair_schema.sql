@@ -192,7 +192,8 @@ ALTER TABLE proxies ADD COLUMN IF NOT EXISTS max_devices INT;
 ALTER TABLE proxies ADD COLUMN IF NOT EXISTS provider TEXT;
 ALTER TABLE proxies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE proxies ADD COLUMN IF NOT EXISTS username TEXT;
-ALTER TABLE proxies ADD COLUMN IF NOT EXISTS password TEXT;
+-- Do not store proxy password in cleartext. Use Supabase Vault and reference by password_secret_id.
+ALTER TABLE proxies ADD COLUMN IF NOT EXISTS password_secret_id TEXT;
 
 -- ============================================================
 -- 10. workers - missing columns

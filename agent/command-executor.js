@@ -110,7 +110,7 @@ class CommandExecutor {
         .from('command_logs')
         .update({
           status: 'running',
-          worker_id: this.supabaseSync.workerId
+          pc_id: this.supabaseSync.pcId
         })
         .eq('id', row.id);
 

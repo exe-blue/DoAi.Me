@@ -22,10 +22,21 @@ export default function Profile({ className, size = "md" }: ProfileProps) {
       setLoading(false);
       return;
     }
-    supabase.auth.getUser().then(({ data: { user: u } }) => {
-      setUser(u ?? null);
+    supabase.auth.getUser().then(({ data: { user: u }, error }) => {
+      if (error) {
+        console.error("[Profile] getUser error:", error);
+        setUser(null);
+      } else {
+        setUser(u ?? null);
+      }
       setLoading(false);
     });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {
@@ -39,15 +50,17 @@ export default function Profile({ className, size = "md" }: ProfileProps) {
   if (!user) return null;
 
   const email = user.email ?? "";
-  const name = (user.user_metadata?.name as string) ?? email;
+  const name = ((user.user_metadata?.name as string) ?? email).trim();
   const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
 
-  const initials = name
-    .split(" ")
-    .map((s: string) => s[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U";
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((s: string) => s[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "U";
 
   const avatarSize = size === "sm" ? "h-10 w-10" : size === "lg" ? "h-20 w-20" : "h-14 w-14";
   const nameSize = size === "sm" ? "text-sm" : size === "lg" ? "text-xl" : "text-base";

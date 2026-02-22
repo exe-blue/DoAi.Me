@@ -66,7 +66,7 @@ function waitForXiaowei(client, timeoutMs = 10000) {
 }
 
 async function main() {
-  console.log(`[Agent] Starting worker: ${config.workerName}`);
+  console.log(`[Agent] Starting PC: ${config.pcNumber}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
   // 1. Validate required config
@@ -99,12 +99,12 @@ async function main() {
     console.warn(`[Agent] ✗ Settings load failed: ${err.message}`);
   }
 
-  // 3. Register worker
+  // 3. Register PC
   try {
-    const workerId = await supabaseSync.getWorkerId(config.workerName);
-    console.log(`[Agent] Worker ID: ${workerId}`);
+    const pcId = await supabaseSync.getPcId(config.pcNumber);
+    console.log(`[Agent] PC ID: ${pcId}`);
   } catch (err) {
-    console.error(`[Agent] ✗ Worker registration failed: ${err.message}`);
+    console.error(`[Agent] ✗ PC registration failed: ${err.message}`);
     process.exit(1);
   }
 
@@ -148,7 +148,7 @@ async function main() {
   }
 
   // 6. Initialize dashboard broadcaster
-  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.workerId);
+  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.pcId);
   try {
     await broadcaster.init();
     console.log("[Agent] ✓ Dashboard broadcaster initialized");
@@ -165,13 +165,13 @@ async function main() {
 
   // Wait briefly for first heartbeat to complete
   await sleep(2000);
-  console.log(`[Agent] ✓ Worker registered: ${config.workerName} (heartbeat OK)`);
+  console.log(`[Agent] ✓ PC registered: ${config.pcNumber} (heartbeat OK)`);
 
   // 9. Proxy setup — load assignments from Supabase and apply to devices
   proxyManager = new ProxyManager(xiaowei, supabaseSync, config, broadcaster);
   if (xiaowei.connected) {
     try {
-      const count = await proxyManager.loadAssignments(supabaseSync.workerId);
+      const count = await proxyManager.loadAssignments(supabaseSync.pcId);
       if (count > 0) {
         const { applied, total } = await proxyManager.applyAll();
         console.log(`[Agent] ✓ Proxy setup: ${applied}/${total} devices`);
@@ -179,7 +179,7 @@ async function main() {
         console.log("[Agent] - Proxy setup: no assignments (skipped)");
       }
       // Start periodic proxy check loop
-      proxyManager.startCheckLoop(supabaseSync.workerId);
+      proxyManager.startCheckLoop(supabaseSync.pcId);
       console.log("[Agent] ✓ Proxy check loop started");
     } catch (err) {
       console.warn(`[Agent] ✗ Proxy setup failed: ${err.message}`);
@@ -192,7 +192,7 @@ async function main() {
   accountManager = new AccountManager(xiaowei, supabaseSync);
   if (xiaowei.connected) {
     try {
-      const count = await accountManager.loadAssignments(supabaseSync.workerId);
+      const count = await accountManager.loadAssignments(supabaseSync.pcId);
       if (count > 0) {
         const { verified, total } = await accountManager.verifyAll();
         console.log(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
@@ -238,7 +238,7 @@ async function main() {
   };
 
   // Primary: Broadcast channel (room:tasks) — lower latency
-  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.pcId, taskCallback);
   if (broadcastResult.status === "SUBSCRIBED") {
     console.log("[Agent] ✓ Broadcast room:tasks 구독 완료");
   } else {
@@ -246,7 +246,7 @@ async function main() {
   }
 
   // Fallback: postgres_changes — in case Broadcast is not configured
-  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.pcId, taskCallback);
   if (pgResult.status === "SUBSCRIBED") {
     console.log("[Agent] ✓ postgres_changes 구독 완료");
   } else {
@@ -256,7 +256,7 @@ async function main() {
   // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
   taskPollHandle = setInterval(async () => {
     try {
-      const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);
+      const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
       for (const task of tasks) {
         taskExecutor.execute(task);
       }
@@ -267,7 +267,7 @@ async function main() {
 
   // Run an initial poll immediately
   try {
-    const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);
+    const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
     if (tasks.length > 0) {
       console.log(`[Agent] Found ${tasks.length} pending task(s)`);
       for (const task of tasks) {
@@ -401,16 +401,11 @@ async function shutdown() {
     await supabaseSync.unsubscribe();
   }
 
-  // Update worker status to offline
-  if (supabaseSync && supabaseSync.workerId) {
+  // Update PC status to offline
+  if (supabaseSync && supabaseSync.pcId) {
     try {
-      await supabaseSync.updateWorkerStatus(
-        supabaseSync.workerId,
-        "offline",
-        0,
-        false
-      );
-      console.log("[Agent] Worker status set to offline");
+      await supabaseSync.updatePcStatus(supabaseSync.pcId, "offline");
+      console.log("[Agent] PC status set to offline");
     } catch (err) {
       console.error(`[Agent] Failed to update offline status: ${err.message}`);
     }

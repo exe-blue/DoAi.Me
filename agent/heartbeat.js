@@ -63,12 +63,12 @@ function normalizeDevice(d) {
  * @returns {NodeJS.Timeout} interval handle
  */
 function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager) {
-  const workerId = supabaseSync.workerId;
+  const pcId = supabaseSync.pcId;
   const interval = config.heartbeatInterval || 30000;
   const startedAt = new Date().toISOString();
 
   console.log(
-    `[Heartbeat] Starting (every ${interval / 1000}s) for worker ${workerId}`
+    `[Heartbeat] Starting (every ${interval / 1000}s) for PC ${pcId}`
   );
 
   async function beat() {
@@ -84,43 +84,14 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
         }
       }
 
-      // 2. Build metadata with execution stats
-      const metadata = {
-        started_at: startedAt,
-        uptime_sec: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
-        scripts_dir: config.scriptsDir || null,
-      };
+      // 2. Update PC status
+      const uptimeSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
 
-      // Task execution stats
-      if (taskExecutor) {
-        metadata.task_stats = taskExecutor.getStats();
-      }
-
-      // Subscription status
-      const subStatus = supabaseSync.getSubscriptionStatus();
-      metadata.subscriptions = {
-        broadcast: subStatus.broadcast,
-        pg_changes: subStatus.pgChanges,
-        broadcast_received: subStatus.broadcastReceived,
-        pg_changes_received: subStatus.pgChangesReceived,
-        last_via: subStatus.lastVia,
-      };
-
-      // Log pipeline stats
-      metadata.log_stats = supabaseSync.getLogStats();
-
-      // 3. Update worker status with metadata
-      await supabaseSync.updateWorkerStatus(
-        workerId,
-        "online",
-        devices.length,
-        xiaowei.connected,
-        metadata
-      );
+      await supabaseSync.updatePcStatus(pcId, "online");
 
       // 4. Batch upsert all devices in a single query
       const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
-      await supabaseSync.batchUpsertDevices(devices, workerId);
+      await supabaseSync.batchUpsertDevices(devices, pcId);
 
       // 4a. Update reconnect manager with current device list
       if (reconnectManager) {
@@ -128,14 +99,14 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
       }
 
       // 5. Mark disconnected devices as offline
-      await supabaseSync.markOfflineDevices(workerId, activeSerials);
+      await supabaseSync.markOfflineDevices(pcId, activeSerials);
 
       // 6. Get aggregate counts for dashboard snapshot
       if (broadcaster) {
         try {
-          const deviceCounts = await supabaseSync.getDeviceCounts(workerId);
-          const taskCounts = await supabaseSync.getTaskCounts(workerId);
-          const proxyCounts = await supabaseSync.getProxyCounts(workerId);
+          const deviceCounts = await supabaseSync.getDeviceCounts(pcId);
+          const taskCounts = await supabaseSync.getTaskCounts(pcId);
+          const proxyCounts = await supabaseSync.getProxyCounts(pcId);
 
           // Detect and publish device state changes
           await broadcaster.detectAndPublishChanges(devices);
@@ -144,10 +115,10 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
           await broadcaster.publishDashboardSnapshot({
             type: 'dashboard_snapshot',
             worker: {
-              id: workerId,
-              name: config.workerName,
+              id: pcId,
+              name: config.pcNumber,
               status: 'online',
-              uptime_seconds: metadata.uptime_sec,
+              uptime_seconds: uptimeSec,
               last_heartbeat: new Date().toISOString()
             },
             devices: deviceCounts,

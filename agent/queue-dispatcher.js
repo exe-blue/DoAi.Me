@@ -159,8 +159,8 @@ class QueueDispatcher {
         subscribeToggle: false,
       },
       status: "pending",
-      ...(taskConfig.workerId || taskConfig.worker_id
-        ? { worker_id: taskConfig.workerId || taskConfig.worker_id }
+      ...(taskConfig.pcId || taskConfig.pc_id
+        ? { pc_id: taskConfig.pcId || taskConfig.pc_id }
         : {}),
     };
 

@@ -8,10 +8,10 @@ export default async function LandingPage() {
   let session = null;
   try {
     const supabase = await createAuthServerClient();
-    const { data } = await supabase.auth.getSession();
-    session = data.session;
-  } catch {
-    // ignore
+    const { data } = await supabase.auth.getUser();
+    session = data.user ? { user: data.user } : null;
+  } catch (err) {
+    console.error("[Landing] Auth check failed:", err);
   }
 
   if (session) {

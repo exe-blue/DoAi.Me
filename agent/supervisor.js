@@ -79,7 +79,7 @@ function spawnChild() {
 
   console.log(`[Supervisor] Agent started (PID: ${child.pid})`);
 
-  child.on("exit", handleChildExit);
+  child.on("exit", (code, signal) => void handleChildExit(code, signal));
   child.on("error", (err) => {
     console.error(`[Supervisor] Agent process error: ${err.message}`);
   });
@@ -88,7 +88,7 @@ function spawnChild() {
 /**
  * Handle agent process exit — restart with crash loop protection.
  */
-function handleChildExit(code, signal) {
+async function handleChildExit(code, signal) {
   child = null;
 
   if (shuttingDown) {
@@ -107,7 +107,7 @@ function handleChildExit(code, signal) {
     console.error(
       `[Supervisor] CRITICAL: ${MAX_RESTARTS} restarts in ${RESTART_WINDOW_MS / 60000} minutes, stopping`
     );
-    publishSystemEvent("agent_crash_loop", {
+    await publishSystemEvent("agent_crash_loop", {
       restarts: restartTimestamps.length,
       windowMinutes: RESTART_WINDOW_MS / 60000,
       lastExitCode: code,
@@ -116,8 +116,8 @@ function handleChildExit(code, signal) {
     process.exit(1);
   }
 
-  // Publish restart event
-  publishSystemEvent("agent_restart", {
+  // Publish restart event (fire-and-forget)
+  void publishSystemEvent("agent_restart", {
     exitCode: code,
     signal: signal,
     restartCount: restartTimestamps.length,

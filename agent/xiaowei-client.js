@@ -248,30 +248,44 @@ class XiaoweiClient extends EventEmitter {
   }
 
   /**
-   * Run ADB shell command
+   * Run ADB shell command (without "adb" prefix)
    * @param {string} devices - Comma-separated serials or "all"
-   * @param {string} command - ADB shell command
+   * @param {string} command - Shell command (e.g. "getprop ro.product.model")
    */
   adbShell(devices, command) {
     return this.send({
-      action: "adbShell",
+      action: "adb_shell",
       devices,
-      data: [{ command }],
+      data: { command },
+    });
+  }
+
+  /**
+   * Run full ADB command (with "adb" prefix)
+   * @param {string} devices - Comma-separated serials or "all"
+   * @param {string} command - Full adb command
+   */
+  adb(devices, command) {
+    return this.send({
+      action: "adb",
+      devices,
+      data: { command },
     });
   }
 
   /**
    * Send pointer/touch event
    * @param {string} devices - Comma-separated serials or "all"
-   * @param {string} action - "tap", "swipe", etc.
-   * @param {number} x - X coordinate
-   * @param {number} y - Y coordinate
+   * @param {string} type - "0"=press, "1"=release, "2"=move, "3"=scroll_up, "4"=scroll_down,
+   *                         "5"=swipe_up, "6"=swipe_down, "7"=swipe_left, "8"=swipe_right
+   * @param {string|number} x - X coordinate (0-100%)
+   * @param {string|number} y - Y coordinate (0-100%)
    */
-  pointerEvent(devices, action, x, y) {
+  pointerEvent(devices, type, x, y) {
     return this.send({
       action: "pointerEvent",
       devices,
-      data: [{ action, x, y }],
+      data: { type: String(type), x: String(x || "50"), y: String(y || "50") },
     });
   }
 
@@ -284,8 +298,154 @@ class XiaoweiClient extends EventEmitter {
     return this.send({
       action: "inputText",
       devices,
-      data: [{ text }],
+      data: { text },
     });
+  }
+
+  /**
+   * Start an app by package name
+   * @param {string} devices
+   * @param {string} packageName - e.g. "com.google.android.youtube"
+   */
+  startApk(devices, packageName) {
+    return this.send({
+      action: "startApk",
+      devices,
+      data: { apk: packageName },
+    });
+  }
+
+  /**
+   * Stop an app by package name
+   * @param {string} devices
+   * @param {string} packageName
+   */
+  stopApk(devices, packageName) {
+    return this.send({
+      action: "stopApk",
+      devices,
+      data: { apk: packageName },
+    });
+  }
+
+  /**
+   * Install APK from file path
+   * @param {string} devices
+   * @param {string} filePath - Local path to APK file
+   */
+  installApk(devices, filePath) {
+    return this.send({
+      action: "installApk",
+      devices,
+      data: { path: filePath },
+    });
+  }
+
+  /**
+   * Uninstall an app
+   * @param {string} devices
+   * @param {string} packageName
+   */
+  uninstallApk(devices, packageName) {
+    return this.send({
+      action: "uninstallApk",
+      devices,
+      data: { apk: packageName },
+    });
+  }
+
+  /**
+   * Take a screenshot
+   * @param {string} devices
+   * @param {string} [savePath] - Optional path to save screenshot
+   */
+  screen(devices, savePath) {
+    return this.send({
+      action: "screen",
+      devices,
+      data: savePath ? { path: savePath } : {},
+    });
+  }
+
+  /**
+   * Navigation key event
+   * @param {string} devices
+   * @param {string} type - "0"=back, "1"=home, "2"=recents
+   */
+  pushEvent(devices, type) {
+    return this.send({
+      action: "pushEvent",
+      devices,
+      data: { type: String(type) },
+    });
+  }
+
+  /**
+   * Write text to clipboard
+   * @param {string} devices
+   * @param {string} text
+   */
+  writeClipBoard(devices, text) {
+    return this.send({
+      action: "writeClipBoard",
+      devices,
+      data: { text },
+    });
+  }
+
+  /** Get list of installed apps */
+  apkList(devices) {
+    return this.send({
+      action: "apkList",
+      devices,
+      data: {},
+    });
+  }
+
+  /** Get list of input methods */
+  imeList(devices) {
+    return this.send({
+      action: "imeList",
+      devices,
+      data: {},
+    });
+  }
+
+  /** Update device information */
+  updateDevices(devices, data) {
+    return this.send({
+      action: "updateDevices",
+      devices,
+      data,
+    });
+  }
+
+  // ── Convenience methods ──
+
+  goHome(devices) {
+    return this.pushEvent(devices, "1");
+  }
+
+  goBack(devices) {
+    return this.pushEvent(devices, "0");
+  }
+
+  recentApps(devices) {
+    return this.pushEvent(devices, "2");
+  }
+
+  async tap(devices, x, y) {
+    await this.pointerEvent(devices, "0", x, y);
+    await new Promise((r) => setTimeout(r, 50));
+    return this.pointerEvent(devices, "1", x, y);
+  }
+
+  swipeUp(devices) {
+    return this.pointerEvent(devices, "5", "50", "50");
+  }
+
+  swipeDown(devices) {
+    return this.pointerEvent(devices, "6", "50", "50");
   }
 
   /** Gracefully close the connection */

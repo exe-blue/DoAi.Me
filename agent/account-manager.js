@@ -28,15 +28,21 @@ class AccountManager {
   async loadAssignments(workerId) {
     this.assignments.clear();
 
-    // Get all accounts assigned to devices for this worker
-    const { data: accounts, error: accErr } = await this.supabaseSync.supabase
-      .from("accounts")
-      .select("id, email, status, device_id")
-      .eq("worker_id", workerId)
-      .not("device_id", "is", null);
+    let accounts;
+    try {
+      const { data, error: accErr } = await this.supabaseSync.supabase
+        .from("accounts")
+        .select("id, email, status, device_id")
+        .eq("pc_id", workerId)
+        .not("device_id", "is", null);
 
-    if (accErr) {
-      console.error(`[Account] Failed to load account assignments: ${accErr.message}`);
+      if (accErr) {
+        console.warn(`[Account] accounts table not available — skipping (${accErr.message})`);
+        return 0;
+      }
+      accounts = data;
+    } catch (err) {
+      console.warn(`[Account] accounts query failed — skipping (${err.message})`);
       return 0;
     }
 

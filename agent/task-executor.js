@@ -4,6 +4,15 @@
  */
 const path = require("path");
 
+/** Task types that use job_assignments (per-device config). Others (adb_shell, adb, etc.) skip it. */
+const JOB_ASSIGNMENT_TASK_TYPES = new Set([
+  "watch_video", "view_farm", "subscribe", "like", "comment", "custom", "action", "script", "run_script", "actionCreate",
+]);
+
+function _taskTypeUsesJobAssignments(taskType) {
+  return taskType && JOB_ASSIGNMENT_TASK_TYPES.has(taskType);
+}
+
 class TaskExecutor {
   /**
    * @param {import('./xiaowei-client')} xiaowei
@@ -39,7 +48,7 @@ class TaskExecutor {
 
     this.running.add(task.id);
     this.stats.total++;
-    const taskType = task.task_type || task.type;
+    const taskType = task.task_name || task.task_type || task.type;
     const startTime = Date.now();
 
     console.log(`[TaskExecutor] ▶ ${task.id} (${taskType})`);
@@ -53,8 +62,10 @@ class TaskExecutor {
         throw new Error("Xiaowei is not connected");
       }
 
-      // 3. Fetch per-device configs from task_devices (if batch task)
-      const deviceConfigs = await this._fetchDeviceConfigs(task.id);
+      // 3. Fetch per-device configs from job_assignments only for task types that use them (skip for adb_shell, adb, etc.)
+      const deviceConfigs = _taskTypeUsesJobAssignments(taskType)
+        ? await this._fetchDeviceConfigs(task.id)
+        : new Map();
 
       // 4. Execute based on task type — _dispatch logs the specific Xiaowei command
       const devices = this._resolveDevices(task);
@@ -65,10 +76,9 @@ class TaskExecutor {
       const summary = _extractResponseSummary(result);
 
       // 6. Log success
-      await this.supabaseSync.insertTaskLog(
+      await this.supabaseSync.insertExecutionLog(
         task.id,
         devices,
-        this.supabaseSync.workerId,
         taskType,
         task.payload,
         result,
@@ -91,10 +101,9 @@ class TaskExecutor {
       console.error(`[TaskExecutor] ✗ ${task.id} failed: ${err.message} (${durationSec}s)`);
 
       // Log failure
-      await this.supabaseSync.insertTaskLog(
+      await this.supabaseSync.insertExecutionLog(
         task.id,
         task.target_devices ? task.target_devices.join(",") : "all",
-        this.supabaseSync.workerId,
         taskType,
         task.payload,
         null,
@@ -116,29 +125,35 @@ class TaskExecutor {
    * @returns {Promise<Map<string, {video_url: string, video_id: string}>>}
    */
   async _fetchDeviceConfigs(taskId) {
-    const { data, error } = await this.supabaseSync.supabase
-      .from("task_devices")
-      .select("device_serial, config")
-      .eq("task_id", taskId);
+    try {
+      const { data, error } = await this.supabaseSync.supabase
+        .from("job_assignments")
+        .select("*")
+        .eq("job_id", taskId);
 
-    if (error) {
-      console.warn(`[TaskExecutor] Failed to fetch task_devices: ${error.message}`);
-      return new Map();
-    }
-
-    if (!data || data.length === 0) {
-      return new Map();
-    }
-
-    const configs = new Map();
-    for (const row of data) {
-      if (row.config && row.config.video_url && row.config.video_id) {
-        configs.set(row.device_serial, row.config);
+      if (error) {
+        console.warn(`[TaskExecutor] Failed to fetch job_assignments: ${error.message}`);
+        return new Map();
       }
-    }
 
-    console.log(`[TaskExecutor] Loaded ${configs.size} per-device configs`);
-    return configs;
+      if (!data || data.length === 0) {
+        return new Map();
+      }
+
+      const configs = new Map();
+      for (const row of data) {
+        const serial = row.device_serial || row.device_id;
+        if (serial && row.video_url && row.video_id) {
+          configs.set(serial, { video_url: row.video_url, video_id: row.video_id });
+        }
+      }
+
+      console.log(`[TaskExecutor] Loaded ${configs.size} per-device configs`);
+      return configs;
+    } catch (err) {
+      console.warn(`[TaskExecutor] job_assignments query failed — skipping (${err.message})`);
+      return new Map();
+    }
   }
 
   /**
@@ -233,8 +248,62 @@ class TaskExecutor {
         if (!payload.command) {
           throw new Error("command is required for adb type");
         }
+        console.log(`[TaskExecutor]   Xiaowei adb: "${payload.command}" → ${devices}`);
+        return this.xiaowei.adb(devices, payload.command);
+
+      case "adb_shell":
+        if (!payload.command) {
+          throw new Error("command is required for adb_shell type");
+        }
         console.log(`[TaskExecutor]   Xiaowei adbShell: "${payload.command}" → ${devices}`);
         return this.xiaowei.adbShell(devices, payload.command);
+
+      case "start_app":
+        if (!payload.packageName) {
+          throw new Error("packageName is required for start_app type");
+        }
+        console.log(`[TaskExecutor]   Xiaowei startApk: ${payload.packageName} → ${devices}`);
+        return this.xiaowei.startApk(devices, payload.packageName);
+
+      case "stop_app":
+        if (!payload.packageName) {
+          throw new Error("packageName is required for stop_app type");
+        }
+        console.log(`[TaskExecutor]   Xiaowei stopApk: ${payload.packageName} → ${devices}`);
+        return this.xiaowei.stopApk(devices, payload.packageName);
+
+      case "install_apk":
+        if (!payload.filePath) {
+          throw new Error("filePath is required for install_apk type");
+        }
+        console.log(`[TaskExecutor]   Xiaowei installApk: ${payload.filePath} → ${devices}`);
+        return this.xiaowei.installApk(devices, payload.filePath);
+
+      case "screenshot":
+        console.log(`[TaskExecutor]   Xiaowei screen → ${devices}`);
+        return this.xiaowei.screen(devices, payload.savePath);
+
+      case "push_event":
+        if (payload.type == null || payload.type === undefined) {
+          throw new Error("type is required for push_event (0=back, 1=home, 2=recents)");
+        }
+        console.log(`[TaskExecutor]   Xiaowei pushEvent: type=${payload.type} → ${devices}`);
+        return this.xiaowei.pushEvent(devices, String(payload.type));
+
+      case "run_script":
+        if (!payload.scriptPath) {
+          throw new Error("scriptPath is required for run_script type");
+        }
+        const runScriptPath = this._resolveScriptPath(payload.scriptPath);
+        console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
+        return this.xiaowei.autojsCreate(devices, runScriptPath, options);
+
+      case "actionCreate":
+        if (!payload.actionName) {
+          throw new Error("actionName is required for actionCreate type");
+        }
+        console.log(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
+        return this.xiaowei.actionCreate(devices, payload.actionName, options);
 
       default:
         throw new Error(`Unknown task type: ${taskType}`);

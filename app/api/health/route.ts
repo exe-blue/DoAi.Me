@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
     ? Math.round((tasksCompleted / totalTasks) * 1000) / 10
     : 100;
 
-  // Build hourly timeline (last 24h only for timeline)
+  // Build hourly timeline (last 24h only for timeline). online_devices is current snapshot.
   const timelineHours = Math.min(hours, 24);
-  const timeline: { hour: string; online_devices: number; tasks_completed: number; errors: number }[] = [];
+  const timeline: { hour: string; current_online_devices: number; tasks_completed: number; errors: number }[] = [];
 
   for (let i = timelineHours - 1; i >= 0; i--) {
     const hourStart = new Date(Date.now() - (i + 1) * 60 * 60 * 1000);
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 
     timeline.push({
       hour: hourStr,
-      online_devices: onlineDevices,
+      current_online_devices: onlineDevices,
       tasks_completed: hourTasks.filter(t => t.status === "completed" || t.status === "done").length,
       errors: hourErrors.length,
     });

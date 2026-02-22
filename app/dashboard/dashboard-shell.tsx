@@ -73,13 +73,14 @@ function UserMenu() {
   if (loading || !user) return null;
 
   const email = user.email ?? "";
-  const initials = (user.user_metadata?.name ?? email) || "U"
+  const displayName = (user.user_metadata?.name ?? email) || "U";
+  const initials = displayName
     .toString()
     .split(" ")
     .map((s: string) => s[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2) || "U";
 
   return (
     <div className="flex items-center gap-3 px-3 py-2">
@@ -97,13 +98,15 @@ function UserMenu() {
           <p className="text-xs text-muted-foreground truncate">{email}</p>
         )}
       </div>
-      <a
-        href="/auth/logout"
-        className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        title="로그아웃"
-      >
-        <LogOut className="h-4 w-4" />
-      </a>
+      <form action="/auth/logout" method="post" className="inline">
+        <button
+          type="submit"
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="로그아웃"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </form>
     </div>
   );
 }

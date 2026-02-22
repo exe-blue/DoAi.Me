@@ -47,14 +47,21 @@ class ProxyManager {
   async loadAssignments(workerId) {
     this.assignments.clear();
 
-    const { data: proxies, error: proxyErr } = await this.supabaseSync.supabase
-      .from("proxies")
-      .select("id, address, username, password, type, device_id, fail_count")
-      .eq("worker_id", workerId)
-      .not("device_id", "is", null);
+    let proxies;
+    try {
+      const { data, error: proxyErr } = await this.supabaseSync.supabase
+        .from("proxies")
+        .select("id, address, username, password, type, device_id, fail_count")
+        .eq("pc_id", workerId)
+        .not("device_id", "is", null);
 
-    if (proxyErr) {
-      console.error(`[Proxy] Failed to load proxy assignments: ${proxyErr.message}`);
+      if (proxyErr) {
+        console.warn(`[Proxy] proxies table not available — skipping (${proxyErr.message})`);
+        return 0;
+      }
+      proxies = data;
+    } catch (err) {
+      console.warn(`[Proxy] proxies query failed — skipping (${err.message})`);
       return 0;
     }
 
@@ -296,7 +303,7 @@ class ProxyManager {
    * @param {*} newValue
    */
   applyConfigChange(key, newValue) {
-    const workerId = this.supabaseSync.workerId;
+    const workerId = this.supabaseSync.pcId;
 
     if (key === "proxy_check_interval") {
       // Restart check loop with new interval
@@ -409,7 +416,7 @@ class ProxyManager {
     const { data: candidates, error: findErr } = await this.supabaseSync.supabase
       .from("proxies")
       .select("id, address, username, password, type")
-      .eq("worker_id", workerId)
+      .eq("pc_id", workerId)
       .eq("status", "valid")
       .is("device_id", null)
       .limit(1);
@@ -506,7 +513,7 @@ class ProxyManager {
     const { data: proxies, error: pErr } = await this.supabaseSync.supabase
       .from("proxies")
       .select("id, device_id")
-      .eq("worker_id", workerId)
+      .eq("pc_id", workerId)
       .in("status", ["valid", "active"]);
 
     if (pErr || !proxies || proxies.length === 0) {

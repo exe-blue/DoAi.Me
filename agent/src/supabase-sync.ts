@@ -4,72 +4,107 @@ import type { XiaoweiDevice } from "./xiaowei-client";
 
 const log = getLogger("SupabaseSync");
 
-// Minimal type aliases matching the real DB schema (enums)
-type WorkerStatus = "online" | "offline" | "error";
-type DeviceStatus = "online" | "offline" | "busy" | "error";
-type TaskStatus = "pending" | "assigned" | "running" | "done" | "failed" | "cancelled" | "timeout" | "completed";
+// ============================================================
+// Supabase Sync — Matched to REAL DB Schema (2026-02-22)
+// Tables: pcs, devices, jobs, job_assignments, video_executions,
+//         execution_logs, nodes, tasks, settings
+// ============================================================
+
+// ── Status Types (matching DB constraints) ────────────────
+
+type PcStatus = "online" | "offline" | "error";
+type DeviceState = "DISCONNECTED" | "IDLE" | "QUEUED" | "RUNNING" | "ERROR" | "QUARANTINE";
+type DeviceStatus = "idle" | "busy" | "offline" | "online" | "error";
+type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+type JobAssignmentStatus = "pending" | "paused" | "running" | "completed" | "failed" | "cancelled";
 type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
 
-// Row shapes used by the agent
-export interface WorkerRow {
+// ── Row Interfaces ────────────────────────────────────────
+
+export interface PcRow {
   id: string;
-  hostname: string;
-  status: WorkerStatus | null;
-  device_count: number | null;
-  xiaowei_connected: boolean | null;
+  pc_number: string; // "PC00" ~ "PC04"
+  ip_address: string | null;
+  hostname: string | null;
+  label: string | null;
+  status: PcStatus;
+  max_devices: number;
   last_heartbeat: string | null;
-  agent_version: string | null;
-  os_info: string | null;
 }
 
+export interface JobRow {
+  id: string;
+  title: string;
+  keyword: string | null;
+  video_title: string | null;
+  target_url: string;
+  video_url: string | null;
+  script_type: string;
+  duration_sec: number;
+  duration_min_pct: number;
+  duration_max_pct: number;
+  prob_like: number;
+  prob_comment: number;
+  prob_playlist: number;
+  is_active: boolean;
+  total_assignments: number;
+}
+
+export interface JobAssignmentRow {
+  id: string;
+  job_id: string;
+  device_id: string;
+  device_serial: string | null;
+  agent_id: string | null;
+  status: JobAssignmentStatus;
+  progress_pct: number;
+  final_duration_sec: number | null;
+  watch_percentage: number;
+  did_like: boolean;
+  did_comment: boolean;
+  error_log: string | null;
+  error_code: string | null;
+  retry_count: number;
+}
+
+/** Legacy tasks table — still used for generic/ADB tasks */
 export interface TaskRow {
   id: string;
-  type: string;
-  task_type: string | null;
-  status: TaskStatus | null;
-  priority: number | null;
+  task_name: string;
+  status: string;
+  device_id: string | null;
+  pc_id: string | null;
   payload: Record<string, unknown>;
-  target_devices: string[] | null;
-  target_tag: string | null;
-  target_workers: string[] | null;
-  worker_id: string | null;
-  preset_id: string | null;
-  device_count: number | null;
-  error: string | null;
   result: Record<string, unknown> | null;
+  error: string | null;
+  progress: number;
+  progress_message: string | null;
+  // Agent convenience fields (mapped from payload)
+  target_devices?: string[];
+  target_workers?: string[];
 }
 
-export interface InsertTaskLog {
-  task_id: string;
-  task_device_id?: string;
-  device_serial?: string;
-  worker_id: string;
-  action: string;
-  level: LogLevel;
-  message: string;
-  request?: Record<string, unknown>;
-  response?: Record<string, unknown>;
-  source?: string;
+export interface InsertExecutionLog {
+  execution_id?: string;
+  device_id?: string;
+  workflow_id?: string;
+  step_id?: string;
+  level?: LogLevel;
+  status?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+  details?: Record<string, unknown>;
+  video_id?: string;
+  watch_duration_sec?: number;
 }
 
-export interface InsertTaskDevice {
-  task_id: string;
-  device_serial: string;
-  worker_id: string;
-  status?: TaskStatus;
-  xiaowei_action?: string;
-  xiaowei_code?: number;
-  xiaowei_request?: Record<string, unknown>;
-  xiaowei_response?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  error?: string;
-}
+// ── Sync Class ────────────────────────────────────────────
 
 export class SupabaseSync {
   private supabase: SupabaseClient;
-  workerId: string = "";
+  pcId: string = "";         // pcs.id (UUID)
+  pcNumber: string = "";     // pcs.pc_number ("PC00")
   private broadcastChannel: RealtimeChannel | null = null;
-  private taskChannel: RealtimeChannel | null = null;
 
   constructor(supabaseUrl: string, serviceRoleKey: string) {
     this.supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -81,55 +116,112 @@ export class SupabaseSync {
     return this.supabase;
   }
 
-  async upsertWorker(hostname: string): Promise<string> {
+  // ── pcs 테이블 ──────────────────────────────────────────
+
+  /**
+   * PC 등록/업데이트.
+   * pcNumber: "PC00" 형식 (DB 체크제약: ^PC[0-9]{2}$)
+   */
+  async upsertPc(pcNumber: string, hostname?: string): Promise<string> {
     // Try to find existing
     const { data: existing } = await this.supabase
-      .from("workers")
-      .select("id")
-      .eq("hostname", hostname)
+      .from("pcs")
+      .select("id, pc_number")
+      .eq("pc_number", pcNumber)
       .single();
 
     if (existing) {
-      this.workerId = existing.id;
-      // Update status to online
+      this.pcId = existing.id;
+      this.pcNumber = existing.pc_number;
       await this.supabase
-        .from("workers")
+        .from("pcs")
         .update({
-          status: "online" as WorkerStatus,
+          status: "online" as PcStatus,
+          hostname: hostname || undefined,
           last_heartbeat: new Date().toISOString(),
-          agent_version: "2.1.0",
-          os_info: `${process.platform} ${process.arch}`,
         })
-        .eq("id", this.workerId);
-      log.info(`Found worker: ${this.workerId}`);
-      return this.workerId;
+        .eq("id", this.pcId);
+      log.info(`Found PC: ${this.pcNumber} (${this.pcId})`);
+      return this.pcId;
     }
 
     // Create new
     const { data: created, error } = await this.supabase
-      .from("workers")
+      .from("pcs")
       .insert({
-        hostname,
-        status: "online" as WorkerStatus,
-        agent_version: "2.1.0",
-        os_info: `${process.platform} ${process.arch}`,
+        pc_number: pcNumber,
+        hostname: hostname || null,
+        status: "online" as PcStatus,
+        last_heartbeat: new Date().toISOString(),
       })
-      .select("id")
+      .select("id, pc_number")
       .single();
 
     if (error || !created) {
-      throw new Error(`Failed to create worker: ${error?.message}`);
+      throw new Error(`Failed to create PC: ${error?.message}`);
     }
 
-    this.workerId = created.id;
-    log.info(`Created worker: ${this.workerId}`);
-    return this.workerId;
+    this.pcId = created.id;
+    this.pcNumber = created.pc_number;
+    log.info(`Created PC: ${this.pcNumber} (${this.pcId})`);
+    return this.pcId;
   }
 
+  async updatePcHeartbeat(deviceCount: number, xiaoweiConnected: boolean): Promise<void> {
+    const { error } = await this.supabase
+      .from("pcs")
+      .update({
+        status: "online" as PcStatus,
+        last_heartbeat: new Date().toISOString(),
+      })
+      .eq("id", this.pcId);
+
+    // Also update nodes table if it exists (dashboard reads from nodes)
+    await this.supabase
+      .from("nodes")
+      .upsert({
+        id: this.pcNumber,
+        name: this.pcNumber,
+        status: "online",
+        total_devices: deviceCount,
+        active_devices: deviceCount,
+        last_heartbeat: new Date().toISOString(),
+        metadata: { xiaowei_connected: xiaoweiConnected },
+      }, { onConflict: "id" })
+      .then(({ error: e }) => {
+        if (e) log.warn(`nodes upsert: ${e.message}`);
+      });
+
+    if (error) {
+      log.error("PC heartbeat update failed", { error: error.message });
+    }
+  }
+
+  async setPcOffline(): Promise<void> {
+    if (!this.pcId) return;
+    await this.supabase
+      .from("pcs")
+      .update({ status: "offline" as PcStatus })
+      .eq("id", this.pcId);
+
+    await this.supabase
+      .from("nodes")
+      .update({ status: "offline", active_devices: 0 })
+      .eq("id", this.pcNumber);
+
+    log.info("PC set to offline");
+  }
+
+  // ── devices 테이블 ──────────────────────────────────────
+
+  /**
+   * Xiaowei 디바이스 목록 → DB 동기화
+   * 실제 DB 컬럼: serial_number, pc_id, model, status, state, battery_level, last_seen_at 등
+   */
   async syncDevices(devices: XiaoweiDevice[], errorSerials?: string[]): Promise<void> {
     const now = new Date().toISOString();
     const activeSerials: string[] = [];
-    const errorSerialsSet = new Set(errorSerials ?? []);
+    const errorSet = new Set(errorSerials ?? []);
 
     for (const d of devices) {
       if (!d.serial) continue;
@@ -137,17 +229,24 @@ export class SupabaseSync {
 
       const { error } = await this.supabase.from("devices").upsert(
         {
-          serial: d.serial,
-          worker_id: this.workerId,
-          status: "online" as DeviceStatus,
+          serial_number: d.serial,
+          pc_id: this.pcId,
           model: d.model ?? d.name ?? null,
+          model_name: d.name || null,
+          status: "online" as DeviceStatus,
+          state: "IDLE" as DeviceState,
           battery_level: d.battery ?? null,
-          ip_intranet: d.intranetIp || null,
-          xiaowei_serial: d.onlySerial || null,
-          screen_on: d.screenOn ?? null,
-          last_seen: now,
+          last_seen_at: now,
+          last_heartbeat: now,
+          metadata: {
+            xiaowei_serial: d.onlySerial,
+            xiaowei_mode: d.mode,
+            source_width: d.sourceWidth,
+            source_height: d.sourceHeight,
+            intranet_ip: d.intranetIp,
+          },
         },
-        { onConflict: "serial" }
+        { onConflict: "serial_number" }
       );
 
       if (error) {
@@ -155,101 +254,125 @@ export class SupabaseSync {
       }
     }
 
-    // Mark devices with errors
-    if (errorSerialsSet.size > 0) {
-      const errorSerialsList = Array.from(errorSerialsSet);
+    // Mark error devices
+    if (errorSet.size > 0) {
       await this.supabase
         .from("devices")
-        .update({ status: "error" as DeviceStatus, last_seen: now })
-        .eq("worker_id", this.workerId)
-        .in("serial", errorSerialsList);
+        .update({
+          status: "error" as DeviceStatus,
+          state: "ERROR" as DeviceState,
+          last_seen_at: now,
+        })
+        .eq("pc_id", this.pcId)
+        .in("serial_number", Array.from(errorSet));
     }
 
-    // Mark missing devices offline (excluding active and error serials)
-    const excludedSerials = [...activeSerials, ...Array.from(errorSerialsSet)];
-    if (excludedSerials.length === 0) {
+    // Mark disappeared devices offline
+    const allKnown = [...activeSerials, ...Array.from(errorSet)];
+    if (allKnown.length > 0) {
       await this.supabase
         .from("devices")
-        .update({ status: "offline" as DeviceStatus, last_seen: now })
-        .eq("worker_id", this.workerId);
-    } else {
-      await this.supabase
-        .from("devices")
-        .update({ status: "offline" as DeviceStatus, last_seen: now })
-        .eq("worker_id", this.workerId)
-        .not("serial", "in", `(${excludedSerials.join(",")})`);
+        .update({
+          status: "offline" as DeviceStatus,
+          state: "DISCONNECTED" as DeviceState,
+          last_seen_at: now,
+        })
+        .eq("pc_id", this.pcId)
+        .not("serial_number", "in", `(${allKnown.join(",")})`)
+        .neq("status", "offline");
     }
   }
 
-  async updateWorkerHeartbeat(deviceCount: number, xiaoweiConnected: boolean): Promise<void> {
-    const { error } = await this.supabase
-      .from("workers")
-      .update({
-        status: "online" as WorkerStatus,
-        device_count: deviceCount,
-        xiaowei_connected: xiaoweiConnected,
-        last_heartbeat: new Date().toISOString(),
-      })
-      .eq("id", this.workerId);
+  // ── jobs + job_assignments (YouTube 시청 태스크) ──────────
+
+  /**
+   * 활성 job 중 이 PC의 디바이스에 할당 가능한 것 조회
+   */
+  async fetchPendingJobAssignments(): Promise<JobAssignmentRow[]> {
+    // This PC's device IDs
+    const { data: myDevices } = await this.supabase
+      .from("devices")
+      .select("id, serial_number")
+      .eq("pc_id", this.pcId)
+      .eq("status", "online");
+
+    if (!myDevices || myDevices.length === 0) return [];
+
+    const deviceIds = myDevices.map((d: { id: string }) => d.id);
+
+    const { data, error } = await this.supabase
+      .from("job_assignments")
+      .select("*, jobs(*)")
+      .in("device_id", deviceIds)
+      .in("status", ["pending", "paused"])
+      .order("created_at", { ascending: true })
+      .limit(20);
 
     if (error) {
-      log.error("Heartbeat update failed", { error: error.message });
+      log.error("fetchPendingJobAssignments failed", { error: error.message });
+      return [];
+    }
+
+    return (data ?? []) as JobAssignmentRow[];
+  }
+
+  async updateJobAssignment(
+    id: string,
+    status: JobAssignmentStatus,
+    updates?: {
+      progress_pct?: number;
+      watch_percentage?: number;
+      final_duration_sec?: number;
+      did_like?: boolean;
+      did_comment?: boolean;
+      error_log?: string;
+      error_code?: string;
+    }
+  ): Promise<void> {
+    const payload: Record<string, unknown> = { status, ...updates };
+    if (status === "running") payload.started_at = new Date().toISOString();
+    if (status === "completed" || status === "failed") {
+      payload.completed_at = new Date().toISOString();
+    }
+
+    const { error } = await this.supabase
+      .from("job_assignments")
+      .update(payload)
+      .eq("id", id);
+
+    if (error) {
+      log.error(`job_assignment update failed: ${id}`, { error: error.message });
     }
   }
 
-  async fetchPendingTasks(): Promise<TaskRow[]> {
-    // Tasks assigned to this worker
-    const { data: assigned } = await this.supabase
-      .from("tasks")
-      .select("*")
-      .eq("worker_id", this.workerId)
-      .in("status", ["pending", "assigned"])
-      .order("priority", { ascending: true })
-      .order("created_at", { ascending: true });
+  // ── tasks (레거시 — ADB/스크립트 등 범용 태스크) ─────────
 
-    // Unassigned tasks matching this worker or no target
-    const { data: unassigned } = await this.supabase
+  async fetchPendingTasks(): Promise<TaskRow[]> {
+    const { data, error } = await this.supabase
       .from("tasks")
       .select("*")
-      .is("worker_id", null)
-      .eq("status", "pending")
-      .order("priority", { ascending: true })
+      .eq("pc_id", this.pcId)
+      .in("status", ["pending"])
       .order("created_at", { ascending: true })
       .limit(10);
 
-    // Claim unassigned tasks
-    const claimed: TaskRow[] = [];
-    for (const task of unassigned ?? []) {
-      const { data, error } = await this.supabase
-        .from("tasks")
-        .update({
-          worker_id: this.workerId,
-          status: "assigned" as TaskStatus,
-          assigned_at: new Date().toISOString(),
-        })
-        .eq("id", task.id)
-        .is("worker_id", null)
-        .select()
-        .single();
-
-      if (!error && data) {
-        claimed.push(data as TaskRow);
-        log.info(`Claimed task: ${task.id}`);
-      }
+    if (error) {
+      log.error("fetchPendingTasks failed", { error: error.message });
+      return [];
     }
 
-    return [...(assigned ?? []), ...claimed] as TaskRow[];
+    return (data ?? []) as TaskRow[];
   }
 
   async updateTaskStatus(
     taskId: string,
-    status: TaskStatus,
+    status: string,
     result?: Record<string, unknown>,
     error?: string
   ): Promise<void> {
     const update: Record<string, unknown> = { status };
     if (status === "running") update.started_at = new Date().toISOString();
-    if (status === "done" || status === "completed" || status === "failed") {
+    if (status === "completed" || status === "failed") {
       update.completed_at = new Date().toISOString();
     }
     if (result !== undefined) update.result = result;
@@ -265,49 +388,82 @@ export class SupabaseSync {
     }
   }
 
-  async insertTaskDevice(params: InsertTaskDevice): Promise<string | null> {
+  // ── video_executions (시청 이력 기록) ─────────────────────
+
+  async insertVideoExecution(params: {
+    video_id: string;
+    device_id: string;
+    node_id?: string;
+    status?: string;
+    actual_watch_duration_sec?: number;
+    watch_percentage?: number;
+    did_like?: boolean;
+    did_comment?: boolean;
+    did_subscribe?: boolean;
+    error_code?: string;
+    error_message?: string;
+  }): Promise<string | null> {
     const { data, error } = await this.supabase
-      .from("task_devices")
+      .from("video_executions")
       .insert({
         ...params,
-        started_at: new Date().toISOString(),
+        node_id: params.node_id || this.pcNumber,
+        status: params.status || "pending",
+        execution_date: new Date().toISOString().split("T")[0],
       })
       .select("id")
       .single();
 
     if (error) {
-      log.error("task_devices insert failed", { error: error.message });
+      log.error("video_executions insert failed", { error: error.message });
       return null;
     }
     return data?.id ?? null;
   }
 
-  async updateTaskDevice(
+  async updateVideoExecution(
     id: string,
-    status: TaskStatus,
-    result?: Record<string, unknown>,
-    error?: string,
-    xiaoweiCode?: number,
-    xiaoweiResponse?: Record<string, unknown>
+    updates: Record<string, unknown>
   ): Promise<void> {
-    const update: Record<string, unknown> = { status };
-    if (status === "done" || status === "failed") {
-      update.completed_at = new Date().toISOString();
-    }
-    if (result !== undefined) update.result = result;
-    if (error !== undefined) update.error = error;
-    if (xiaoweiCode !== undefined) update.xiaowei_code = xiaoweiCode;
-    if (xiaoweiResponse !== undefined) update.xiaowei_response = xiaoweiResponse;
-
-    await this.supabase.from("task_devices").update(update).eq("id", id);
+    await this.supabase.from("video_executions").update(updates).eq("id", id);
   }
 
-  async insertTaskLog(params: InsertTaskLog): Promise<void> {
-    const { error } = await this.supabase.from("task_logs").insert(params);
+  // ── execution_logs ──────────────────────────────────────
+
+  async insertExecutionLog(params: InsertExecutionLog): Promise<void> {
+    const { error } = await this.supabase
+      .from("execution_logs")
+      .insert({
+        ...params,
+        created_at: new Date().toISOString(),
+      });
+
     if (error) {
-      log.error("task_logs insert failed", { error: error.message });
+      log.error("execution_logs insert failed", { error: error.message });
     }
   }
+
+  // ── device lookup helpers ──────────────────────────────
+
+  async getDeviceBySerial(serial: string): Promise<{ id: string; serial_number: string } | null> {
+    const { data } = await this.supabase
+      .from("devices")
+      .select("id, serial_number")
+      .eq("serial_number", serial)
+      .single();
+    return data;
+  }
+
+  async getMyDeviceSerials(): Promise<string[]> {
+    const { data } = await this.supabase
+      .from("devices")
+      .select("serial_number")
+      .eq("pc_id", this.pcId)
+      .eq("status", "online");
+    return (data ?? []).map((d: { serial_number: string }) => d.serial_number);
+  }
+
+  // ── Realtime Broadcast subscription ────────────────────
 
   subscribeToBroadcast(callback: (task: TaskRow) => void): RealtimeChannel {
     log.info("Subscribing to Broadcast room:tasks");
@@ -316,14 +472,14 @@ export class SupabaseSync {
       .channel("room:tasks")
       .on("broadcast", { event: "insert" }, ({ payload }) => {
         const task = (payload as Record<string, unknown>)?.record as TaskRow | undefined;
-        if (task?.worker_id === this.workerId && task.status === "pending") {
+        if (task && task.pc_id === this.pcId && task.status === "pending") {
           log.info(`[Broadcast] New task: ${task.id}`);
           callback(task);
         }
       })
       .on("broadcast", { event: "update" }, ({ payload }) => {
         const task = (payload as Record<string, unknown>)?.record as TaskRow | undefined;
-        if (task?.worker_id === this.workerId && (task.status === "pending" || task.status === "assigned")) {
+        if (task && task.pc_id === this.pcId && task.status === "pending") {
           log.info(`[Broadcast] Task updated: ${task.id}`);
           callback(task);
         }
@@ -335,27 +491,11 @@ export class SupabaseSync {
     return this.broadcastChannel;
   }
 
-  async setWorkerOffline(): Promise<void> {
-    if (!this.workerId) return;
-    await this.supabase
-      .from("workers")
-      .update({
-        status: "offline" as WorkerStatus,
-        xiaowei_connected: false,
-        device_count: 0,
-      })
-      .eq("id", this.workerId);
-    log.info("Worker set to offline");
-  }
-
   async unsubscribeAll(): Promise<void> {
     if (this.broadcastChannel) {
       await this.supabase.removeChannel(this.broadcastChannel);
       this.broadcastChannel = null;
     }
-    if (this.taskChannel) {
-      await this.supabase.removeChannel(this.taskChannel);
-      this.taskChannel = null;
-    }
   }
 }
+-e 

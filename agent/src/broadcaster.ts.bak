@@ -4,23 +4,18 @@ import type { XiaoweiDevice } from "./xiaowei-client";
 
 const log = getLogger("Broadcaster");
 
-/**
- * Supabase Realtime Broadcaster — matched to pcs/nodes schema
- */
 export class Broadcaster {
   private channels = new Map<string, RealtimeChannel>();
 
   constructor(
     private readonly supabase: SupabaseClient,
-    private readonly pcId: string,
-    private readonly pcNumber: string
+    private readonly workerId: string
   ) {}
 
-  async broadcastPcDevices(devices: XiaoweiDevice[]): Promise<void> {
-    const topic = `room:pc:${this.pcNumber}:devices`;
+  async broadcastWorkerDevices(devices: XiaoweiDevice[]): Promise<void> {
+    const topic = `room:worker:${this.workerId}:devices`;
     await this.sendBroadcast(topic, "update", {
-      pc_id: this.pcId,
-      pc_number: this.pcNumber,
+      worker_id: this.workerId,
       devices: devices.map((d) => ({
         serial: d.serial,
         name: d.name,
@@ -38,8 +33,7 @@ export class Broadcaster {
   async broadcastDeviceBatch(changed: XiaoweiDevice[]): Promise<void> {
     if (changed.length === 0) return;
     await this.sendBroadcast("room:devices", "update", {
-      pc_id: this.pcId,
-      pc_number: this.pcNumber,
+      worker_id: this.workerId,
       devices: changed.map((d) => ({
         serial: d.serial,
         status: "online",
@@ -50,11 +44,13 @@ export class Broadcaster {
     });
   }
 
-  async broadcastPcHeartbeat(deviceCount: number, xiaoweiConnected: boolean): Promise<void> {
-    const topic = `room:pc:${this.pcNumber}`;
+  async broadcastWorkerHeartbeat(
+    deviceCount: number,
+    xiaoweiConnected: boolean
+  ): Promise<void> {
+    const topic = `room:worker:${this.workerId}`;
     await this.sendBroadcast(topic, "heartbeat", {
-      pc_id: this.pcId,
-      pc_number: this.pcNumber,
+      worker_id: this.workerId,
       status: "online",
       device_count: deviceCount,
       xiaowei_connected: xiaoweiConnected,
@@ -88,19 +84,24 @@ export class Broadcaster {
         channel = this.supabase.channel(topic, {
           config: { broadcast: { self: false, ack: true } },
         });
+        // Register a no-op handler to enable broadcast mode before subscribing
         channel.on("broadcast", { event: "__noop__" }, () => {});
         await new Promise<void>((resolve, reject) => {
           channel!.subscribe((status) => {
             if (status === "SUBSCRIBED") resolve();
             else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-              reject(new Error(`Channel failed: ${topic} (${status})`));
+              reject(new Error(`Channel subscribe failed: ${topic} (${status})`));
             }
           });
         });
         this.channels.set(topic, channel);
       }
 
-      await channel.send({ type: "broadcast", event, payload });
+      await channel.send({
+        type: "broadcast",
+        event,
+        payload,
+      });
     } catch (err) {
       log.error(`Broadcast failed: ${topic}/${event}`, {
         error: (err as Error).message,
@@ -116,4 +117,3 @@ export class Broadcaster {
     this.channels.clear();
   }
 }
--e 

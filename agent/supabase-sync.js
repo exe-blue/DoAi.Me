@@ -16,7 +16,7 @@ class SupabaseSync {
       : null;
     // Use service role as primary client when available (agent is a trusted component)
     this.supabase = this.supabaseAdmin || anonClient;
-    this.workerId = null;
+    this.pcId = null;
     this.taskSubscription = null;
     this.broadcastSubscription = null;
     this.logSubscriptions = new Map(); // task_id → channel
@@ -47,7 +47,7 @@ class SupabaseSync {
    */
   async verifyConnection() {
     const { error } = await this.supabase
-      .from("workers")
+      .from("pcs")
       .select("id")
       .limit(1);
 
@@ -58,98 +58,84 @@ class SupabaseSync {
   }
 
   /**
-   * Get or create worker by hostname, return its UUID
-   * @param {string} hostname
-   * @returns {Promise<string>} worker UUID
+   * Get or create PC by pc_number, return its UUID
+   * @param {string} pcNumber - e.g. "PC00", "PC01" (^PC[0-9]{2}$)
+   * @returns {Promise<string>} PC UUID
    */
-  async getWorkerId(hostname) {
-    // Try to find existing worker
+  async getPcId(pcNumber) {
     const { data: existing, error: findErr } = await this.supabase
-      .from("workers")
-      .select("id")
-      .eq("hostname", hostname)
+      .from("pcs")
+      .select("id, pc_number")
+      .eq("pc_number", pcNumber)
       .single();
 
     if (existing) {
-      this.workerId = existing.id;
-      console.log(`[Supabase] Found worker: ${this.workerId}`);
-      return this.workerId;
+      this.pcId = existing.id;
+      console.log(`[Supabase] Found PC: ${this.pcId} (${pcNumber})`);
+      return this.pcId;
     }
 
     if (findErr && findErr.code !== "PGRST116") {
-      // PGRST116 = no rows found, anything else is a real error
-      throw new Error(`Failed to lookup worker: ${findErr.message}`);
+      throw new Error(`Failed to lookup PC: ${findErr.message}`);
     }
 
-    // Create new worker
     const { data: created, error: createErr } = await this.supabase
-      .from("workers")
-      .insert({ hostname, status: "online" })
+      .from("pcs")
+      .insert({ pc_number: pcNumber, status: "online" })
       .select("id")
       .single();
 
     if (createErr) {
-      throw new Error(`Failed to create worker: ${createErr.message}`);
+      throw new Error(`Failed to create PC: ${createErr.message}`);
     }
 
-    this.workerId = created.id;
-    console.log(`[Supabase] Created worker: ${this.workerId}`);
-    return this.workerId;
+    this.pcId = created.id;
+    console.log(`[Supabase] Created PC: ${this.pcId} (${pcNumber})`);
+    return this.pcId;
   }
 
   /**
-   * Update worker heartbeat status
-   * @param {string} workerId
+   * Update PC heartbeat status
+   * @param {string} pcId
    * @param {string} status - 'online' | 'offline' | 'error'
-   * @param {number} deviceCount
-   * @param {boolean} xiaoweiConnected
-   * @param {object|null} metadata - optional metadata (execution stats, subscription status, etc.)
    */
-  async updateWorkerStatus(workerId, status, deviceCount, xiaoweiConnected, metadata) {
+  async updatePcStatus(pcId, status) {
     const update = {
       status,
-      device_count: deviceCount,
-      xiaowei_connected: xiaoweiConnected,
       last_heartbeat: new Date().toISOString(),
     };
 
-    if (metadata !== undefined && metadata !== null) {
-      update.metadata = metadata;
-    }
-
     const { error } = await this.supabase
-      .from("workers")
+      .from("pcs")
       .update(update)
-      .eq("id", workerId);
+      .eq("id", pcId);
 
     if (error) {
-      console.error(`[Supabase] Failed to update worker status: ${error.message}`);
+      console.error(`[Supabase] Failed to update PC status: ${error.message}`);
     }
   }
 
   /**
-   * Upsert device record by serial
+   * Upsert device record by serial_number
    * @param {string} serial
-   * @param {string} workerId
+   * @param {string} pcId
    * @param {string} status
    * @param {string} model
    * @param {number|null} battery
-   * @param {string|null} ipIntranet
    */
-  async upsertDevice(serial, workerId, status, model, battery, ipIntranet) {
+  async upsertDevice(serial, pcId, status, model, battery) {
     const { error } = await this.supabase
       .from("devices")
       .upsert(
         {
-          serial,
-          worker_id: workerId,
+          serial_number: serial,
+          pc_id: pcId,
           status,
           model: model || null,
           battery_level: battery || null,
-          ip_intranet: ipIntranet || null,
-          last_seen: new Date().toISOString(),
+          last_seen_at: new Date().toISOString(),
         },
-        { onConflict: "serial" }
+        { onConflict: "serial_number" }
       );
 
     if (error) {
@@ -160,27 +146,26 @@ class SupabaseSync {
   /**
    * Batch upsert multiple devices in a single query
    * @param {Array<{serial: string, status: string, model?: string, battery?: number, ipIntranet?: string}>} devices
-   * @param {string} workerId
+   * @param {string} pcId
    * @returns {Promise<boolean>} success status
    */
-  async batchUpsertDevices(devices, workerId) {
+  async batchUpsertDevices(devices, pcId) {
     if (!devices || devices.length === 0) {
       return true;
     }
 
     const rows = devices.map(d => ({
-      serial: d.serial,
-      worker_id: workerId,
+      serial_number: d.serial,
+      pc_id: pcId,
       status: d.status || 'online',
       model: d.model || null,
       battery_level: d.battery || null,
-      ip_intranet: d.ipIntranet || null,
-      last_seen: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
     }));
 
     const { error } = await this.supabase
       .from('devices')
-      .upsert(rows, { onConflict: 'serial' });
+      .upsert(rows, { onConflict: 'serial_number' });
 
     if (error) {
       console.error(`[Supabase] Batch upsert failed: ${error.message}`);
@@ -192,10 +177,10 @@ class SupabaseSync {
 
   /**
    * Get task counts for a worker
-   * @param {string} workerId
+   * @param {string} pcId
    * @returns {Promise<{running: number, pending: number, completed_today: number, failed_today: number}>}
    */
-  async getTaskCounts(workerId) {
+  async getTaskCounts(pcId) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString();
@@ -204,21 +189,21 @@ class SupabaseSync {
     const { count: running } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'running');
 
     // Pending tasks
     const { count: pending } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'pending');
 
     // Completed today
     const { count: completed_today } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'completed')
       .gte('completed_at', todayIso);
 
@@ -226,7 +211,7 @@ class SupabaseSync {
     const { count: failed_today } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'failed')
       .gte('updated_at', todayIso);
 
@@ -240,35 +225,31 @@ class SupabaseSync {
 
   /**
    * Get proxy counts for a worker
-   * @param {string} workerId
+   * @param {string} pcId
    * @returns {Promise<{total: number, valid: number, invalid: number, unassigned: number}>}
    */
-  async getProxyCounts(workerId) {
-    // Total proxies assigned to this worker
+  async getProxyCounts(pcId) {
     const { count: total } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId);
+      .eq('pc_id', pcId);
 
-    // Valid proxies
     const { count: valid } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'valid');
 
-    // Invalid proxies
     const { count: invalid } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'invalid');
 
-    // Unassigned proxies (no device_serial)
     const { count: unassigned } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .is('device_serial', null);
 
     return {
@@ -281,37 +262,37 @@ class SupabaseSync {
 
   /**
    * Get device counts for a worker
-   * @param {string} workerId
+   * @param {string} pcId
    * @returns {Promise<{total: number, online: number, busy: number, error: number, offline: number}>}
    */
-  async getDeviceCounts(workerId) {
+  async getDeviceCounts(pcId) {
     const { count: total } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId);
+      .eq('pc_id', pcId);
 
     const { count: online } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'online');
 
     const { count: busy } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'busy');
 
     const { count: error } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'error');
 
     const { count: offline } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('worker_id', workerId)
+      .eq('pc_id', pcId)
       .eq('status', 'offline');
 
     return {
@@ -325,16 +306,15 @@ class SupabaseSync {
 
   /**
    * Mark devices not in the current list as offline
-   * @param {string} workerId
+   * @param {string} pcId
    * @param {string[]} activeSerials - serials currently connected
    */
-  async markOfflineDevices(workerId, activeSerials) {
+  async markOfflineDevices(pcId, activeSerials) {
     if (!activeSerials.length) {
-      // All devices offline for this worker
       const { error } = await this.supabase
         .from("devices")
-        .update({ status: "offline", last_seen: new Date().toISOString() })
-        .eq("worker_id", workerId);
+        .update({ status: "offline", last_seen_at: new Date().toISOString() })
+        .eq("pc_id", pcId);
 
       if (error) {
         console.error(`[Supabase] Failed to mark devices offline: ${error.message}`);
@@ -344,9 +324,9 @@ class SupabaseSync {
 
     const { error } = await this.supabase
       .from("devices")
-      .update({ status: "offline", last_seen: new Date().toISOString() })
-      .eq("worker_id", workerId)
-      .not("serial", "in", `(${activeSerials.join(",")})`);
+      .update({ status: "offline", last_seen_at: new Date().toISOString() })
+      .eq("pc_id", pcId)
+      .not("serial_number", "in", `(${activeSerials.join(",")})`);
 
     if (error) {
       console.error(`[Supabase] Failed to mark offline devices: ${error.message}`);
@@ -354,50 +334,45 @@ class SupabaseSync {
   }
 
   /**
-   * Get pending tasks assigned to this worker OR unassigned (worker_id=null).
-   * Unassigned tasks are auto-claimed by setting worker_id to this worker.
-   * @param {string} workerId
+   * Get pending tasks assigned to this PC or unassigned (pc_id=null).
+   * Unassigned tasks are auto-claimed by setting pc_id.
+   * @param {string} pcId
    * @returns {Promise<Array>}
    */
-  async getPendingTasks(workerId) {
-    // 1. Get tasks assigned to this worker
+  async getPendingTasks(pcId) {
     const { data: assigned, error: assignedErr } = await this.supabase
       .from("tasks")
       .select("*")
-      .eq("worker_id", workerId)
+      .eq("pc_id", pcId)
       .eq("status", "pending")
-      .order("priority", { ascending: true })
       .order("created_at", { ascending: true });
 
     if (assignedErr) {
       console.error(`[Supabase] Failed to get assigned tasks: ${assignedErr.message}`);
     }
 
-    // 2. Get unassigned tasks (worker_id is null)
     const { data: unassigned, error: unassignedErr } = await this.supabase
       .from("tasks")
       .select("*")
-      .is("worker_id", null)
+      .is("pc_id", null)
       .eq("status", "pending")
-      .order("priority", { ascending: true })
       .order("created_at", { ascending: true });
 
     if (unassignedErr) {
       console.error(`[Supabase] Failed to get unassigned tasks: ${unassignedErr.message}`);
     }
 
-    // 3. Auto-claim unassigned tasks
     const claimed = [];
     for (const task of (unassigned || [])) {
       const { data: claimData, error: claimErr } = await this.supabase
         .from("tasks")
-        .update({ worker_id: workerId })
+        .update({ pc_id: pcId })
         .eq("id", task.id)
-        .is("worker_id", null) // Ensure no race condition
+        .is("pc_id", null)
         .select();
 
       if (!claimErr && claimData && claimData.length > 0) {
-        task.worker_id = workerId;
+        task.pc_id = pcId;
         claimed.push(task);
         console.log(`[Supabase] Claimed unassigned task: ${task.id}`);
       }
@@ -447,50 +422,50 @@ class SupabaseSync {
     // Read current value and increment
     const { data, error: readErr } = await this.supabase
       .from("tasks")
-      .select("retry_count")
+      .select("retries")
       .eq("id", taskId)
       .single();
 
     if (readErr) {
-      console.error(`[Supabase] Failed to read retry_count: ${readErr.message}`);
+      console.error(`[Supabase] Failed to read retries: ${readErr.message}`);
       return;
     }
 
     const { error } = await this.supabase
       .from("tasks")
-      .update({ retry_count: (data.retry_count || 0) + 1 })
+      .update({ retries: (data.retries || 0) + 1 })
       .eq("id", taskId);
 
     if (error) {
-      console.error(`[Supabase] Failed to increment retry_count: ${error.message}`);
+      console.error(`[Supabase] Failed to increment retries: ${error.message}`);
     }
   }
 
   /**
-   * Insert a task execution log entry (buffered — batched INSERT).
+   * Insert an execution log entry (buffered — batched INSERT).
    * Returns immediately with { ok: true, logId: null }.
-   * @param {string} taskId
-   * @param {string} deviceSerial
-   * @param {string} workerId
-   * @param {string} action
-   * @param {object} request
-   * @param {object} response
-   * @param {string} status - 'success' | 'error' | 'warning' | 'info'
+   * @param {string} executionId - task/execution ID
+   * @param {string} deviceId - device serial or UUID (optional)
+   * @param {string} action - action name (mapped to `status` column)
+   * @param {object} data - request data
+   * @param {object} details - response details
+   * @param {string} statusLabel - 'success' | 'error' | 'warning' | 'info'
    * @param {string} message
    * @returns {{ok: boolean, logId: string|null}}
    */
-  insertTaskLog(taskId, deviceSerial, workerId, action, request, response, status, message) {
-    // Map status to log_level enum: debug/info/warn/error/fatal
+  insertExecutionLog(executionId, deviceId, action, data, details, statusLabel, message) {
     const levelMap = { success: "info", error: "error", warning: "warn", info: "info" };
-    const level = levelMap[status] || "info";
+    const level = levelMap[statusLabel] || "info";
+    // execution_logs.status check: only pending, running, completed, failed, skipped
+    const statusMap = { success: "completed", error: "failed", warning: "failed", info: "completed" };
+    const status = statusMap[statusLabel] || "completed";
 
     const entry = {
-      task_id: taskId,
-      device_serial: deviceSerial,
-      worker_id: workerId,
-      action,
-      request: request || null,
-      response: response || null,
+      execution_id: executionId,
+      device_id: deviceId || null,
+      status,
+      data: data ? { ...data, _action: action } : { _action: action },
+      details: details || null,
       level,
       message: message || null,
     };
@@ -525,7 +500,7 @@ class SupabaseSync {
 
     try {
       const { error } = await this.supabase
-        .from("task_logs")
+        .from("execution_logs")
         .insert(entries);
 
       if (error) {
@@ -540,18 +515,22 @@ class SupabaseSync {
       this.logStats.inserted += entries.length;
       console.log(`[Supabase] ✓ Batch log insert: ${entries.length} entries`);
 
-      // Broadcast logs grouped by task_id
       const grouped = {};
       for (const entry of entries) {
-        if (!grouped[entry.task_id]) grouped[entry.task_id] = [];
-        grouped[entry.task_id].push(entry);
+        const execId = entry.execution_id;
+        if (!grouped[execId]) grouped[execId] = [];
+        grouped[execId].push(entry);
       }
-      for (const [taskId, logs] of Object.entries(grouped)) {
-        await this.supabase.rpc("broadcast_to_channel", {
-          p_channel: `room:task:${taskId}:logs`,
-          p_event: "batch",
-          p_payload: { logs, count: logs.length },
-        }).catch(err => console.error(`[Supabase] broadcast logs failed: ${err.message}`));
+      for (const [execId, logs] of Object.entries(grouped)) {
+        try {
+          await this.supabase.rpc("broadcast_to_channel", {
+            p_channel: `room:task:${execId}:logs`,
+            p_event: "batch",
+            p_payload: { logs, count: logs.length },
+          });
+        } catch (rpcErr) {
+          console.error(`[Supabase] broadcast logs failed: ${rpcErr.message}`);
+        }
       }
 
       // Append to local log file (non-blocking)
@@ -563,7 +542,7 @@ class SupabaseSync {
           fs.mkdirSync(logDir, { recursive: true });
         }
         const lines = entries.map(e =>
-          `${new Date().toISOString()} [${e.level}] task=${e.task_id} device=${e.device_serial} action=${e.action} ${e.message || ""}`
+          `${new Date().toISOString()} [${e.level}] exec=${e.execution_id} device=${e.device_id || "-"} status=${e.status} ${e.message || ""}`
         ).join("\n") + "\n";
         fs.appendFile(logFile, lines, () => {});
       } catch (_) {
@@ -621,13 +600,13 @@ class SupabaseSync {
   /**
    * Subscribe to tasks via Broadcast channel (primary).
    * Returns a Promise that resolves when subscription is confirmed or times out.
-   * @param {string} workerId
+   * @param {string} pcId
    * @param {function} callback - called with new/updated task row
    * @param {number} timeoutMs - max time to wait for SUBSCRIBED status
    * @returns {Promise<{status: string, channel: object}>}
    */
-  subscribeToBroadcast(workerId, callback, timeoutMs = 10000) {
-    console.log(`[Supabase] Subscribing to Broadcast room:tasks for worker ${workerId}`);
+  subscribeToBroadcast(pcId, callback, timeoutMs = 10000) {
+    console.log(`[Supabase] Subscribing to Broadcast room:tasks for PC ${pcId}`);
 
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
@@ -639,7 +618,7 @@ class SupabaseSync {
         .on("broadcast", { event: "insert" }, ({ payload }) => {
           const task = payload?.record;
           if (!task) return;
-          if (task.worker_id === workerId && task.status === "pending") {
+          if (task.pc_id === pcId && task.status === "pending") {
             this.broadcastReceivedCount++;
             this.lastTaskReceivedAt = Date.now();
             this.lastTaskReceivedVia = "broadcast";
@@ -652,7 +631,7 @@ class SupabaseSync {
           const oldTask = payload?.old_record;
           if (!task) return;
           if (
-            task.worker_id === workerId &&
+            task.pc_id === pcId &&
             task.status === "pending" &&
             (!oldTask || oldTask.status !== "pending")
           ) {
@@ -677,13 +656,13 @@ class SupabaseSync {
   /**
    * Subscribe to new tasks via postgres_changes (fallback).
    * Returns a Promise that resolves when subscription is confirmed or times out.
-   * @param {string} workerId
+   * @param {string} pcId
    * @param {function} callback - called with new task row
    * @param {number} timeoutMs - max time to wait for SUBSCRIBED status
    * @returns {Promise<{status: string, channel: object}>}
    */
-  subscribeToTasks(workerId, callback, timeoutMs = 10000) {
-    console.log(`[Supabase] Subscribing to postgres_changes for worker ${workerId}`);
+  subscribeToTasks(pcId, callback, timeoutMs = 10000) {
+    console.log(`[Supabase] Subscribing to postgres_changes for PC ${pcId}`);
 
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
@@ -698,7 +677,7 @@ class SupabaseSync {
             event: "INSERT",
             schema: "public",
             table: "tasks",
-            filter: `worker_id=eq.${workerId}`,
+            filter: `pc_id=eq.${pcId}`,
           },
           (payload) => {
             this.pgChangesReceivedCount++;
@@ -714,7 +693,7 @@ class SupabaseSync {
             event: "UPDATE",
             schema: "public",
             table: "tasks",
-            filter: `worker_id=eq.${workerId}`,
+            filter: `pc_id=eq.${pcId}`,
           },
           (payload) => {
             if (payload.new.status === "pending" && payload.old.status !== "pending") {

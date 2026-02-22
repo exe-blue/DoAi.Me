@@ -18,7 +18,7 @@ interface HealthReport {
   xiaowei_disconnects: number;
   mass_dropouts: number;
   stale_tasks_recovered: number;
-  timeline: { hour: string; online_devices: number; tasks_completed: number; errors: number }[];
+  timeline: { hour: string; current_online_devices: number; tasks_completed: number; errors: number }[];
   error_logs_count: number;
 }
 

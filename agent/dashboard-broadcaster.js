@@ -5,9 +5,9 @@
  */
 
 class DashboardBroadcaster {
-  constructor(supabase, workerId) {
+  constructor(supabase, pcId) {
     this.supabase = supabase;
-    this.workerId = workerId;
+    this.pcId = pcId;
     this.dashboardChannel = null;
     this.systemChannel = null;
     this.previousDeviceStates = new Map(); // serial → status

@@ -17,11 +17,12 @@ if [ -z "${SUPABASE_DB_URL}" ]; then
   exit 1
 fi
 
-# Order: initial → channels → proxy → repair → realtime → cron → steps
+# Order: initial → channels → proxy → app_users → repair → realtime → cron → steps
 ORDER=(
   "00001_initial_schema.sql"
   "00002_channels_videos_schedules.sql"
   "20240201_add_proxy_columns.sql"
+  "20260214000000_app_users.sql"
   "20260215000000_repair_schema.sql"
   "00003_realtime_broadcast.sql"
   "00004_pg_cron_jobs.sql"
