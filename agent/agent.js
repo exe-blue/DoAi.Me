@@ -17,6 +17,7 @@ const QueueDispatcher = require("./queue-dispatcher");
 const ScheduleEvaluator = require("./schedule-evaluator");
 const StaleTaskCleaner = require("./stale-task-cleaner");
 const DeviceWatchdog = require("./device-watchdog");
+const VideoDispatcher = require("./video-dispatcher");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -32,6 +33,7 @@ let queueDispatcher = null;
 let scheduleEvaluator = null;
 let staleTaskCleaner = null;
 let deviceWatchdog = null;
+let videoDispatcher = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -265,6 +267,10 @@ async function main() {
     }
   }, config.taskPollInterval);
 
+  // 13a. Poll pending job_assignments and run YouTube watch (open URL, duration, mark completed)
+  taskExecutor.startJobAssignmentPolling(15000);
+  console.log("[Agent] ✓ Job assignment polling started");
+
   // Run an initial poll immediately
   try {
     const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
@@ -299,6 +305,10 @@ async function main() {
   scheduleEvaluator = new ScheduleEvaluator(supabaseSync, broadcaster);
   scheduleEvaluator.start();
   console.log("[Agent] ✓ Schedule evaluator started");
+
+  videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
+  videoDispatcher.start();
+  console.log("[Agent] ✓ Video dispatcher started");
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
@@ -360,6 +370,10 @@ async function shutdown() {
     taskPollHandle = null;
   }
 
+  if (taskExecutor && taskExecutor.stopJobAssignmentPolling) {
+    taskExecutor.stopJobAssignmentPolling();
+  }
+
   // Stop heartbeat
   if (heartbeatHandle) {
     clearInterval(heartbeatHandle);
@@ -384,6 +398,10 @@ async function shutdown() {
   // Stop schedule evaluator
   if (scheduleEvaluator) {
     scheduleEvaluator.stop();
+  }
+
+  if (videoDispatcher) {
+    videoDispatcher.stop();
   }
 
   // Unsubscribe config Realtime
