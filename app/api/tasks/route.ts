@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTasksWithDetails, createTask, updateTask, deleteTask } from "@/lib/db/tasks";
+import { getTasksWithDetails, updateTask, deleteTask } from "@/lib/db/tasks";
 import { createManualTask, createBatchTask } from "@/lib/pipeline";
 import { mapTaskRow } from "@/lib/mappers";
-import type { Json } from "@/lib/supabase/types";
 import { taskCreateSchema, taskUpdateSchema, batchTaskCreateSchema } from "@/lib/schemas";
+import { createAuthServerClient } from "@/lib/supabase/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,17 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    let createdByUserId: string | undefined;
+    if (!request.headers.has("x-api-key")) {
+      try {
+        const supabase = await createAuthServerClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) createdByUserId = user.id;
+      } catch {
+        // ignore
+      }
+    }
 
     // Check if this is a batch task (has contentMode field)
     if ("contentMode" in body) {
@@ -56,6 +67,7 @@ export async function POST(request: NextRequest) {
         deviceCount: deviceCount ?? 20,
         variables: fullVariables,
         workerId,
+        createdByUserId,
       });
 
       return NextResponse.json(task, { status: 201 });
@@ -85,6 +97,7 @@ export async function POST(request: NextRequest) {
       deviceCount: deviceCount ?? 20,
       variables: fullVariables,
       workerId,
+      createdByUserId,
     });
 
     return NextResponse.json(task, { status: 201 });

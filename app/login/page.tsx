@@ -1,19 +1,38 @@
 import { redirect } from "next/navigation";
-import { auth0 } from "@/lib/auth0";
-import { Smartphone } from "lucide-react";
+import { createAuthServerClient } from "@/lib/supabase/auth-server";
+import { LoginForm } from "./login-form";
 
-export default async function LoginPage() {
-  const session = await auth0.getSession();
-  if (session) {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string; signup?: string; error?: string }>;
+}) {
+  const supabase = await createAuthServerClient();
+  const { data } = await supabase.auth.getSession();
+  if (data.session) {
     redirect("/dashboard");
   }
+
+  const { returnTo, signup, error } = await searchParams;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <Smartphone className="h-6 w-6 text-primary-foreground" />
+            <svg
+              className="h-6 w-6 text-primary-foreground"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
           </div>
           <div>
             <h1 className="text-2xl font-bold">DoAi.Me</h1>
@@ -23,13 +42,13 @@ export default async function LoginPage() {
         <p className="text-center text-muted-foreground">
           스마트폰 팜 관제 시스템에 로그인하세요.
         </p>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a
-          href="/auth/login"
-          className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
-        >
-          로그인
-        </a>
+        {error === "auth" && (
+          <p className="text-sm text-destructive">인증 처리에 실패했습니다.</p>
+        )}
+        <LoginForm
+          returnTo={returnTo ?? "/dashboard"}
+          isSignUp={signup === "1"}
+        />
       </div>
     </div>
   );

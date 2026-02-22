@@ -13,7 +13,7 @@ const DEFAULT_VARIABLES: TaskVariables = {
 export async function createManualTask(
   videoId: string,
   channelId: string,
-  options: { deviceCount?: number; variables?: TaskVariables; workerId?: string } = {}
+  options: { deviceCount?: number; variables?: TaskVariables; workerId?: string; createdByUserId?: string } = {}
 ) {
   const supabase = createServerClient();
 
@@ -32,6 +32,7 @@ export async function createManualTask(
       payload,
       status: "pending",
       ...(options.workerId ? { worker_id: options.workerId } : {}),
+      ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
     })
     .select()
     .single();
@@ -56,6 +57,7 @@ type BatchTaskOptions = {
   deviceCount?: number;
   variables?: TaskVariables;
   workerId?: string;
+  createdByUserId?: string;
 };
 
 export async function createBatchTask(options: BatchTaskOptions) {
@@ -120,6 +122,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
       payload,
       status: "pending",
       ...(options.workerId ? { worker_id: options.workerId } : {}),
+      ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
     })
     .select()
     .single();

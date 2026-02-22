@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth0 } from "@/lib/auth0";
+import { createServerClient } from "@supabase/ssr";
+import type { Database } from "@/lib/supabase/types";
 
 const PUBLIC_PATHS = ["/auth", "/api/health", "/monitoring", "/login"];
+const AUTH_CALLBACK_PATH = "/auth/callback";
 
 function isPublicPath(pathname: string): boolean {
+  if (pathname === "/") return true;
+  if (pathname === AUTH_CALLBACK_PATH) return true;
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 }
 
@@ -26,43 +30,54 @@ function validateApiKey(request: NextRequest): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Public paths — no auth
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // 2. Auth0 middleware handles session cookie refresh
-  const authRes = await auth0.middleware(request);
+  let response = NextResponse.next({ request });
 
-  // 3. API routes: accept API key OR Auth0 session
-  if (isApiRoute(pathname)) {
-    if (request.headers.has("x-api-key")) {
-      if (validateApiKey(request)) {
-        return NextResponse.next();
+  if (url && anonKey) {
+    const supabase = createServerClient<Database>(url, anonKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    });
+
+    await supabase.auth.getUser();
+
+    if (!isPublicPath(pathname)) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        if (isApiRoute(pathname)) {
+          if (request.headers.has("x-api-key") && validateApiKey(request)) {
+            return response;
+          }
+          return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 }
+          );
+        }
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("returnTo", pathname);
+        return NextResponse.redirect(loginUrl);
       }
-      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
-    }
 
-    const session = await auth0.getSession(request);
-    if (!session) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      );
+      if (isApiRoute(pathname) && !request.headers.has("x-api-key")) {
+        // API route with session is allowed
+      }
     }
-
-    return authRes;
   }
 
-  // 4. Dashboard pages: require session, redirect to login if missing
-  const session = await auth0.getSession(request);
-  if (!session) {
-    const loginUrl = new URL("/auth/login", request.url);
-    loginUrl.searchParams.set("returnTo", pathname);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  return authRes;
+  return response;
 }
 
 export const config = {

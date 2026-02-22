@@ -15,6 +15,8 @@ const DashboardBroadcaster = require("./dashboard-broadcaster");
 const AdbReconnectManager = require("./adb-reconnect");
 const QueueDispatcher = require("./queue-dispatcher");
 const ScheduleEvaluator = require("./schedule-evaluator");
+const StaleTaskCleaner = require("./stale-task-cleaner");
+const DeviceWatchdog = require("./device-watchdog");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -28,6 +30,8 @@ let broadcaster = null;
 let reconnectManager = null;
 let queueDispatcher = null;
 let scheduleEvaluator = null;
+let staleTaskCleaner = null;
+let deviceWatchdog = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -129,6 +133,19 @@ async function main() {
 
   // 5. Initialize task executor
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
+
+  // 5a. Run stale task recovery (cold start)
+  staleTaskCleaner = new StaleTaskCleaner(supabaseSync, config);
+  try {
+    const recovered = await staleTaskCleaner.recoverStaleTasks();
+    if (recovered > 0) {
+      console.log(`[Agent] ✓ Recovered ${recovered} stale tasks from previous crash`);
+    }
+    staleTaskCleaner.startPeriodicCheck();
+    console.log('[Agent] ✓ Stale task cleaner started');
+  } catch (err) {
+    console.warn(`[Agent] ✗ Stale task recovery failed: ${err.message}`);
+  }
 
   // 6. Initialize dashboard broadcaster
   broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.workerId);
@@ -269,6 +286,11 @@ async function main() {
     console.log("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
   }
 
+  // 14a. Start device watchdog
+  deviceWatchdog = new DeviceWatchdog(xiaowei, supabaseSync, config, broadcaster);
+  deviceWatchdog.start();
+  console.log('[Agent] ✓ Device watchdog started');
+
   // 15. Start queue dispatcher and schedule evaluator
   queueDispatcher = new QueueDispatcher(supabaseSync, config, broadcaster);
   queueDispatcher.start();
@@ -321,6 +343,16 @@ async function shutdown() {
   shuttingDown = true;
 
   console.log("\n[Agent] Shutting down gracefully...");
+
+  // Stop stale task cleaner
+  if (staleTaskCleaner) {
+    staleTaskCleaner.stop();
+  }
+
+  // Stop device watchdog
+  if (deviceWatchdog) {
+    deviceWatchdog.stop();
+  }
 
   // Stop polling
   if (taskPollHandle) {

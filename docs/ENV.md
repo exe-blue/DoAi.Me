@@ -15,6 +15,13 @@
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase 서비스 키 (API Routes용, 서버 전용) | `eyJhbGciOiJIUzI1NiIs...` |
 | `YOUTUBE_API_KEY` | ⚠️ | YouTube Data API v3 키 (채널/영상 등록 시) | `AIza...` |
 
+### Supabase Auth (로그인/회원가입)
+
+- 로그인·인증은 Supabase Auth 사용 (이메일/비밀번호, Magic Link 등)
+- Supabase Dashboard → Authentication → URL Configuration:
+  - Site URL: `http://localhost:3000` (로컬) / `https://doai.me` (프로덕션)
+  - Redirect URLs: `http://localhost:3000/auth/callback`, `https://doai.me/auth/callback`
+
 ### 규칙
 
 - `NEXT_PUBLIC_` 접두사: 클라이언트에 노출됨 (브라우저에서 접근 가능)

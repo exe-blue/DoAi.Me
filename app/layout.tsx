@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Auth0Provider } from "@auth0/nextjs-auth0";
-import { auth0 } from "@/lib/auth0";
 
 export const metadata: Metadata = {
   title: "DoAi.Me - SmartPhone Farm Console",
@@ -15,13 +13,11 @@ export const viewport: Viewport = {
   themeColor: "#0a0c10",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth0.getSession();
-
   return (
     <html lang="ko" className="dark text-base" suppressHydrationWarning>
       <head>
@@ -38,10 +34,8 @@ export default async function RootLayout({
           defaultTheme="dark"
           disableTransitionOnChange
         >
-          <Auth0Provider user={session?.user}>
-            {children}
-            <Toaster />
-          </Auth0Provider>
+          {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

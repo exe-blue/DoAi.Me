@@ -1,4 +1,4 @@
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
@@ -25,9 +25,8 @@ export function isSupabaseConfigured(): boolean {
 }
 
 /**
- * Creates (or returns a cached) Supabase browser client.
- * Returns `null` when the required environment variables are missing or invalid,
- * allowing the app to render gracefully without Supabase connectivity.
+ * Creates (or returns a cached) Supabase browser client with auth cookie support.
+ * Use for Client Components (auth, realtime).
  */
 export function createClient(): SupabaseClient<Database> | null {
   if (cachedClient) return cachedClient;
@@ -39,13 +38,12 @@ export function createClient(): SupabaseClient<Database> | null {
     if (!warnedOnce) {
       warnedOnce = true;
       console.warn(
-        "[Supabase] Client not initialised – NEXT_PUBLIC_SUPABASE_URL must be a valid HTTP/HTTPS URL " +
-          "and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set. Realtime features will be disabled."
+        "[Supabase] Client not initialised – NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set."
       );
     }
     return null;
   }
 
-  cachedClient = createSupabaseClient<Database>(url, key);
+  cachedClient = createBrowserClient<Database>(url, key);
   return cachedClient;
 }

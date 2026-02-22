@@ -9,6 +9,7 @@ import { HealthBar } from "@/components/overview/health-bar";
 import { StatCards } from "@/components/overview/stat-cards";
 import { WorkerDetail } from "@/components/overview/worker-detail";
 import { ActivityFeed } from "@/components/overview/activity-feed";
+import { HealthReportPanel } from "@/components/overview/health-report";
 export default function DashboardOverviewPage() {
   const { worker, devices, tasks, proxies, events, fetchInitial } = useDashboardStore();
 
@@ -93,6 +94,9 @@ export default function DashboardOverviewPage() {
         {/* Zone D: Activity Feed */}
         <ActivityFeed events={events} />
       </div>
+
+      {/* Zone E: Health Report */}
+      <HealthReportPanel />
     </div>
   );
 }

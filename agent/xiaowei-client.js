@@ -17,6 +17,20 @@ class XiaoweiClient extends EventEmitter {
     this.shouldReconnect = true;
     this._pendingRequests = new Map();
     this._requestId = 0;
+    this._commandQueue = [];
+    this._maxQueueSize = 100;
+    this._disconnectedAt = null;
+  }
+
+  get isConnected() {
+    return this.connected;
+  }
+
+  get disconnectedDuration() {
+    if (this._disconnectedAt) {
+      return Date.now() - this._disconnectedAt;
+    }
+    return 0;
   }
 
   connect() {
@@ -36,7 +50,23 @@ class XiaoweiClient extends EventEmitter {
       console.log("[Xiaowei] Connected");
       this.connected = true;
       this.reconnectDelay = 1000;
+
+      // Check for extended disconnect (> 2 minutes)
+      if (this._disconnectedAt) {
+        const duration = Date.now() - this._disconnectedAt;
+        if (duration > 2 * 60 * 1000) {
+          console.log(`[Xiaowei] Extended disconnect detected: ${Math.round(duration / 1000)}s`);
+          this.emit("extended-disconnect", { duration });
+        }
+        this._disconnectedAt = null;
+      }
+
       this.emit("connected");
+
+      // Flush queued commands
+      if (this._commandQueue.length > 0) {
+        this._flushQueue();
+      }
     });
 
     this.ws.on("message", (data) => {
@@ -61,6 +91,7 @@ class XiaoweiClient extends EventEmitter {
       const wasConnected = this.connected;
       this.connected = false;
       if (wasConnected) {
+        this._disconnectedAt = Date.now();
         console.log("[Xiaowei] Disconnected");
         this.emit("disconnected");
       }
@@ -99,6 +130,30 @@ class XiaoweiClient extends EventEmitter {
   }
 
   /**
+   * Flush queued commands after reconnect.
+   * Commands are sent raw — callers already received { queued: true }.
+   */
+  async _flushQueue() {
+    const count = this._commandQueue.length;
+    console.log(`[Xiaowei] Flushing ${count} queued command(s)`);
+    while (this._commandQueue.length > 0) {
+      const { message } = this._commandQueue.shift();
+      try {
+        if (this.ws && this.connected) {
+          this.ws.send(JSON.stringify(message));
+        }
+      } catch (err) {
+        console.error(`[Xiaowei] Failed to flush command: ${err.message}`);
+      }
+      // Small delay between commands to avoid flooding
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (count > 0) {
+      console.log(`[Xiaowei] Queue flush complete`);
+    }
+  }
+
+  /**
    * Send a JSON message and wait for response
    * @param {object} message - JSON message to send
    * @param {number} timeout - Response timeout in ms (default 30s)
@@ -107,7 +162,14 @@ class XiaoweiClient extends EventEmitter {
   send(message, timeout = 30000) {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.ws) {
-        return reject(new Error("Not connected to Xiaowei"));
+        // Queue command instead of rejecting
+        let dropped = 0;
+        if (this._commandQueue.length >= this._maxQueueSize) {
+          this._commandQueue.shift();
+          dropped = 1;
+        }
+        this._commandQueue.push({ message });
+        return resolve({ queued: true, dropped });
       }
 
       const id = ++this._requestId;
