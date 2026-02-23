@@ -13,6 +13,8 @@ export interface XiaoweiDevice {
   model?: string;
   battery?: number;
   screenOn?: boolean;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 export interface XiaoweiResponse {
@@ -20,6 +22,24 @@ export interface XiaoweiResponse {
   msg?: string;
   data?: unknown;
   [key: string]: unknown;
+}
+
+export enum PointerType {
+  PRESS = "0",
+  RELEASE = "1",
+  MOVE = "2",
+  SCROLL_UP = "3",
+  SCROLL_DOWN = "4",
+  SWIPE_UP = "5",
+  SWIPE_DOWN = "6",
+  SWIPE_LEFT = "7",
+  SWIPE_RIGHT = "8",
+}
+
+export enum PushType {
+  BACK = "0",
+  HOME = "1",
+  RECENTS = "2",
 }
 
 interface PendingRequest {
@@ -214,8 +234,126 @@ export class XiaoweiClient extends EventEmitter {
     return resp;
   }
 
-  async screen(serial: string): Promise<XiaoweiResponse> {
-    return this.send({ action: "screen", devices: serial });
+  async screen(devices: string, savePath?: string): Promise<XiaoweiResponse> {
+    return this.send({
+      action: "screen",
+      devices,
+      data: savePath ? { path: savePath } : {},
+    });
+  }
+
+  /** Full ADB command */
+  async adb(devices: string, command: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "adb", devices, data: { command } });
+  }
+
+  /** Pointer/touch event */
+  async pointerEvent(
+    devices: string,
+    type: PointerType | string,
+    x?: number | string,
+    y?: number | string
+  ): Promise<XiaoweiResponse> {
+    return this.send({
+      action: "pointerEvent",
+      devices,
+      data: {
+        type: String(type),
+        x: String(x ?? "50"),
+        y: String(y ?? "50"),
+      },
+    });
+  }
+
+  /** Input text on devices */
+  async inputText(devices: string, text: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "inputText", devices, data: { text } });
+  }
+
+  /** Start an app by package name */
+  async startApk(devices: string, packageName: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "startApk", devices, data: { apk: packageName } });
+  }
+
+  /** Stop an app by package name */
+  async stopApk(devices: string, packageName: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "stopApk", devices, data: { apk: packageName } });
+  }
+
+  /** Install APK from file path */
+  async installApk(devices: string, filePath: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "installApk", devices, data: { path: filePath } });
+  }
+
+  /** Uninstall an app */
+  async uninstallApk(devices: string, packageName: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "uninstallApk", devices, data: { apk: packageName } });
+  }
+
+  /** Take a screenshot (with optional save path) */
+  async screenCapture(devices: string, savePath?: string): Promise<XiaoweiResponse> {
+    return this.send({
+      action: "screen",
+      devices,
+      data: savePath ? { path: savePath } : {},
+    });
+  }
+
+  /** Navigation key event */
+  async pushEvent(devices: string, type: PushType | string): Promise<XiaoweiResponse> {
+    return this.send({
+      action: "pushEvent",
+      devices,
+      data: { type: String(type) },
+    });
+  }
+
+  /** Write text to clipboard */
+  async writeClipBoard(devices: string, text: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "writeClipBoard", devices, data: { text } });
+  }
+
+  /** Get list of installed apps */
+  async apkList(devices: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "apkList", devices, data: {} });
+  }
+
+  /** Get list of input methods */
+  async imeList(devices: string): Promise<XiaoweiResponse> {
+    return this.send({ action: "imeList", devices, data: {} });
+  }
+
+  /** Update device information */
+  async updateDevices(devices: string, data: Record<string, unknown>): Promise<XiaoweiResponse> {
+    return this.send({ action: "updateDevices", devices, data });
+  }
+
+  // ── Convenience methods ──
+
+  goHome(devices: string): Promise<XiaoweiResponse> {
+    return this.pushEvent(devices, PushType.HOME);
+  }
+
+  goBack(devices: string): Promise<XiaoweiResponse> {
+    return this.pushEvent(devices, PushType.BACK);
+  }
+
+  recentApps(devices: string): Promise<XiaoweiResponse> {
+    return this.pushEvent(devices, PushType.RECENTS);
+  }
+
+  async tap(devices: string, x: number | string, y: number | string): Promise<XiaoweiResponse> {
+    await this.pointerEvent(devices, PointerType.PRESS, x, y);
+    await new Promise((r) => setTimeout(r, 50));
+    return this.pointerEvent(devices, PointerType.RELEASE, x, y);
+  }
+
+  swipeUp(devices: string): Promise<XiaoweiResponse> {
+    return this.pointerEvent(devices, PointerType.SWIPE_UP, "50", "50");
+  }
+
+  swipeDown(devices: string): Promise<XiaoweiResponse> {
+    return this.pointerEvent(devices, PointerType.SWIPE_DOWN, "50", "50");
   }
 
   private checkResponse(resp: XiaoweiResponse, action: string): void {
@@ -269,6 +407,8 @@ export class XiaoweiClient extends EventEmitter {
       model: d.model ? String(d.model) : undefined,
       battery: d.battery != null ? Number(d.battery) : undefined,
       screenOn: d.screenOn != null ? Boolean(d.screenOn) : undefined,
+      sourceWidth: d.sourceWidth != null ? Number(d.sourceWidth) : undefined,
+      sourceHeight: d.sourceHeight != null ? Number(d.sourceHeight) : undefined,
     };
   }
 }
