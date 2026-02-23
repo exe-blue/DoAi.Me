@@ -36,14 +36,13 @@ export async function PUT(
     const body = await request.json();
 
     const updates: any = {};
-    if (body.name !== undefined) updates.channel_name = body.name;
-    if (body.youtube_channel_id !== undefined) updates.youtube_channel_id = body.youtube_channel_id;
-    if (body.youtube_url !== undefined) updates.channel_url = body.youtube_url;
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.profile_url !== undefined) updates.profile_url = body.profile_url;
+    if (body.youtube_url !== undefined) updates.profile_url = body.youtube_url;
     if (body.category !== undefined) updates.category = body.category;
-    if (body.notes !== undefined) updates.notes = body.notes;
-    if (body.monitoring_enabled !== undefined) updates.monitoring_enabled = body.monitoring_enabled;
-    if (body.monitoring_interval_minutes !== undefined)
-      updates.monitoring_interval_minutes = body.monitoring_interval_minutes;
+    if (body.is_monitored !== undefined) updates.is_monitored = body.is_monitored;
+    if (body.collect_interval_hours !== undefined)
+      updates.collect_interval_hours = body.collect_interval_hours;
 
     const channel = await updateChannel(id, updates);
 

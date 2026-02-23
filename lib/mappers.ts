@@ -64,30 +64,30 @@ function calculateProgress(status: string, result: Record<string, unknown> | nul
 export function mapChannelRow(row: ChannelRow): Channel {
   return {
     id: row.id,
-    name: row.channel_name,
-    youtubeId: row.youtube_channel_id,
-    youtubeHandle: extractHandleFromUrl(row.channel_url),
+    name: row.name,
+    youtubeId: row.id,
+    youtubeHandle: row.handle ?? extractHandleFromUrl(row.profile_url ?? ""),
     thumbnail: row.thumbnail_url || "/placeholder-channel.jpg",
-    subscriberCount: formatSubscriberCount(row.subscriber_count ?? 0),
+    subscriberCount: formatSubscriberCount(parseInt(row.subscriber_count ?? "0", 10) || 0),
     videoCount: row.video_count ?? 0,
     addedAt: row.created_at ?? "",
-    autoSync: row.monitoring_enabled ?? false,
+    autoSync: row.is_monitored ?? false,
   };
 }
 
 export function mapVideoRow(
-  row: VideoRow & { channels?: { channel_name: string } | null },
+  row: VideoRow & { channels?: { name: string } | null },
   taskId: string | null = null
 ): Content {
-  const channelName = row.channels?.channel_name ?? "";
+  const channelName = row.channels?.name ?? row.channel_name ?? "";
   return {
     id: row.id,
-    videoId: row.youtube_video_id,
+    videoId: row.id,
     title: row.title ?? "",
-    thumbnail: row.thumbnail_url || `https://img.youtube.com/vi/${row.youtube_video_id}/mqdefault.jpg`,
-    duration: formatDurationFromSeconds(row.duration_seconds),
+    thumbnail: row.thumbnail_url || `https://img.youtube.com/vi/${row.id}/mqdefault.jpg`,
+    duration: formatDurationFromSeconds(row.duration_sec),
     channelName,
-    publishedAt: row.published_at || (row.created_at ?? ""),
+    publishedAt: row.created_at ?? "",
     registeredAt: row.created_at ?? "",
     taskId,
     status: mapVideoStatusToContentStatus(row.status ?? ""),
@@ -96,8 +96,8 @@ export function mapVideoRow(
 
 export function mapTaskRow(
   row: TaskRow & {
-    videos?: { title: string; thumbnail_url: string | null; duration_seconds: number | null; youtube_video_id: string } | null;
-    channels?: { channel_name: string } | null;
+    videos?: { title: string; thumbnail_url: string | null; duration_sec: number | null; id: string } | null;
+    channels?: { name: string } | null;
   },
   logs: string[] = []
 ): Task {
@@ -112,10 +112,10 @@ export function mapTaskRow(
   return {
     id: row.id,
     title: row.videos?.title ?? "",
-    channelName: row.channels?.channel_name ?? "",
-    thumbnail: row.videos?.thumbnail_url || (row.videos?.youtube_video_id ? `https://img.youtube.com/vi/${row.videos.youtube_video_id}/mqdefault.jpg` : ""),
-    duration: formatDurationFromSeconds(row.videos?.duration_seconds ?? null),
-    videoId: row.videos?.youtube_video_id ?? "",
+    channelName: row.channels?.name ?? "",
+    thumbnail: row.videos?.thumbnail_url || (row.videos?.id ? `https://img.youtube.com/vi/${row.videos.id}/mqdefault.jpg` : ""),
+    duration: formatDurationFromSeconds(row.videos?.duration_sec ?? null),
+    videoId: row.videos?.id ?? "",
     status: (dbStatusToTaskStatus[row.status ?? ""] ?? row.status) as Task["status"],
     priority: row.priority ?? 5,
     isPriority: (row.priority ?? 5) <= 3,

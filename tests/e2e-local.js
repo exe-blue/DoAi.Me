@@ -383,11 +383,11 @@ async function step5_checkScripts() {
 async function step6_findRecentVideo() {
   logStep(6, "Find channel & most recent video from DB");
 
-  // Get channels with monitoring_enabled
+  // Get channels with is_monitored
   const { data: channels, error: chErr } = await supabase
     .from("channels")
-    .select("id, youtube_channel_id, channel_name, channel_url")
-    .eq("monitoring_enabled", true)
+    .select("id, name, profile_url")
+    .eq("is_monitored", true)
     .order("created_at", { ascending: false });
 
   if (chErr) {
@@ -402,31 +402,29 @@ async function step6_findRecentVideo() {
 
   logOK(`Found ${channels.length} channel(s):`);
   for (const ch of channels) {
-    logOK(`  ${ch.channel_name} (${ch.youtube_channel_id})`);
+    logOK(`  ${ch.name} (${ch.id})`);
   }
 
-  // For each channel, find the most recently published video
+  // For each channel, find the most recently created video
   for (const ch of channels) {
     const { data: videos, error: vErr } = await supabase
       .from("videos")
-      .select("id, youtube_video_id, title, published_at, status, duration_seconds")
+      .select("id, title, status, duration_sec")
       .eq("channel_id", ch.id)
-      .order("published_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(5);
 
     if (vErr || !videos || videos.length === 0) continue;
 
-    // Pick the most recent video that hasn't been processed yet, or the latest
-    const candidate = videos.find((v) => v.status === "detected" || v.status === "new") || videos[0];
+    const candidate = videos.find((v) => v.status === "active" || v.status === "new") || videos[0];
 
     channel = ch;
     video = candidate;
 
-    logOK(`Selected channel: ${ch.channel_name}`);
+    logOK(`Selected channel: ${ch.name}`);
     logOK(`Selected video: "${video.title}"`);
-    logOK(`  YouTube ID: ${video.youtube_video_id}`);
-    logOK(`  Published: ${video.published_at || "unknown"}`);
-    logOK(`  Duration: ${video.duration_seconds ? `${Math.round(video.duration_seconds / 60)}min` : "unknown"}`);
+    logOK(`  YouTube ID: ${video.id}`);
+    logOK(`  Duration: ${video.duration_sec ? `${Math.round(video.duration_sec / 60)}min` : "unknown"}`);
     logOK(`  Current status: ${video.status}`);
     return true;
   }
@@ -918,7 +916,7 @@ async function main() {
   console.log(`\n  Results: ${passCount} passed, ${failCount} failed, ${skipCount} skipped (${e2eDuration}s)`);
 
   if (channel && video) {
-    console.log(`  Channel: ${channel.channel_name}`);
+    console.log(`  Channel: ${channel.name}`);
     console.log(`  Video:   ${video.title}`);
     console.log(`  Task:    ${taskId || "not created"}`);
   }

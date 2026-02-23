@@ -163,10 +163,9 @@ interface Channel {
 interface Video {
   id: string;
   title: string;
-  youtube_url: string;
-  youtube_video_id: string;
-  priority: number;
-  play_count: number;
+  priority?: string | number;
+  completed_views?: number;
+  status?: string;
 }
 
 type SubmitTarget = "immediate" | "queue";

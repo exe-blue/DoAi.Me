@@ -133,52 +133,85 @@ export type Database = {
       }
       channels: {
         Row: {
-          api_key_encrypted: string | null
-          category: string | null
-          channel_name: string
-          channel_url: string
-          created_at: string | null
           id: string
-          monitoring_enabled: boolean | null
-          monitoring_interval_minutes: number | null
-          notes: string | null
-          subscriber_count: number | null
+          name: string
+          handle: string | null
+          profile_url: string | null
+          banner_url: string | null
           thumbnail_url: string | null
+          subscriber_count: string | null
+          video_count: number
+          total_views: number
+          category: string | null
+          is_monitored: boolean
+          auto_collect: boolean
+          collect_interval_hours: number
+          last_collected_at: string | null
+          last_video_check_at: string | null
+          default_watch_duration_sec: number
+          default_prob_like: number
+          default_prob_comment: number
+          default_prob_subscribe: number
+          status: string | null
+          metadata: Json
+          created_at: string | null
           updated_at: string | null
-          video_count: number | null
-          youtube_channel_id: string
+          push_status: string | null
+          push_expires_at: string | null
         }
         Insert: {
-          api_key_encrypted?: string | null
-          category?: string | null
-          channel_name: string
-          channel_url: string
-          created_at?: string | null
-          id?: string
-          monitoring_enabled?: boolean | null
-          monitoring_interval_minutes?: number | null
-          notes?: string | null
-          subscriber_count?: number | null
+          id: string
+          name: string
+          handle?: string | null
+          profile_url?: string | null
+          banner_url?: string | null
           thumbnail_url?: string | null
+          subscriber_count?: string | null
+          video_count?: number
+          total_views?: number
+          category?: string | null
+          is_monitored?: boolean
+          auto_collect?: boolean
+          collect_interval_hours?: number
+          last_collected_at?: string | null
+          last_video_check_at?: string | null
+          default_watch_duration_sec?: number
+          default_prob_like?: number
+          default_prob_comment?: number
+          default_prob_subscribe?: number
+          status?: string | null
+          metadata?: Json
+          created_at?: string | null
           updated_at?: string | null
-          video_count?: number | null
-          youtube_channel_id: string
+          push_status?: string | null
+          push_expires_at?: string | null
         }
         Update: {
-          api_key_encrypted?: string | null
-          category?: string | null
-          channel_name?: string
-          channel_url?: string
-          created_at?: string | null
           id?: string
-          monitoring_enabled?: boolean | null
-          monitoring_interval_minutes?: number | null
-          notes?: string | null
-          subscriber_count?: number | null
+          name?: string
+          handle?: string | null
+          profile_url?: string | null
+          banner_url?: string | null
           thumbnail_url?: string | null
+          subscriber_count?: string | null
+          video_count?: number
+          total_views?: number
+          category?: string | null
+          is_monitored?: boolean
+          auto_collect?: boolean
+          collect_interval_hours?: number
+          last_collected_at?: string | null
+          last_video_check_at?: string | null
+          default_watch_duration_sec?: number
+          default_prob_like?: number
+          default_prob_comment?: number
+          default_prob_subscribe?: number
+          status?: string | null
+          metadata?: Json
+          created_at?: string | null
           updated_at?: string | null
-          video_count?: number | null
-          youtube_channel_id?: string
+          push_status?: string | null
+          push_expires_at?: string | null
         }
         Relationships: []
       }
@@ -964,64 +997,88 @@ export type Database = {
       }
       videos: {
         Row: {
-          auto_detected: boolean | null
-          channel_id: string | null
-          created_at: string | null
-          description: string | null
-          duration_seconds: number | null
           id: string
-          is_active: boolean | null
-          like_count: number | null
-          play_count: number | null
-          priority: number | null
-          published_at: string | null
-          status: string | null
-          thumbnail_url: string | null
           title: string
+          channel_id: string | null
+          channel_name: string | null
+          thumbnail_url: string | null
+          duration_sec: number | null
+          video_duration_sec: number | null
+          search_keyword: string | null
+          target_views: number | null
+          completed_views: number | null
+          failed_views: number | null
+          watch_duration_sec: number | null
+          watch_duration_min_pct: number | null
+          watch_duration_max_pct: number | null
+          prob_like: number | null
+          prob_comment: number | null
+          prob_subscribe: number | null
+          status: string | null
+          priority: string | null
+          tags: string[] | null
+          metadata: Json | null
+          last_scheduled_at: string | null
+          created_at: string | null
           updated_at: string | null
-          view_count: number | null
-          youtube_url: string | null
-          youtube_video_id: string
+          priority_enabled: boolean | null
+          priority_updated_at: string | null
         }
         Insert: {
-          auto_detected?: boolean | null
-          channel_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          duration_seconds?: number | null
-          id?: string
-          is_active?: boolean | null
-          like_count?: number | null
-          play_count?: number | null
-          priority?: number | null
-          published_at?: string | null
-          status?: string | null
-          thumbnail_url?: string | null
+          id: string
           title: string
+          channel_id?: string | null
+          channel_name?: string | null
+          thumbnail_url?: string | null
+          duration_sec?: number | null
+          video_duration_sec?: number | null
+          search_keyword?: string | null
+          target_views?: number | null
+          completed_views?: number | null
+          failed_views?: number | null
+          watch_duration_sec?: number | null
+          watch_duration_min_pct?: number | null
+          watch_duration_max_pct?: number | null
+          prob_like?: number | null
+          prob_comment?: number | null
+          prob_subscribe?: number | null
+          status?: string | null
+          priority?: string | null
+          tags?: string[] | null
+          metadata?: Json | null
+          last_scheduled_at?: string | null
+          created_at?: string | null
           updated_at?: string | null
-          view_count?: number | null
-          youtube_url?: string | null
-          youtube_video_id: string
+          priority_enabled?: boolean | null
+          priority_updated_at?: string | null
         }
         Update: {
-          auto_detected?: boolean | null
-          channel_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          duration_seconds?: number | null
           id?: string
-          is_active?: boolean | null
-          like_count?: number | null
-          play_count?: number | null
-          priority?: number | null
-          published_at?: string | null
-          status?: string | null
-          thumbnail_url?: string | null
           title?: string
+          channel_id?: string | null
+          channel_name?: string | null
+          thumbnail_url?: string | null
+          duration_sec?: number | null
+          video_duration_sec?: number | null
+          search_keyword?: string | null
+          target_views?: number | null
+          completed_views?: number | null
+          failed_views?: number | null
+          watch_duration_sec?: number | null
+          watch_duration_min_pct?: number | null
+          watch_duration_max_pct?: number | null
+          prob_like?: number | null
+          prob_comment?: number | null
+          prob_subscribe?: number | null
+          status?: string | null
+          priority?: string | null
+          tags?: string[] | null
+          metadata?: Json | null
+          last_scheduled_at?: string | null
+          created_at?: string | null
           updated_at?: string | null
-          view_count?: number | null
-          youtube_url?: string | null
-          youtube_video_id?: string
+          priority_enabled?: boolean | null
+          priority_updated_at?: string | null
         }
         Relationships: [
           {

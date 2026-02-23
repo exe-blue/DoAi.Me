@@ -2,15 +2,15 @@ import { createServerClient } from "@/lib/supabase/server";
 import type { Json, TaskRow, TaskLogRow } from "@/lib/supabase/types";
 
 type TaskWithDetails = TaskRow & {
-  videos: { title: string; thumbnail_url: string | null; duration_seconds: number | null; youtube_video_id: string } | null;
-  channels: { channel_name: string } | null;
+  videos: { title: string; thumbnail_url: string | null; duration_sec: number | null; id: string } | null;
+  channels: { name: string } | null;
 };
 
 export async function getTasksWithDetails() {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("tasks")
-    .select("*, videos(title, thumbnail_url, duration_seconds, youtube_video_id), channels(channel_name)")
+    .select("*, videos(title, thumbnail_url, duration_sec, id), channels(name)")
     .not("video_id", "is", null)
     .order("created_at", { ascending: false })
     .returns<TaskWithDetails[]>();

@@ -1,7 +1,7 @@
 /**
  * DoAi.Me - Video Dispatcher
  * Creates jobs + job_assignments from active videos that don't have a job yet.
- * Runs every 60s; uses videos.youtube_video_id for YouTube URL.
+ * Runs every 60s; uses videos.id (YouTube Video ID) for YouTube URL.
  */
 class VideoDispatcher {
   constructor(supabaseSync, config, broadcaster) {
@@ -42,10 +42,10 @@ class VideoDispatcher {
   }
 
   async _processNewVideos() {
-    // 1. Get active videos (use columns that exist: id, youtube_video_id, title, status, duration_seconds)
+    // 1. Get active videos (id = YouTube Video ID, duration_sec)
     const { data: videos, error: vErr } = await this.supabase
       .from("videos")
-      .select("id, youtube_video_id, title, status, duration_seconds")
+      .select("id, title, status, duration_sec")
       .eq("status", "active");
 
     if (vErr) {
@@ -54,7 +54,7 @@ class VideoDispatcher {
     }
     if (!videos || videos.length === 0) return;
 
-    // 2. Get existing active jobs (match by target_url containing youtube_video_id)
+    // 2. Get existing active jobs (match by target_url containing video id)
     const { data: existingJobs } = await this.supabase
       .from("jobs")
       .select("id, target_url, total_assignments, is_active")
@@ -79,10 +79,9 @@ class VideoDispatcher {
     let created = 0;
 
     for (const video of videos) {
-      const ytId = video.youtube_video_id || video.id;
-      const youtubeUrl = `https://www.youtube.com/watch?v=${ytId}`;
+      const youtubeUrl = `https://www.youtube.com/watch?v=${video.id}`;
 
-      const existingJob = jobMap.get(ytId) || null;
+      const existingJob = jobMap.get(video.id) || null;
 
       if (existingJob) {
         const targetViews = targetViewsDefault;
@@ -133,7 +132,7 @@ class VideoDispatcher {
       }
 
       // No job — create job + assignments
-      const durationSec = video.duration_seconds || 60;
+      const durationSec = video.duration_sec || 60;
 
       const { data: job, error: jobErr } = await this.supabase
         .from("jobs")

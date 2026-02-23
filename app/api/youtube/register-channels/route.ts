@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveChannelHandle, fetchRecentVideos } from "@/lib/youtube";
 import { upsertChannel, getAllChannels } from "@/lib/db/channels";
 import { upsertVideo } from "@/lib/db/videos";
+import { createServerClient } from "@/lib/supabase/server";
 import type { ChannelRow } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -159,8 +160,7 @@ export async function POST(request: Request) {
           });
 
           // Set status to active
-          const { createServerClient: csClient } = await import("@/lib/supabase/server");
-          await csClient().from("videos").update({ status: "active" }).eq("id", upserted.id);
+          await createServerClient().from("videos").update({ status: "active" }).eq("id", upserted.id);
 
           addedVideos.push({
             title: video.title,

@@ -9,7 +9,7 @@ import { mapVideoRow } from "@/lib/mappers";
 
 export const dynamic = "force-dynamic";
 
-// Helper to extract youtube_video_id from URL
+// Helper to extract video id from YouTube URL
 function extractYoutubeVideoId(url: string): string | null {
   if (!url) return null;
 
@@ -32,17 +32,21 @@ export async function GET(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
 
-    const sortBy = searchParams.get("sort_by") as "published_at" | "priority" | "play_count" | undefined;
-    const isActiveParam = searchParams.get("is_active");
-    const isActive = isActiveParam !== null ? isActiveParam === "true" : undefined;
+    const sortBy = searchParams.get("sort_by") as "created_at" | "priority" | "priority_updated_at" | undefined;
+    const statusParam = searchParams.get("status");
 
     const videos = await getVideosByChannelIdWithFilters(id, {
       sort_by: sortBy,
-      is_active: isActive,
+      status: statusParam ?? undefined,
     });
 
     return NextResponse.json({
-      videos: videos.map((v) => mapVideoRow(v, null)),
+      videos: videos.map((v) => ({
+        ...mapVideoRow(v, null),
+        priority: v.priority,
+        completed_views: v.completed_views ?? 0,
+        status: v.status,
+      })),
     });
   } catch (error) {
     console.error("Error reading videos:", error);
@@ -64,28 +68,27 @@ export async function POST(
     // Bulk creation
     if (body.bulk && Array.isArray(body.bulk)) {
       const videosToCreate = body.bulk.map((item: any) => {
-        const youtubeVideoId = extractYoutubeVideoId(item.youtube_url || "");
-        if (!youtubeVideoId) {
+        const videoId = extractYoutubeVideoId(item.youtube_url || "");
+        if (!videoId) {
           throw new Error(`Invalid youtube_url: ${item.youtube_url}`);
         }
         return {
           channel_id: channelId,
-          youtube_video_id: youtubeVideoId,
+          id: videoId,
           title: item.title,
-          youtube_url: item.youtube_url || null,
-          priority: item.priority || null,
-          is_active: item.is_active !== undefined ? item.is_active : true,
+          priority: item.priority ?? "normal",
+          status: item.status ?? "active",
         };
       });
 
       const videos = await bulkCreateVideos(videosToCreate);
       return NextResponse.json({
-        videos: videos.map((v) => mapVideoRow(v, null)),
+        videos: videos.map((v) => ({ ...mapVideoRow(v, null), priority: v.priority, completed_views: v.completed_views ?? 0, status: v.status })),
       }, { status: 201 });
     }
 
     // Single creation
-    const { title, youtube_url, priority, is_active } = body;
+    const { title, youtube_url, priority, status } = body;
 
     if (!title || !youtube_url) {
       return NextResponse.json(
@@ -94,8 +97,8 @@ export async function POST(
       );
     }
 
-    const youtubeVideoId = extractYoutubeVideoId(youtube_url);
-    if (!youtubeVideoId) {
+    const videoId = extractYoutubeVideoId(youtube_url);
+    if (!videoId) {
       return NextResponse.json(
         { error: "Invalid youtube_url format" },
         { status: 400 }
@@ -104,14 +107,15 @@ export async function POST(
 
     const video = await createVideo({
       channel_id: channelId,
-      youtube_video_id: youtubeVideoId,
+      id: videoId,
       title,
-      youtube_url,
-      priority: priority || null,
-      is_active: is_active !== undefined ? is_active : true,
+      priority: priority ?? "normal",
+      status: status ?? "active",
     });
 
-    return NextResponse.json({ video: mapVideoRow(video, null) }, { status: 201 });
+    return NextResponse.json({
+      video: { ...mapVideoRow(video, null), priority: video.priority, completed_views: video.completed_views ?? 0, status: video.status },
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating video:", error);
     return NextResponse.json(

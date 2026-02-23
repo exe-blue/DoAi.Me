@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { resolveChannelHandle, fetchRecentVideos } from "@/lib/youtube";
-import { getAllChannels, upsertChannel } from "@/lib/db/channels";
+import { fetchRecentVideos } from "@/lib/youtube";
+import { getAllChannels } from "@/lib/db/channels";
 import { upsertVideo } from "@/lib/db/videos";
 import type { ChannelRow } from "@/lib/supabase/types";
 
@@ -17,7 +17,7 @@ function verifyCronAuth(request: Request): boolean {
 /**
  * GET /api/cron/sync-channels
  * Vercel Cron에서 1분마다 호출.
- * monitoring_enabled 채널의 최근 영상을 YouTube API로 가져와 videos 테이블에 upsert.
+ * is_monitored 채널의 최근 영상을 YouTube API로 가져와 videos 테이블에 upsert.
  */
 export async function GET(request: Request) {
   if (!verifyCronAuth(request)) {
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 
   try {
     const channels = await getAllChannels();
-    const monitored = channels.filter((c: ChannelRow) => c.monitoring_enabled);
+    const monitored = channels.filter((c: ChannelRow) => c.is_monitored);
 
     if (monitored.length === 0) {
       return NextResponse.json({
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
       try {
         // 최근 2시간 영상 조회 (1분 주기이므로 2시간이면 충분)
         const videos = await fetchRecentVideos(
-          channel.youtube_channel_id,
+          channel.id,
           2 // hours
         );
 
@@ -60,12 +60,10 @@ export async function GET(request: Request) {
 
           const upserted = await upsertVideo({
             channel_id: channel.id,
-            youtube_video_id: video.videoId,
+            id: video.videoId,
             title: video.title,
             thumbnail_url: video.thumbnail,
-            published_at: video.publishedAt,
-            duration_seconds: durationSec,
-            auto_detected: true,
+            duration_sec: durationSec,
           });
 
           // 새 영상인지 판별
@@ -73,7 +71,7 @@ export async function GET(request: Request) {
           const updatedMs = new Date(upserted.updated_at ?? "").getTime();
           if (Math.abs(updatedMs - createdMs) < 5000) {
             totalNew++;
-            console.log(`[Cron] New video: "${video.title}" (${channel.channel_name})`);
+            console.log(`[Cron] New video: "${video.title}" (${channel.name})`);
           } else {
             totalUpdated++;
           }
@@ -81,7 +79,7 @@ export async function GET(request: Request) {
       } catch (err) {
         errors++;
         console.error(
-          `[Cron] Sync failed for ${channel.channel_name}:`,
+          `[Cron] Sync failed for ${channel.name}:`,
           err instanceof Error ? err.message : err
         );
       }

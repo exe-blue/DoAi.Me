@@ -24,13 +24,13 @@ async function seedChannels() {
     if (result.status === "fulfilled") {
       const info = result.value;
       await upsertChannel({
-        youtube_channel_id: info.id,
-        channel_name: info.title,
-        channel_url: `https://www.youtube.com/${info.handle}`,
+        id: info.id,
+        name: info.title,
+        profile_url: `https://www.youtube.com/${info.handle}`,
         thumbnail_url: info.thumbnail,
-        subscriber_count: info.subscriberCount,
+        subscriber_count: String(info.subscriberCount ?? 0),
         video_count: info.videoCount,
-        monitoring_enabled: true,
+        is_monitored: true,
       });
     }
   }
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     const filterChannelId = searchParams.get("channelId");
     const channelsToSync = filterChannelId
       ? channels.filter((c) => c.id === filterChannelId)
-      : channels.filter((c) => c.monitoring_enabled);
+      : channels.filter((c) => c.is_monitored);
 
     // Fetch and upsert videos for each channel
     let totalNewVideos = 0;
@@ -58,19 +58,20 @@ export async function GET(request: NextRequest) {
     await Promise.allSettled(
       channelsToSync.map(async (channel: ChannelRow) => {
         try {
-          // Update channel info from YouTube API
-          const info = await resolveChannelHandle(channel.channel_url);
+          // Update channel info from YouTube API (resolve by handle or profile URL)
+          const handleOrUrl = channel.handle ?? channel.profile_url ?? "";
+          const info = await resolveChannelHandle(handleOrUrl);
           await upsertChannel({
-            youtube_channel_id: channel.youtube_channel_id,
-            channel_name: info.title,
-            channel_url: channel.channel_url,
+            id: channel.id,
+            name: info.title,
+            profile_url: channel.profile_url ?? `https://www.youtube.com/${info.handle}`,
             thumbnail_url: info.thumbnail,
-            subscriber_count: info.subscriberCount,
+            subscriber_count: String(info.subscriberCount ?? 0),
             video_count: info.videoCount,
           });
 
           // Fetch recent videos
-          const videos = await fetchRecentVideos(channel.youtube_channel_id, 24);
+          const videos = await fetchRecentVideos(channel.id, 24);
           for (const video of videos) {
             // Parse duration string back to seconds for DB storage
             const durationParts = video.duration.split(":").map(Number);
@@ -83,12 +84,10 @@ export async function GET(request: NextRequest) {
 
             const upserted = await upsertVideo({
               channel_id: channel.id,
-              youtube_video_id: video.videoId,
+              id: video.videoId,
               title: video.title,
               thumbnail_url: video.thumbnail,
-              published_at: video.publishedAt,
-              duration_seconds: durationSeconds,
-              auto_detected: true,
+              duration_sec: durationSeconds,
             });
 
             // Check if this is a newly created video (created_at ~= updated_at)
@@ -99,14 +98,14 @@ export async function GET(request: NextRequest) {
             }
           }
         } catch (err) {
-          console.error(`Sync failed for channel ${channel.channel_name}:`, err);
+          console.error(`Sync failed for channel ${channel.name}:`, err);
         }
       })
     );
 
     // Read final state from DB
     const finalChannels = await getAllChannels() as ChannelRow[];
-    const finalVideos = await getVideosWithChannelName() as (VideoRow & { channels?: { channel_name: string } | null })[];
+    const finalVideos = await getVideosWithChannelName() as (VideoRow & { channels?: { name: string } | null })[];
 
     // Map to front-end types
     const mappedChannels = finalChannels.map(mapChannelRow);

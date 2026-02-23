@@ -75,7 +75,7 @@ export async function GET() {
     const { count: channelsMonitoring } = await supabase
       .from("channels")
       .select("*", { count: "exact", head: true })
-      .eq("monitoring_enabled", true);
+      .eq("is_monitored", true);
 
     return NextResponse.json({
       workers: {

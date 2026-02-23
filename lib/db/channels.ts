@@ -13,20 +13,20 @@ export async function getAllChannels() {
 }
 
 export async function upsertChannel(channel: {
-  youtube_channel_id: string;
-  channel_name: string;
-  channel_url: string;
+  id: string;
+  name: string;
+  profile_url: string;
   thumbnail_url?: string | null;
-  subscriber_count?: number;
+  subscriber_count?: string | null;
   video_count?: number;
-  monitoring_enabled?: boolean;
+  is_monitored?: boolean;
 }) {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("channels")
     .upsert(
       { ...channel, updated_at: new Date().toISOString() } as any,
-      { onConflict: "youtube_channel_id" }
+      { onConflict: "id" }
     )
     .select()
     .returns<ChannelRow[]>()
@@ -44,15 +44,15 @@ export async function deleteChannel(id: string) {
 export async function updateChannelMonitoring(
   id: string,
   enabled: boolean,
-  intervalMinutes?: number
+  intervalHours?: number
 ) {
   const supabase = createServerClient();
   const update: Record<string, unknown> = {
-    monitoring_enabled: enabled,
+    is_monitored: enabled,
     updated_at: new Date().toISOString(),
   };
-  if (intervalMinutes !== undefined) {
-    update.monitoring_interval_minutes = intervalMinutes;
+  if (intervalHours !== undefined) {
+    update.collect_interval_hours = intervalHours;
   }
   const { data, error } = await supabase
     .from("channels")
@@ -78,11 +78,10 @@ export async function getChannelById(id: string) {
 }
 
 export async function createChannel(channel: {
-  channel_name: string;
-  youtube_channel_id?: string | null;
-  channel_url?: string | null;
+  id: string;
+  name: string;
+  profile_url?: string | null;
   category?: string | null;
-  notes?: string | null;
 }) {
   const supabase = createServerClient();
   const { data, error } = await supabase
@@ -98,13 +97,11 @@ export async function createChannel(channel: {
 export async function updateChannel(
   id: string,
   updates: {
-    channel_name?: string;
-    youtube_channel_id?: string | null;
-    channel_url?: string | null;
+    name?: string;
+    profile_url?: string | null;
     category?: string | null;
-    notes?: string | null;
-    monitoring_enabled?: boolean;
-    monitoring_interval_minutes?: number | null;
+    is_monitored?: boolean;
+    collect_interval_hours?: number | null;
   }
 ) {
   const supabase = createServerClient();

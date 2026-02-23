@@ -15,8 +15,8 @@ export async function PUT(
     const updates: any = {};
     if (body.title !== undefined) updates.title = body.title;
     if (body.priority !== undefined) updates.priority = body.priority;
-    if (body.is_active !== undefined) updates.is_active = body.is_active;
-    if (body.duration_seconds !== undefined) updates.duration_seconds = body.duration_seconds;
+    if (body.status !== undefined) updates.status = body.status;
+    if (body.duration_sec !== undefined) updates.duration_sec = body.duration_sec;
 
     const video = await updateVideo(videoId, updates);
 

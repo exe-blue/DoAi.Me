@@ -355,12 +355,14 @@ heartbeat에서 workers 테이블 관련 호출을 pcs로 변경.
 PC_NUMBER=PC00
 SUPABASE_URL=https://vyfxrplzhskncigyfkaz.supabase.co
 SUPABASE_ANON_KEY=<새 anon key>
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5ZnhycGx6aHNrbmNpZ3lma2F6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzAxMTMyOSwiZXhwIjoyMDgyNTg3MzI5fQ.CSRg_9dPTxuMMwCSIhyB9Z6Zh4601BRiOy4WAd-yZo0
+SUPABASE_SERVICE_ROLE_KEY=<REPLACE_WITH_SERVICE_ROLE_KEY>
 XIAOWEI_WS_URL=ws://10.0.7.49:22222/
 HEARTBEAT_INTERVAL=30000
 TASK_POLL_INTERVAL=5000
 MAX_CONCURRENT_TASKS=20
 ```
+
+**중요:** `SUPABASE_SERVICE_ROLE_KEY`는 Supabase 대시보드에서 새 Service Role Key를 발급해 넣으세요. 이 문서에 노출된 키가 있었다면 **반드시 대시보드에서 해당 키를 회전(regenerate)한 뒤** 새 키를 사용해야 합니다.
 
 ## 9. 검증된 API 사양 (wscat 테스트 완료)
 

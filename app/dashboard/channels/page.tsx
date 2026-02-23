@@ -22,24 +22,21 @@ type Category = "music" | "tech" | "gaming" | "entertainment" | "education" | "o
 interface Channel {
   id: string;
   name: string;
-  youtube_url?: string;
+  profile_url?: string;
   category?: Category;
-  notes?: string;
   video_count?: number;
   thumbnail_url?: string;
-  is_active?: boolean;
+  is_monitored?: boolean;
 }
 
 interface Video {
   id: string;
   channel_id: string;
   title: string;
-  youtube_url: string;
-  youtube_video_id?: string;
-  priority?: number;
-  play_count?: number;
+  priority?: string | number;
+  completed_views?: number;
   duration?: string;
-  is_active?: boolean;
+  status?: string;
 }
 
 function extractVideoId(url: string): string | null {
@@ -65,7 +62,7 @@ export default function ChannelsPage() {
 
   // Channel form state
   const [channelDialogOpen, setChannelDialogOpen] = useState(false);
-  const [channelForm, setChannelForm] = useState({ name: "", youtube_url: "", category: "other" as Category, notes: "" });
+  const [channelForm, setChannelForm] = useState({ name: "", youtube_url: "", category: "other" as Category });
 
   // Video form state
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
@@ -121,7 +118,7 @@ export default function ChannelsPage() {
       });
       if (res.ok) {
         setChannelDialogOpen(false);
-        setChannelForm({ name: "", youtube_url: "", category: "other", notes: "" });
+        setChannelForm({ name: "", youtube_url: "", category: "other" });
         loadChannels();
       }
     } catch (error) {
@@ -153,16 +150,13 @@ export default function ChannelsPage() {
   async function createVideo() {
     if (!selectedChannelId) return;
 
-    const videoId = extractVideoId(videoForm.youtube_url);
-
     try {
       const res = await fetch(`/api/channels/${selectedChannelId}/videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: videoForm.title,
-          youtube_url: videoForm.youtube_url,
-          youtube_video_id: videoId
+          youtube_url: videoForm.youtube_url
         })
       });
       if (res.ok) {
@@ -181,7 +175,7 @@ export default function ChannelsPage() {
     const urls = bulkVideoUrls.split("\n").filter(url => url.trim());
     const bulk = urls.map(url => ({
       youtube_url: url.trim(),
-      youtube_video_id: extractVideoId(url.trim())
+      title: url.trim() // placeholder; API extracts video id from URL
     }));
 
     try {
@@ -200,7 +194,7 @@ export default function ChannelsPage() {
     }
   }
 
-  async function updateVideoPriority(videoId: string, priority: number) {
+  async function updateVideoPriority(videoId: string, priority: string) {
     if (!selectedChannelId) return;
 
     try {
@@ -217,14 +211,14 @@ export default function ChannelsPage() {
     }
   }
 
-  async function updateVideoActive(videoId: string, is_active: boolean) {
+  async function updateVideoActive(videoId: string, active: boolean) {
     if (!selectedChannelId) return;
 
     try {
       const res = await fetch(`/api/channels/${selectedChannelId}/videos/${videoId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active })
+        body: JSON.stringify({ status: active ? "active" : "paused" })
       });
       if (res.ok) {
         loadVideos(selectedChannelId);
@@ -528,31 +522,39 @@ export default function ChannelsPage() {
                           <div className="flex flex-col gap-1">
                             <span className="text-sm font-medium">{video.title}</span>
                             <a
-                              href={video.youtube_url}
+                              href={`https://www.youtube.com/watch?v=${video.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              {video.youtube_url}
+                              https://www.youtube.com/watch?v={video.id}
                               <ExternalLink className="h-3 w-3" />
                             </a>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            className="w-16 h-8"
-                            value={video.priority || 0}
-                            onChange={(e) => updateVideoPriority(video.id, parseInt(e.target.value) || 0)}
-                          />
+                          <Select
+                            value={String(video.priority ?? "normal")}
+                            onValueChange={(val) => updateVideoPriority(video.id, val)}
+                          >
+                            <SelectTrigger className="w-24 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="low">low</SelectItem>
+                              <SelectItem value="normal">normal</SelectItem>
+                              <SelectItem value="high">high</SelectItem>
+                              <SelectItem value="urgent">urgent</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {video.play_count || 0}
+                          {video.completed_views ?? 0}
                         </TableCell>
                         <TableCell>
                           <Switch
-                            checked={video.is_active !== false}
+                            checked={video.status === "active"}
                             onCheckedChange={(checked) => updateVideoActive(video.id, checked)}
                           />
                         </TableCell>
