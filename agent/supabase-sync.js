@@ -196,7 +196,7 @@ class SupabaseSync {
   async syncDeviceTaskStates(states) {
     for (const state of states) {
       try {
-        await this.supabase
+        const { error } = await this.supabase
           .from("devices")
           .update({
             task_status: state.status ?? null,
@@ -208,6 +208,7 @@ class SupabaseSync {
             daily_watch_seconds: state.dailyWatchSeconds ?? 0,
           })
           .eq("serial_number", state.serial);
+        if (error) console.warn(`[Supabase] syncDeviceTaskStates failed for ${state.serial}: ${error.message}`);
       } catch (err) {
         console.warn(`[SupabaseSync] syncDeviceTaskStates error: ${err.message}`);
       }
@@ -410,6 +411,7 @@ class SupabaseSync {
         .is("pc_id", null)
         .select();
 
+      if (claimErr) console.error(`[Supabase] Failed to claim task ${task.id}: ${claimErr.message}`);
       if (!claimErr && claimData && claimData.length > 0) {
         task.pc_id = pcId;
         claimed.push(task);

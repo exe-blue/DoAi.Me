@@ -43,7 +43,7 @@ class DeviceOrchestrator {
 
   start() {
     if (this._pollTimer) return;
-    console.log(`[DeviceOrchestrator] Starting (every ${ORCHESTRATE_INTERVAL_MS / 1000}s, maxConcurrent=${this.maxConcurrent})`);
+    console.log(`[DeviceOrchestrator] Starting pcId=${this.pcId} (every ${ORCHESTRATE_INTERVAL_MS / 1000}s, maxConcurrent=${this.maxConcurrent})`);
     this._pollTimer = setInterval(() => this._orchestrate().catch((e) => console.error("[DeviceOrchestrator]", e)), ORCHESTRATE_INTERVAL_MS);
   }
 
@@ -137,8 +137,15 @@ class DeviceOrchestrator {
     const running = this._runningAssignments.size;
     if (running >= this.maxConcurrent) return;
 
+    if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
+      console.log(`[DeviceOrchestrator] _assignWork(${serial.substring(0, 6)}) pcId=${this.pcId}`);
+    }
     const assignment = await this._getNextAssignment(serial);
+    if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
+      console.log(`[DeviceOrchestrator] claim result: ${assignment ? assignment.id.substring(0, 8) : "null"}`);
+    }
     if (assignment) {
+      console.log(`[DeviceOrchestrator] ${serial.substring(0, 6)} → assignment ${assignment.id.substring(0, 8)}`);
       const jobId = assignment.job_id;
       const sameJobCount = await this._countDevicesOnJob(jobId);
       if (sameJobCount > SAME_JOB_MAX_DEVICES) {
@@ -188,19 +195,25 @@ class DeviceOrchestrator {
 
   async _hasPendingAssignment() {
     try {
+      const { count, error } = await this.supabase
+        .from("job_assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("pc_id", this.pcId)
+        .eq("status", "pending");
+      if (!error && (count || 0) > 0) return true;
       const { data: devs } = await this.supabase
         .from("devices")
         .select("id")
         .eq("pc_id", this.pcId);
       if (!devs || devs.length === 0) return false;
       const deviceIds = devs.map((d) => d.id);
-      const { count, error } = await this.supabase
+      const { count: countByDevice, error: err2 } = await this.supabase
         .from("job_assignments")
         .select("id", { count: "exact", head: true })
         .in("device_id", deviceIds)
         .eq("status", "pending");
-      if (error) return false;
-      return (count || 0) > 0;
+      if (err2) return false;
+      return (countByDevice || 0) > 0;
     } catch {
       return false;
     }
@@ -262,11 +275,14 @@ class DeviceOrchestrator {
     state.startedAt = Date.now();
     state.videoTitle = assignment.video_title || null;
 
+    const row = { ...assignment };
+    if (!row.device_serial) row.device_serial = serial;
+
     try {
       if (this.taskExecutor.runAssignment) {
-        await this.taskExecutor.runAssignment(assignment);
+        await this.taskExecutor.runAssignment(row);
       } else {
-        await this.taskExecutor._executeJobAssignment(assignment);
+        await this.taskExecutor._executeJobAssignment(row);
       }
     } finally {
       this._runningAssignments.delete(assignment.id);

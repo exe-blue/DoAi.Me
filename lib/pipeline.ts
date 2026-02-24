@@ -78,6 +78,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
       .returns<Array<{ id: string; priority: string | null; channel_id: string }>>()
       .single();
     if (error) throw error;
+    if (!video) throw new Error("Video not found");
     videos = [video];
     channelId = video.channel_id;
   } else if (options.contentMode === "channel") {

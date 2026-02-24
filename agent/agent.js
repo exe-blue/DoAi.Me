@@ -309,7 +309,7 @@ async function main() {
     videoDispatcher.start();
     console.log("[Agent] ✓ Video dispatcher started (primary PC)");
   } else {
-    console.log("[Agent] - Video dispatcher skipped (not primary PC)");
+    console.log("[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.");
   }
 
   // 15b. Start device orchestrator
@@ -317,6 +317,7 @@ async function main() {
     pcId: supabaseSync.pcId,
     maxConcurrent: config.maxConcurrentTasks || 10,
   });
+  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`);
   deviceOrchestrator.start();
   console.log("[Agent] ✓ Device orchestrator started");
 

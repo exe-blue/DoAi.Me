@@ -150,7 +150,7 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
       }
 
       console.log(
-        `[Heartbeat] OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
+        `[Heartbeat] heartbeat OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
       );
     } catch (err) {
       console.error(`[Heartbeat] Error: ${err.message}`);

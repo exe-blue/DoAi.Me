@@ -154,6 +154,10 @@ class TaskExecutor {
    * @param {object} assignment - { id, job_id, device_id, device_serial, ... }
    */
   async runAssignment(assignment) {
+    if (!assignment) {
+      console.error("[TaskExecutor] runAssignment: assignment is null/undefined");
+      return;
+    }
     return this._executeJobAssignment(assignment);
   }
 
@@ -186,6 +190,10 @@ class TaskExecutor {
       if (error || !assignments || assignments.length === 0) return;
 
       for (const row of assignments) {
+        if (!row || row.id == null) {
+          console.warn("[TaskExecutor] Skipping job_assignment row with missing id");
+          continue;
+        }
         if (this._jobRunning.has(row.id)) continue;
         this._executeJobAssignment(row).catch((err) => {
           console.error(`[TaskExecutor] Job assignment ${row.id} error: ${err.message}`);
@@ -197,6 +205,14 @@ class TaskExecutor {
   }
 
   async _executeJobAssignment(assignment) {
+    if (!assignment) {
+      console.error("[TaskExecutor] _executeJobAssignment: assignment is null/undefined");
+      return;
+    }
+    if (assignment.id == null) {
+      console.error("[TaskExecutor] _executeJobAssignment: assignment.id is missing");
+      return;
+    }
     this._jobRunning.add(assignment.id);
     const serial = assignment.device_serial;
     if (!serial) {
@@ -206,6 +222,12 @@ class TaskExecutor {
     }
 
     try {
+      if (assignment.job_id == null) {
+        await this._updateJobAssignment(assignment.id, "failed", { error_log: "No job_id" });
+        this._jobRunning.delete(assignment.id);
+        console.error("[TaskExecutor] _executeJobAssignment: assignment.job_id is missing");
+        return;
+      }
       const { data: job, error: jobErr } = await this.supabaseSync.supabase
         .from("jobs")
         .select("target_url, duration_sec, duration_min_pct, duration_max_pct, keyword, video_title, title, prob_like, prob_comment, prob_playlist")
