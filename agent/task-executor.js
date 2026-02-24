@@ -120,6 +120,24 @@ class TaskExecutor {
 
       for (const row of assignments) {
         if (this._jobRunning.has(row.id)) continue;
+
+        // Atomic claim: CAS update pending → running to prevent duplicate execution
+        const { data: claimed, error: claimErr } = await this.supabaseSync.supabase
+          .from("job_assignments")
+          .update({ status: "running", started_at: new Date().toISOString() })
+          .eq("id", row.id)
+          .eq("status", "pending")
+          .select("id")
+          .maybeSingle();
+
+        if (claimErr || !claimed) {
+          if (claimErr) {
+            console.warn(`[TaskExecutor] Claim failed for ${row.id}: ${claimErr.message}`);
+          }
+          continue;
+        }
+
+        console.log(`[TaskExecutor] Claimed job assignment ${row.id} → ${row.device_serial}`);
         this._executeJobAssignment(row).catch((err) => {
           console.error(`[TaskExecutor] Job assignment ${row.id} error: ${err.message}`);
         });
@@ -151,7 +169,7 @@ class TaskExecutor {
         return;
       }
 
-      await this._updateJobAssignment(assignment.id, "running");
+      // Status already set to "running" by atomic claim in _pollJobAssignments
 
       const minSec = Math.round((job.duration_sec || 60) * (job.duration_min_pct || 30) / 100);
       const maxSec = Math.round((job.duration_sec || 60) * (job.duration_max_pct || 90) / 100);
@@ -169,7 +187,7 @@ class TaskExecutor {
         videoTitle
       );
 
-      await this.supabaseSync.supabase
+      const { error: completeErr } = await this.supabaseSync.supabase
         .from("job_assignments")
         .update({
           status: "completed",
@@ -180,10 +198,17 @@ class TaskExecutor {
         })
         .eq("id", assignment.id);
 
+      if (completeErr) {
+        console.error(`[TaskExecutor] Failed to mark ${assignment.id} completed: ${completeErr.message}`);
+      }
+
       console.log(`[TaskExecutor] ✓ Job assignment ${assignment.id} completed (${result.actualDurationSec}s, ${result.watchPercentage}%)`);
     } catch (err) {
       console.error(`[TaskExecutor] ✗ Job assignment ${assignment.id} failed: ${err.message}`);
-      await this._updateJobAssignment(assignment.id, "failed", { error_log: err.message });
+      const ok = await this._updateJobAssignment(assignment.id, "failed", { error_log: err.message });
+      if (!ok) {
+        console.error(`[TaskExecutor] CRITICAL: Could not mark ${assignment.id} as failed — may remain stuck in running`);
+      }
     } finally {
       this._jobRunning.delete(assignment.id);
     }
@@ -536,7 +561,11 @@ class TaskExecutor {
       .from("job_assignments")
       .update({ status, ...extra })
       .eq("id", assignmentId);
-    if (error) console.error(`[TaskExecutor] Failed to update job_assignment ${assignmentId}: ${error.message}`);
+    if (error) {
+      console.error(`[TaskExecutor] Failed to update job_assignment ${assignmentId} → ${status}: ${error.message}`);
+      return false;
+    }
+    return true;
   }
 
   /**

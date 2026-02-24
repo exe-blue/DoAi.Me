@@ -73,15 +73,14 @@ class StaleTaskCleaner {
       return 0;
     }
 
-    // Also fail any running task_devices for these tasks
+    // Also fail any running job_assignments whose job_id matches stale task IDs
+    // Note: job_assignments has no updated_at column (see docs/known-issues.md #1)
     const { error: deviceErr } = await this.supabaseSync.supabase
       .from('job_assignments')
       .update({
         status: 'failed',
-        error_message: 'Agent restarted during execution',
-        updated_at: new Date().toISOString(),
+        error_log: 'Agent restarted during execution',
       })
-      .in('task_id', staleIds)
       .eq('status', 'running');
 
     if (deviceErr) {
@@ -125,6 +124,7 @@ class StaleTaskCleaner {
 
   /**
    * Periodic check: find tasks running > 2x stale threshold and mark as 'timeout'.
+   * Also cleans stale job_assignments stuck in 'running'.
    */
   async _periodicCheck() {
     const pcId = this.supabaseSync.pcId;
@@ -151,31 +151,88 @@ class StaleTaskCleaner {
         }
       }
 
-      if (timeoutIds.length === 0) return;
+      if (timeoutIds.length > 0) {
+        const { error: updateErr } = await this.supabaseSync.supabase
+          .from('tasks')
+          .update({
+            status: 'timeout',
+            error: `Task exceeded maximum runtime (${Math.round(timeoutThreshold / 60000)} minutes)`,
+            updated_at: new Date().toISOString(),
+          })
+          .in('id', timeoutIds);
+
+        if (updateErr) {
+          console.error(`[StaleTaskCleaner] Periodic timeout update failed: ${updateErr.message}`);
+        } else {
+          console.log(`[StaleTaskCleaner] Timed out ${timeoutIds.length} task(s): ${timeoutIds.join(', ')}`);
+          await this._publishEvent('task_timeout', {
+            count: timeoutIds.length,
+            taskIds: timeoutIds,
+            pcId,
+          });
+        }
+      }
+
+      // Clean stale job_assignments stuck in 'running' for this PC's devices
+      await this._cleanStaleJobAssignments(pcId, now);
+    } catch (err) {
+      console.error(`[StaleTaskCleaner] Periodic check error: ${err.message}`);
+    }
+  }
+
+  /**
+   * Find job_assignments stuck in 'running' beyond the stale threshold
+   * and mark them as 'failed'. job_assignments has no updated_at column.
+   */
+  async _cleanStaleJobAssignments(pcId, now) {
+    try {
+      const { data: devices } = await this.supabaseSync.supabase
+        .from('devices')
+        .select('id')
+        .eq('pc_id', pcId);
+
+      if (!devices || devices.length === 0) return;
+
+      const deviceIds = devices.map(d => d.id);
+
+      const { data: staleAssignments, error } = await this.supabaseSync.supabase
+        .from('job_assignments')
+        .select('id, started_at')
+        .in('device_id', deviceIds)
+        .eq('status', 'running');
+
+      if (error || !staleAssignments || staleAssignments.length === 0) return;
+
+      const staleIds = [];
+      for (const a of staleAssignments) {
+        if (!a.started_at) {
+          staleIds.push(a.id);
+          continue;
+        }
+        const elapsed = now - new Date(a.started_at).getTime();
+        if (elapsed > this.STALE_THRESHOLD_MS) {
+          staleIds.push(a.id);
+        }
+      }
+
+      if (staleIds.length === 0) return;
 
       const { error: updateErr } = await this.supabaseSync.supabase
-        .from('tasks')
+        .from('job_assignments')
         .update({
-          status: 'timeout',
-          error: `Task exceeded maximum runtime (${Math.round(timeoutThreshold / 60000)} minutes)`,
-          updated_at: new Date().toISOString(),
+          status: 'failed',
+          error_log: `Stale: exceeded ${Math.round(this.STALE_THRESHOLD_MS / 60000)}min timeout`,
         })
-        .in('id', timeoutIds);
+        .in('id', staleIds);
 
       if (updateErr) {
-        console.error(`[StaleTaskCleaner] Periodic timeout update failed: ${updateErr.message}`);
+        console.error(`[StaleTaskCleaner] Failed to clean stale job_assignments: ${updateErr.message}`);
         return;
       }
 
-      console.log(`[StaleTaskCleaner] Timed out ${timeoutIds.length} task(s): ${timeoutIds.join(', ')}`);
-
-      await this._publishEvent('task_timeout', {
-        count: timeoutIds.length,
-        taskIds: timeoutIds,
-        pcId,
-      });
+      console.log(`[StaleTaskCleaner] Cleaned ${staleIds.length} stale job_assignment(s): ${staleIds.join(', ')}`);
     } catch (err) {
-      console.error(`[StaleTaskCleaner] Periodic check error: ${err.message}`);
+      console.error(`[StaleTaskCleaner] Stale job_assignments check error: ${err.message}`);
     }
   }
 
