@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, AlertTriangle, CheckCircle, RefreshCw, Server, Smartphone, Timer, Wifi } from "lucide-react";
 
@@ -27,11 +27,7 @@ export function HealthReportPanel() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"24h" | "7d" | "30d">("24h");
 
-  useEffect(() => {
-    fetchReport();
-  }, [period]);
-
-  async function fetchReport() {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/health?report=true&period=${period}`);
@@ -43,7 +39,11 @@ export function HealthReportPanel() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [period]);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
 
   if (loading || !report) {
     return (

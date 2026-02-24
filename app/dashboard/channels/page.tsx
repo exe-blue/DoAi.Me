@@ -62,7 +62,7 @@ export default function ChannelsPage() {
 
   // Channel form state
   const [channelDialogOpen, setChannelDialogOpen] = useState(false);
-  const [channelForm, setChannelForm] = useState({ name: "", youtube_url: "", category: "other" as Category });
+  const [channelForm, setChannelForm] = useState({ name: "", youtube_url: "", category: "other" as Category, notes: "" });
 
   // Video form state
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
@@ -118,7 +118,7 @@ export default function ChannelsPage() {
       });
       if (res.ok) {
         setChannelDialogOpen(false);
-        setChannelForm({ name: "", youtube_url: "", category: "other" });
+        setChannelForm({ name: "", youtube_url: "", category: "other", notes: "" });
         loadChannels();
       }
     } catch (error) {
