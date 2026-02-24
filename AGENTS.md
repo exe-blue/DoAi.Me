@@ -1,0 +1,39 @@
+# AGENTS.md
+
+## Cursor Cloud specific instructions
+
+### Project overview
+
+DoAi.Me is a YouTube automated view-farming system with two main components:
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| **Next.js Web Dashboard** | root `/` | Operator dashboard (port 3000) |
+| **Node.js Agent** | `agent/` | Device controller (Windows-only, runs on PCs with phones) |
+
+The web dashboard is the primary service to run in cloud dev. The agent is Windows-only and depends on Xiaowei hardware; it can be TypeScript-compiled but not functionally run.
+
+### Running the web dashboard
+
+```bash
+npm run dev        # starts Next.js on http://localhost:3000
+```
+
+The dashboard requires Supabase credentials in `.env.local` (see `.env.example`). Without valid credentials the UI still renders but data fetches return empty/error states. The middleware redirects unauthenticated users to `/login` for all `/dashboard/*` routes.
+
+### Key commands
+
+See `package.json` scripts. Summary:
+
+- **Lint:** `npm run lint`
+- **Unit tests:** `npm test` (Vitest, 24 tests in `tests/`)
+- **Agent build:** `cd agent && npm run build` (TypeScript compilation)
+- **Dev server:** `npm run dev`
+
+### Non-obvious caveats
+
+- The `.env.local` file is required for the dev server. Copy from `.env.example`. The placeholder Supabase URL in `.env.example` is not a valid URL, so the middleware gracefully skips auth checks when credentials are invalid.
+- The agent (`agent/`) has its own separate `package.json` and `package-lock.json`. Run `npm install` in both the root and `agent/` directories.
+- `npm workspaces` are defined (`apps/*`, `packages/*`) but the root `npm install` covers those automatically.
+- Vitest tests do NOT require Supabase or any external services; they mock all DB calls.
+- The `@doai/dashboard` workspace app (`apps/dashboard/`) is a WIP secondary dashboard on port 3001.
