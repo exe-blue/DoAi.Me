@@ -285,71 +285,90 @@ class TaskExecutor {
    * @param {number} [retries=2]
    * @returns {Promise<boolean>}
    */
+  async _getUiDumpXml(serial) {
+    await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
+    await _sleep(500);
+    const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
+    return _extractShellOutput(dumpRes);
+  }
+
+  _findBoundsInXml(xml, selector) {
+    if (!xml || !selector) return null;
+
+    let pattern = null;
+    if (selector.resourceId) {
+      pattern = new RegExp(
+        `resource-id="${selector.resourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    } else if (selector.contentDesc) {
+      pattern = new RegExp(
+        `content-desc="[^"]*${selector.contentDesc}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    } else if (selector.textContains) {
+      pattern = new RegExp(
+        `text="[^"]*${selector.textContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    }
+    if (!pattern) return null;
+
+    let match = xml.match(pattern);
+    if (!match) {
+      if (selector.resourceId) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${selector.resourceId}"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      } else if (selector.contentDesc) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="[^"]*${selector.contentDesc}[^"]*"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      } else if (selector.textContains) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${selector.textContains}[^"]*"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      }
+    }
+    if (!match) return null;
+
+    return {
+      x1: parseInt(match[1], 10),
+      y1: parseInt(match[2], 10),
+      x2: parseInt(match[3], 10),
+      y2: parseInt(match[4], 10),
+    };
+  }
+
+  async _tapSelectorInXml(serial, xml, selector) {
+    const bounds = this._findBoundsInXml(xml, selector);
+    if (!bounds) return false;
+
+    const cx = Math.round((bounds.x1 + bounds.x2) / 2);
+    const cy = Math.round((bounds.y1 + bounds.y2) / 2);
+    await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+    return true;
+  }
+
   async _findAndTap(serial, selector, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
-        await _sleep(500);
-        const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
-        const xml = _extractShellOutput(dumpRes);
+        const xml = await this._getUiDumpXml(serial);
         if (!xml) continue;
-
-        let pattern = null;
-        if (selector.resourceId) {
-          pattern = new RegExp(
-            `resource-id="${selector.resourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        } else if (selector.contentDesc) {
-          pattern = new RegExp(
-            `content-desc="[^"]*${selector.contentDesc}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        } else if (selector.textContains) {
-          pattern = new RegExp(
-            `text="[^"]*${selector.textContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        }
-        if (!pattern) return false;
-
-        let match = xml.match(pattern);
-        if (!match) {
-          if (selector.resourceId) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${selector.resourceId}"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          } else if (selector.contentDesc) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="[^"]*${selector.contentDesc}[^"]*"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          } else if (selector.textContains) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${selector.textContains}[^"]*"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          }
-        }
-        if (!match) {
+        const tapped = await this._tapSelectorInXml(serial, xml, selector);
+        if (!tapped) {
           if (attempt < retries) {
             await _sleep(1000);
             continue;
           }
           return false;
         }
-
-        const x1 = parseInt(match[1], 10);
-        const y1 = parseInt(match[2], 10);
-        const x2 = parseInt(match[3], 10);
-        const y2 = parseInt(match[4], 10);
-        const cx = Math.round((x1 + x2) / 2);
-        const cy = Math.round((y1 + y2) / 2);
-        await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
         return true;
       } catch (err) {
         if (attempt < retries) {
@@ -474,19 +493,24 @@ class TaskExecutor {
    */
   async _trySkipAd(serial) {
     try {
-      let skipped = await this._findAndTap(serial, YT.SKIP_AD, 0);
+      const xml = await this._getUiDumpXml(serial);
+      if (!xml) return;
+
+      let skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (resource-id)`);
         await _sleep(1500);
         return;
       }
-      skipped = await this._findAndTap(serial, YT.SKIP_AD_ALT, 0);
+
+      skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD_ALT);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (content-desc)`);
         await _sleep(1500);
         return;
       }
-      skipped = await this._findAndTap(serial, { contentDesc: "Skip" }, 0);
+
+      skipped = await this._tapSelectorInXml(serial, xml, { contentDesc: "Skip" });
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (Skip)`);
         await _sleep(1500);
