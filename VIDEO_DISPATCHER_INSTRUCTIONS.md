@@ -3,6 +3,14 @@
 ## 목적
 `videos` 테이블에 새로 들어온 (또는 active 상태인) 영상 중 아직 `jobs`가 생성되지 않은 것을 자동으로 감지하여 `jobs` + `job_assignments` 레코드를 생성하는 Agent 컴포넌트.
 
+## 참고 문서
+- **Xiaowei API**: 영상 시청/광고 스킵 등 실제 디바이스 제어는 `docs/xiaowei-api.md` 참조.
+- 실행 시 사용할 API 요약 (상세는 `docs/xiaowei-api.md`):
+  - 연결: `ws://127.0.0.1:22222/`
+  - YouTube 재생: `adbShell(serial, "am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=VIDEO_ID'")`
+  - 앱 종료: `adbShell(serial, "am force-stop com.google.android.youtube")`
+  - Galaxy S9 (1080×1920): 광고 스킵 영역 `(960, 580)`, 플레이어 중앙 `(540, 350)`, 재생 상태 `dumpsys media_session`
+
 ## 위치
 `agent/video-dispatcher.js` (새 파일)
 
@@ -99,17 +107,15 @@ class VideoDispatcher {
     let created = 0;
 
     for (const video of videos) {
-      const videoId = video.id; // DB UUID
-      
-      // videos 테이블의 youtube_video_id 또는 id를 기반으로 매칭
-      // 여기서는 video.id(UUID)로 job을 찾는 게 정확함
-      
+      // videos.id = YouTube Video ID (text PK). target_url에 그대로 사용.
+      const videoId = video.id;
+
       // Check if job already exists for this video
       const { data: existingJob } = await this.supabase
         .from("jobs")
         .select("id, total_assignments")
         .eq("is_active", true)
-        .ilike("target_url", `%${video.id}%`)  // or use a video_id FK if available
+        .like("target_url", `%${video.id}%`)
         .maybeSingle();
 
       if (existingJob) {
@@ -159,9 +165,8 @@ class VideoDispatcher {
       }
 
       // No job exists — create new job + assignments
+      // videos.id = YouTube Video ID (text). docs/xiaowei-api.md: am start -a android.intent.action.VIEW -d 'https://www.youtube.com/watch?v=VIDEO_ID'
       const youtubeUrl = `https://www.youtube.com/watch?v=${video.id}`;
-      // Note: video.id might be UUID, need youtube_video_id
-      // Adjust based on actual videos table schema
 
       const { data: job, error: jobErr } = await this.supabase
         .from("jobs")
@@ -255,20 +260,17 @@ console.log("[Agent] ✓ Video dispatcher started");
 if (videoDispatcher) videoDispatcher.stop();
 ```
 
-## 중요: videos 테이블 스키마 확인 필요
+## videos 테이블 스키마 (Supabase 프로덕션)
 
-videos 테이블에 `youtube_video_id` 컬럼이 있으면 job의 target_url을 
-`https://www.youtube.com/watch?v=${video.youtube_video_id}` 로 생성해야 함.
-
-현재 코드는 video.id (UUID)를 쓰고 있는데, 실제로는 youtube_video_id를 써야 할 수 있음.
-Supabase에서 `SELECT id, youtube_video_id, title FROM videos LIMIT 5;` 로 확인 후 조정.
+- **videos.id** = YouTube Video ID (text, PK). `target_url`은 `https://www.youtube.com/watch?v=${video.id}` 로 생성.
+- 영상 시청 실행 시 Xiaowei 사용: `docs/xiaowei-api.md` 참조 (ADB Shell YouTube intent, Galaxy S9 좌표 맵으로 광고 스킵 (960,580), 재생 상태 확인 `dumpsys media_session` 등).
 
 ## 테스트 방법
 
-1. Supabase에서 videos에 테스트 영상 추가:
+1. Supabase에서 videos에 테스트 영상 추가 (videos.id = YouTube Video ID):
 ```sql
-INSERT INTO videos (youtube_video_id, title, status, target_views, watch_duration_sec)
-VALUES ('dQw4w9WgXcQ', 'Test Video', 'active', 10, 60);
+INSERT INTO videos (id, title, channel_id, status, target_views, watch_duration_sec)
+VALUES ('dQw4w9WgXcQ', 'Test Video', 'channel_id_here', 'active', 10, 60);
 ```
 
 2. 60초 기다리면 Agent 로그에:
@@ -276,4 +278,5 @@ VALUES ('dQw4w9WgXcQ', 'Test Video', 'active', 10, 60);
 [VideoDispatcher] Created job + 3 assignments for "Test Video"
 ```
 
-3. 이후 TaskExecutor/Agent가 assignments를 픽업해서 실행
+3. 이후 TaskExecutor/Agent가 assignments를 픽업해 Xiaowei로 실행.  
+   실행 시 `docs/xiaowei-api.md` 참조: YouTube intent, 광고 스킵 좌표, 재생 확인 등.

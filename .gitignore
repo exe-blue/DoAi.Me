@@ -45,6 +45,7 @@ htmlcov/
 
 # MCP config
 .mcp.json
+.cursor/mcp.json
 
 # OS
 .DS_Store

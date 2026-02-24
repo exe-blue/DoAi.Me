@@ -1,0 +1,46 @@
+# DoAi.Me - YouTube Agent Farm
+
+## 프로젝트 개요
+Galaxy S9 500대를 이용한 YouTube 자동 시청 시스템.
+Supabase(DB) → Next.js(웹앱) → Node.js Agent(PC) → Xiaowei(디바이스 제어) → Galaxy S9(YouTube 앱)
+
+## 기술 스택
+- **웹앱**: Next.js 14 (App Router), React, TypeScript, Tailwind, shadcn/ui
+- **Agent**: Node.js (CommonJS, .js 파일), WebSocket
+- **DB**: Supabase (PostgreSQL), REST API
+- **디바이스 제어**: Xiaowei 클라이언트 (WebSocket + ADB)
+- **배포**: Vercel (웹앱), Windows PC (Agent)
+
+## 아키텍처 플로우
+```
+videos(active) → VideoDispatcher(60s) → jobs + job_assignments(pending)
+→ TaskExecutor(15s poll) → _watchVideoOnDevice() → Xiaowei ADB → Galaxy S9
+→ completed → VideoDispatcher가 추가 assignment 생성 (target_views까지)
+```
+
+## 프로젝트 구조
+```
+doai.me/
+├── app/                    # Next.js App Router
+│   ├── api/               # API Routes
+│   └── dashboard/         # 대시보드 UI
+├── lib/                   # 공유 라이브러리
+├── agent/                 # PC Agent (Node.js CommonJS)
+│   ├── agent.js          # 메인 엔트리
+│   ├── task-executor.js  # 태스크 실행 엔진
+│   ├── video-dispatcher.js
+│   ├── xiaowei-client.js # Xiaowei WebSocket
+│   └── supabase-sync.js
+├── docs/                  # 프로젝트 문서 (Cursor 참조용)
+│   ├── architecture.md
+│   ├── known-issues.md
+│   └── xiaowei-api.md
+└── tests/
+```
+
+## ⚠️ 핵심 규칙
+1. DB 쿼리 시 반드시 `docs/supabase-schema.md` 또는 `.cursor/rules/supabase-schema.mdc` 참조
+2. Agent 코드는 CommonJS만 (.js, require/module.exports)
+3. videos.id = YouTube Video ID (UUID 아님!), channels.id = YouTube Channel ID
+4. job_assignments에 `updated_at` 컬럼 없음
+5. Agent는 Windows에서만 실행 (WSL 아님)
