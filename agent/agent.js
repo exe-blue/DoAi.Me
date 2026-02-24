@@ -18,6 +18,7 @@ const ScheduleEvaluator = require("./schedule-evaluator");
 const StaleTaskCleaner = require("./stale-task-cleaner");
 const DeviceWatchdog = require("./device-watchdog");
 const VideoDispatcher = require("./video-dispatcher");
+const DeviceOrchestrator = require("./device-orchestrator");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -34,6 +35,7 @@ let scheduleEvaluator = null;
 let staleTaskCleaner = null;
 let deviceWatchdog = null;
 let videoDispatcher = null;
+let deviceOrchestrator = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -163,7 +165,7 @@ async function main() {
   reconnectManager = new AdbReconnectManager(xiaowei, supabaseSync, broadcaster, config);
 
   // 8. Start heartbeat loop and wait for first beat
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
+  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
 
   // Wait briefly for first heartbeat to complete
   await sleep(2000);
@@ -267,10 +269,6 @@ async function main() {
     }
   }, config.taskPollInterval);
 
-  // 13a. Poll pending job_assignments and run YouTube watch (open URL, duration, mark completed)
-  taskExecutor.startJobAssignmentPolling(15000);
-  console.log("[Agent] ✓ Job assignment polling started");
-
   // Run an initial poll immediately
   try {
     const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
@@ -307,15 +305,35 @@ async function main() {
   console.log("[Agent] ✓ Schedule evaluator started");
 
   videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  videoDispatcher.start();
-  console.log("[Agent] ✓ Video dispatcher started");
+  if (config.isPrimaryPc) {
+    videoDispatcher.start();
+    console.log("[Agent] ✓ Video dispatcher started (primary PC)");
+  } else {
+    console.log("[Agent] - Video dispatcher skipped (not primary PC)");
+  }
+
+  // 15b. Start device orchestrator
+  deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
+    pcId: supabaseSync.pcId,
+    maxConcurrent: config.maxConcurrentTasks || 10,
+  });
+  deviceOrchestrator.start();
+  console.log("[Agent] ✓ Device orchestrator started");
+
+  // 13a. Poll pending job_assignments only when not using DeviceOrchestrator (orchestrator handles claim_next_assignment)
+  if (!deviceOrchestrator) {
+    taskExecutor.startJobAssignmentPolling(15000);
+    console.log("[Agent] ✓ Job assignment polling started");
+  } else {
+    console.log("[Agent] - Job assignment polling skipped (DeviceOrchestrator active)");
+  }
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
     // heartbeat_interval → restart heartbeat loop
     if (key === "heartbeat_interval" && heartbeatHandle) {
       clearInterval(heartbeatHandle);
-      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
+      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
       console.log(`[Agent] Heartbeat restarted with interval ${newValue}ms`);
     }
 
@@ -357,6 +375,11 @@ async function shutdown() {
   // Stop stale task cleaner
   if (staleTaskCleaner) {
     staleTaskCleaner.stop();
+  }
+
+  // Stop device orchestrator
+  if (deviceOrchestrator) {
+    deviceOrchestrator.stop();
   }
 
   // Stop device watchdog

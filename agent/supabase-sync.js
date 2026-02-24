@@ -149,19 +149,33 @@ class SupabaseSync {
    * @param {string} pcId
    * @returns {Promise<boolean>} success status
    */
+  /**
+   * @param {Array<{serial: string, status?: string, model?: string, battery?: number, ipIntranet?: string, task_status?: string, current_assignment_id?: string, current_video_title?: string, watch_progress?: number, consecutive_errors?: number, daily_watch_count?: number, daily_watch_seconds?: number}>} devices
+   */
   async batchUpsertDevices(devices, pcId) {
     if (!devices || devices.length === 0) {
       return true;
     }
 
-    const rows = devices.map(d => ({
-      serial_number: d.serial,
-      pc_id: pcId,
-      status: d.status || 'online',
-      model: d.model || null,
-      battery_level: d.battery || null,
-      last_seen_at: new Date().toISOString(),
-    }));
+    const now = new Date().toISOString();
+    const rows = devices.map(d => {
+      const row = {
+        serial_number: d.serial,
+        pc_id: pcId,
+        status: d.status || 'online',
+        model: d.model || null,
+        battery_level: d.battery ?? null,
+        last_seen_at: now,
+      };
+      if (d.task_status != null) row.task_status = d.task_status;
+      if (d.current_assignment_id != null) row.current_assignment_id = d.current_assignment_id;
+      if (d.current_video_title != null) row.current_video_title = d.current_video_title;
+      if (d.watch_progress != null) row.watch_progress = d.watch_progress;
+      if (d.consecutive_errors != null) row.consecutive_errors = d.consecutive_errors;
+      if (d.daily_watch_count != null) row.daily_watch_count = d.daily_watch_count;
+      if (d.daily_watch_seconds != null) row.daily_watch_seconds = d.daily_watch_seconds;
+      return row;
+    });
 
     const { error } = await this.supabase
       .from('devices')
@@ -173,6 +187,31 @@ class SupabaseSync {
     }
 
     return true;
+  }
+
+  /**
+   * Sync device task states from DeviceOrchestrator (task_status, watch_progress, etc.)
+   * @param {Array<{serial: string, status?: string, assignmentId?: string|null, videoTitle?: string|null, watchProgress?: number, errorCount?: number, dailyWatchCount?: number, dailyWatchSeconds?: number}>} states
+   */
+  async syncDeviceTaskStates(states) {
+    for (const state of states) {
+      try {
+        await this.supabase
+          .from("devices")
+          .update({
+            task_status: state.status ?? null,
+            current_assignment_id: state.assignmentId ?? null,
+            current_video_title: state.videoTitle ?? null,
+            watch_progress: state.watchProgress ?? 0,
+            consecutive_errors: state.errorCount ?? 0,
+            daily_watch_count: state.dailyWatchCount ?? 0,
+            daily_watch_seconds: state.dailyWatchSeconds ?? 0,
+          })
+          .eq("serial_number", state.serial);
+      } catch (err) {
+        console.warn(`[SupabaseSync] syncDeviceTaskStates error: ${err.message}`);
+      }
+    }
   }
 
   /**

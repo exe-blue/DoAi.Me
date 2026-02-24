@@ -115,7 +115,9 @@ class VideoDispatcher {
           const newAssignments = unassigned.map((d) => ({
             job_id: existingJob.id,
             device_id: d.id,
-            device_serial: d.serial_number,
+            device_serial: null,
+            pc_id: this.pcId,
+            video_id: video.id,
             status: "pending",
             progress_pct: 0,
           }));
@@ -161,7 +163,9 @@ class VideoDispatcher {
       const assignments = devices.map((d) => ({
         job_id: job.id,
         device_id: d.id,
-        device_serial: d.serial_number,
+        device_serial: null,
+        pc_id: this.pcId,
+        video_id: video.id,
         status: "pending",
         progress_pct: 0,
       }));

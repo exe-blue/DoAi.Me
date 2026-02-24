@@ -50,6 +50,9 @@ class AgentConfig extends EventEmitter {
     this.logRetentionDays = 7;
     this.commandLogRetentionDays = 30;
 
+    this.isPrimaryPc =
+      process.env.IS_PRIMARY_PC === "true" || process.env.IS_PRIMARY_PC === "1" || false;
+
     // Internal
     this._settings = {}; // raw DB values keyed by setting key
     this._settingsChannel = null;

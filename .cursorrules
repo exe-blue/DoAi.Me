@@ -40,7 +40,8 @@ doai.me/
 
 ## ⚠️ 핵심 규칙
 1. DB 쿼리 시 반드시 `docs/supabase-schema.md` 또는 `.cursor/rules/supabase-schema.mdc` 참조
-2. Agent 코드는 CommonJS만 (.js, require/module.exports)
-3. videos.id = YouTube Video ID (UUID 아님!), channels.id = YouTube Channel ID
-4. job_assignments에 `updated_at` 컬럼 없음
-5. Agent는 Windows에서만 실행 (WSL 아님)
+2. **Supabase 제어·수정**: 스키마/뷰/마이그레이션 변경 시 Supabase MCP(연결 시) 또는 CLI(`npx supabase`)로 적용. 프로젝트 링크됨 `vyfxrplzhskncigyfkaz`. 상세는 `.cursor/rules/supabase.mdc` 참고.
+3. Agent 코드는 CommonJS만 (.js, require/module.exports)
+4. videos.id = YouTube Video ID (UUID 아님!), channels.id = YouTube Channel ID
+5. job_assignments에 `updated_at` 컬럼 없음
+6. Agent는 Windows에서만 실행 (WSL 아님)
