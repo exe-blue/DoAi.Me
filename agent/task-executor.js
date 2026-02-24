@@ -8,6 +8,10 @@ function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function _escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Extract shell command output from Xiaowei adbShell response (code, msg, data, stdout). */
 function _extractShellOutput(res) {
   if (res == null) return "";
@@ -295,20 +299,24 @@ class TaskExecutor {
   _findBoundsInXml(xml, selector) {
     if (!xml || !selector) return null;
 
+    const escapedResourceId = selector.resourceId ? _escapeRegex(selector.resourceId) : null;
+    const escapedContentDesc = selector.contentDesc ? _escapeRegex(selector.contentDesc) : null;
+    const escapedTextContains = selector.textContains ? _escapeRegex(selector.textContains) : null;
+
     let pattern = null;
     if (selector.resourceId) {
       pattern = new RegExp(
-        `resource-id="${selector.resourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        `resource-id="${escapedResourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
         "i"
       );
     } else if (selector.contentDesc) {
       pattern = new RegExp(
-        `content-desc="[^"]*${selector.contentDesc}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        `content-desc="${escapedContentDesc}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
         "i"
       );
     } else if (selector.textContains) {
       pattern = new RegExp(
-        `text="[^"]*${selector.textContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        `text="[^"]*${escapedTextContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
         "i"
       );
     }
@@ -318,19 +326,19 @@ class TaskExecutor {
     if (!match) {
       if (selector.resourceId) {
         const altPattern = new RegExp(
-          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${selector.resourceId}"`,
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${escapedResourceId}"`,
           "i"
         );
         match = xml.match(altPattern);
       } else if (selector.contentDesc) {
         const altPattern = new RegExp(
-          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="[^"]*${selector.contentDesc}[^"]*"`,
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="${escapedContentDesc}"`,
           "i"
         );
         match = xml.match(altPattern);
       } else if (selector.textContains) {
         const altPattern = new RegExp(
-          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${selector.textContains}[^"]*"`,
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${escapedTextContains}[^"]*"`,
           "i"
         );
         match = xml.match(altPattern);
