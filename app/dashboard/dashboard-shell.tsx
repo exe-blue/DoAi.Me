@@ -11,11 +11,6 @@ import {
   Tv,
   Upload,
   ListOrdered,
-  Zap,
-  Terminal,
-  Settings,
-  FileText,
-  AlertTriangle,
   LogOut,
   Wifi,
 } from "lucide-react";
@@ -42,41 +37,21 @@ import type { User } from "@supabase/supabase-js";
 
 const navGroups = [
   {
-    label: "OVERVIEW",
+    label: "",
     items: [
       { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "INFRASTRUCTURE",
-    items: [
-      { href: "/dashboard/workers", label: "PC 관리", icon: Server },
+      { href: "/dashboard/workers", label: "PC", icon: Server },
       { href: "/dashboard/devices", label: "디바이스", icon: Smartphone },
-      { href: "/dashboard/proxies", label: "프록시", icon: Shield },
       { href: "/dashboard/network", label: "네트워크", icon: Globe },
+      { href: "/dashboard/proxies", label: "프록시", icon: Shield },
     ],
   },
   {
-    label: "CONTENT",
+    label: "",
     items: [
       { href: "/dashboard/channels", label: "채널 관리", icon: Tv },
-      { href: "/dashboard/content", label: "콘텐츠 등록", icon: Upload },
-      { href: "/dashboard/tasks", label: "작업 / 대기열", icon: ListOrdered },
-    ],
-  },
-  {
-    label: "AUTOMATION",
-    items: [
-      { href: "/dashboard/presets", label: "프리셋", icon: Zap },
-      { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
-    ],
-  },
-  {
-    label: "SYSTEM",
-    items: [
-      { href: "/dashboard/settings", label: "설정", icon: Settings },
-      { href: "/dashboard/logs", label: "로그", icon: FileText },
-      { href: "/dashboard/errors", label: "에러", icon: AlertTriangle },
+      { href: "/dashboard/content", label: "콘텐츠", icon: Upload },
+      { href: "/dashboard/tasks", label: "작업", icon: ListOrdered },
     ],
   },
 ];
@@ -129,11 +104,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
 
         <SidebarContent className="px-2">
-          {navGroups.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel className="px-3 text-[10px] font-medium tracking-[0.15em] text-slate-500">
-                {group.label}
-              </SidebarGroupLabel>
+          {navGroups.map((group, gi) => (
+            <SidebarGroup key={gi}>
+              {group.label ? (
+                <SidebarGroupLabel className="px-3 text-[10px] font-medium tracking-[0.15em] text-slate-500">
+                  {group.label}
+                </SidebarGroupLabel>
+              ) : gi > 0 ? (
+                <SidebarSeparator className="my-2" />
+              ) : null}
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.items.map((item) => {
