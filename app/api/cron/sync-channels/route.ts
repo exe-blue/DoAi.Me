@@ -62,6 +62,7 @@ export async function GET(request: Request) {
             channel_id: channel.id,
             id: video.videoId,
             title: video.title,
+            channel_name: channel.name || null,
             thumbnail_url: video.thumbnail,
             duration_sec: durationSec,
           });
@@ -69,9 +70,25 @@ export async function GET(request: Request) {
           // 새 영상인지 판별
           const createdMs = new Date(upserted.created_at ?? "").getTime();
           const updatedMs = new Date(upserted.updated_at ?? "").getTime();
-          if (Math.abs(updatedMs - createdMs) < 5000) {
+          const isNew = Math.abs(updatedMs - createdMs) < 5000;
+
+          if (isNew) {
             totalNew++;
             console.log(`[Cron] New video: "${video.title}" (${channel.name})`);
+
+            // 새 영상 자동 활성화 (auto_collect 설정된 채널만)
+            if ((channel as any).auto_collect) {
+              const supabase = (await import("@/lib/supabase/server")).createServerClient();
+              await supabase.from("videos").update({
+                status: "active",
+                target_views: 100,
+                watch_duration_sec: (channel as any).default_watch_duration_sec || 60,
+                prob_like: (channel as any).default_prob_like || 15,
+                prob_comment: (channel as any).default_prob_comment || 5,
+                search_keyword: video.title.replace(/#\S+/g, "").trim().substring(0, 50),
+              }).eq("id", video.videoId);
+              console.log(`[Cron] Auto-activated: "${video.title}"`);
+            }
           } else {
             totalUpdated++;
           }
