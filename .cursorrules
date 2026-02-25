@@ -1,46 +1,387 @@
-# DoAi.Me - YouTube Agent Farm
+# .cursorrules — YouTube Agent Farm
 
-## 프로젝트 개요
-Galaxy S9 500대를 이용한 YouTube 자동 시청 시스템.
-Supabase(DB) → Next.js(웹앱) → Node.js Agent(PC) → Xiaowei(디바이스 제어) → Galaxy S9(YouTube 앱)
+> Cursor AI가 코드 생성·수정·리팩토링 시 반드시 참고하는 프로젝트 컨텍스트와 규칙.
 
-## 기술 스택
-- **웹앱**: Next.js 14 (App Router), React, TypeScript, Tailwind, shadcn/ui
-- **Agent**: Node.js (CommonJS, .js 파일), WebSocket
-- **DB**: Supabase (PostgreSQL), REST API
-- **디바이스 제어**: Xiaowei 클라이언트 (WebSocket + ADB)
-- **배포**: Vercel (웹앱), Windows PC (Agent)
+---
 
-## 아키텍처 플로우
+## 1. 프로젝트 개요
+
+YouTube Agent Farm — Galaxy S9 500대를 이용한 YouTube 자동화 시스템.
+자동화 방식: Node.js에서 ADB shell 호출 → XML UI dump 파싱 → 좌표/노드 기반 tap·input push.
+
+---
+
+## 2. 인프라 구성
+
+### 2.1 물리 환경
+| 구분 | 사양 |
+|------|------|
+| PC 대수 | 5대 (PC00 ~ PC04), Windows OS |
+| 연결 방식 | USB OTG (PC 1대당 Galaxy S9 100대 직결) |
+| 총 기기 | 500대 |
+| PC00 | 테스트/개발용 로컬 머신 (직접 접근) |
+| PC01~PC04 | 운영 머신 (SplashTop 원격 데스크톱으로만 접속) |
+
+### 2.2 원격 접속 & 배포
+- **SplashTop** 으로 PC01~04 원격 데스크톱 접속
+- 코드 배포: Git pull 또는 SplashTop 접속 후 수동 업데이트
+- Agent 재시작: SplashTop에서 터미널 열어 `node src/agent.js --pc=PC01` 실행
+- 향후 자동 배포 고려 시: Git webhook → PC가 polling → auto pull & restart
+
+### 2.3 서버리스 백엔드
+| 서비스 | 용도 |
+|--------|------|
+| **Vercel** | API 엔드포인트 (Serverless Functions), 프론트엔드 호스팅 |
+| **Supabase** | PostgreSQL DB, **Realtime 구독** (미션 수신), Edge Functions, Auth |
+
+**사용 안 함**: ~~Vultr~~, ~~FastAPI~~, ~~Celery~~, ~~중앙 Redis~~, ~~Electron~~
+
+### 2.4 아키텍처 흐름
+
 ```
-videos(active) → VideoDispatcher(60s) → jobs + job_assignments(pending)
-→ TaskExecutor(15s poll) → _watchVideoOnDevice() → Xiaowei ADB → Galaxy S9
-→ completed → VideoDispatcher가 추가 assignment 생성 (target_views까지)
+┌──────────────────────────────────────────────┐
+│                  Vercel                       │
+│  ┌─────────────┐  ┌──────────────────────┐   │
+│  │ 프론트엔드   │  │ API Routes           │   │
+│  │ Magic UI +  │  │ /api/missions/create │   │
+│  │ shadcn/ui   │  │ /api/dashboard/...   │   │
+│  └──────┬──────┘  └──────────┬───────────┘   │
+└─────────┼────────────────────┼───────────────┘
+          │                    │
+          ▼                    ▼
+┌──────────────────────────────────────────────┐
+│              Supabase                        │
+│  ┌────────┐  ┌───────────┐  ┌────────────┐  │
+│  │ DB     │  │ Realtime  │  │ Edge Funcs │  │
+│  │        │  │ missions  │  │            │  │
+│  │        │  │ INSERT →  │  │            │  │
+│  │        │  │ PC가 구독  │  │            │  │
+│  └────────┘  └─────┬─────┘  └────────────┘  │
+└────────────────────┼─────────────────────────┘
+                     │ Realtime 구독
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+   ┌────────┐   ┌────────┐   ┌────────┐
+   │ PC00   │   │ PC01   │   │PC02~04 │
+   │ 로컬   │   │원격only│   │원격only│
+   │ Agent  │   │ Agent  │   │ Agent  │
+   │        │   │        │   │        │
+   │ 100대  │   │ 100대  │   │각100대 │
+   │ S9     │   │ S9     │   │ S9     │
+   └────────┘   └────────┘   └────────┘
+   SplashTop     SplashTop    SplashTop
+   (직접접근)    (원격전용)   (원격전용)
 ```
 
-## 프로젝트 구조
-```
-doai.me/
-├── app/                    # Next.js App Router
-│   ├── api/               # API Routes
-│   └── dashboard/         # 대시보드 UI
-├── lib/                   # 공유 라이브러리
-├── agent/                 # PC Agent (Node.js CommonJS)
-│   ├── agent.js          # 메인 엔트리
-│   ├── task-executor.js  # 태스크 실행 엔진
-│   ├── video-dispatcher.js
-│   ├── xiaowei-client.js # Xiaowei WebSocket
-│   └── supabase-sync.js
-├── docs/                  # 프로젝트 문서 (Cursor 참조용)
-│   ├── architecture.md
-│   ├── known-issues.md
-│   └── xiaowei-api.md
-└── tests/
+### 2.5 미션 수신 방식: Supabase Realtime
+
+```javascript
+// 각 PC Agent가 자기 PC 대상 미션만 구독
+const channel = supabase
+  .channel('missions')
+  .on('postgres_changes', {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'missions',
+    filter: `target_pc=eq.${myPcNumber}`
+  }, (payload) => {
+    missionRunner.enqueue(payload.new);
+  })
+  .subscribe();
 ```
 
-## ⚠️ 핵심 규칙
-1. DB 쿼리 시 반드시 `docs/supabase-schema.md` 또는 `.cursor/rules/supabase-schema.mdc` 참조
-2. Agent 코드는 CommonJS만 (.js, require/module.exports)
-3. videos.id = YouTube Video ID (UUID 아님!), channels.id = YouTube Channel ID
-4. job_assignments에 `updated_at` 컬럼 없음
-5. Agent는 Windows에서만 실행 (WSL 아님)
+**Realtime 안정성 대책**:
+- 구독 끊김 감지 → 자동 재연결 (Supabase client 기본 지원)
+- 재연결 시 마지막 처리 시점 이후 pending 미션 조회 (보완 polling)
+- 미션 상태를 `pending → assigned → running → completed/failed`로 관리
+- PC가 미션을 가져갈 때 `status='assigned', assigned_pc=PC번호`로 즉시 업데이트 (다른 PC가 중복 수신 방지)
+
+---
+
+## 3. 동시성 & 부하 관리 (핵심)
+
+### 3.1 문제
+
+PC 1대에 100대가 USB OTG로 연결되어 있고, ADB 명령은 USB 버스를 공유함.
+동시에 100대에 `adb shell uiautomator dump`를 보내면 USB 대역폭 + CPU 병목 발생.
+**예상 임계점: 동시 ~30대에서 부하 시작.**
+
+### 3.2 해결: 배치(Batch) 실행 + 동적 조절
+
+```
+100대 기기를 그룹으로 나눠서 순차적 배치 실행:
+
+ 그룹A (001~020)  ──▶ 동시 실행 (최대 20대)
+         완료 후
+ 그룹B (021~040)  ──▶ 동시 실행
+         완료 후
+ 그룹C (041~060)  ──▶ 동시 실행
+         ...
+
+ 각 그룹 내에서도 동시 ADB 호출 수를 제한:
+ - concurrency: 그룹 내 동시 ADB 명령 실행 수 (초기값: 10)
+ - batchSize: 한 번에 활성화할 기기 수 (초기값: 20)
+ - batchDelay: 배치 간 쿨다운 (초기값: 5초)
+```
+
+### 3.3 구현 패턴: Semaphore + Pool
+
+```javascript
+// src/orchestrator/device-pool.js
+class DevicePool {
+  constructor(config) {
+    this.batchSize = config.batchSize || 20;      // 한 번에 활성 기기 수
+    this.concurrency = config.concurrency || 10;   // 동시 ADB 호출 수
+    this.batchDelay = config.batchDelay || 5000;   // 배치 간 쿨다운 ms
+  }
+
+  // Semaphore로 동시 ADB 호출 수 제한
+  // p-limit 또는 직접 구현
+  async runMission(deviceCode, mission) {
+    return this.semaphore.acquire(() => {
+      return executeMission(deviceCode, mission);
+    });
+  }
+
+  // 100대를 batchSize씩 끊어서 처리
+  async processBatch(devices, missionFactory) {
+    for (let i = 0; i < devices.length; i += this.batchSize) {
+      const batch = devices.slice(i, i + this.batchSize);
+      await Promise.all(
+        batch.map(d => this.runMission(d.code, missionFactory(d)))
+      );
+      await delay(this.batchDelay); // USB 버스 쿨다운
+    }
+  }
+}
+```
+
+### 3.4 동적 조절 (스트레스 테스트 후 튜닝)
+
+```javascript
+// config.js 에서 PC별 설정 가능
+const PERFORMANCE_PROFILES = {
+  conservative: { batchSize: 10, concurrency: 5,  batchDelay: 10000 },
+  normal:       { batchSize: 20, concurrency: 10, batchDelay: 5000  },
+  aggressive:   { batchSize: 30, concurrency: 15, batchDelay: 3000  },
+};
+
+// PC00(테스트)에서 프로파일 전환하며 스트레스 테스트:
+// node src/agent.js --pc=PC00 --profile=aggressive --stress-test
+```
+
+### 3.5 USB 병목 완화 추가 전략
+
+1. **ADB 명령 최소화**: 불필요한 dump 줄이기. 상태 변화 예상될 때만 dump.
+2. **dump 캐싱**: 같은 화면이 예상되면 이전 dump 재사용 (TTL 2~3초).
+3. **경량 상태 체크**: 전체 XML dump 대신 `adb shell dumpsys activity top` 등 가벼운 명령으로 상태만 확인.
+4. **USB 허브 품질**: 전원 공급이 안정적인 powered USB hub 사용. 허브 품질이 ADB 안정성에 직접 영향.
+5. **ADB 서버 분리**: 허브별로 별도 ADB 서버 포트 운영 고려 (고급).
+
+### 3.6 스트레스 테스트 계획 (PC00에서 먼저)
+
+```
+Phase A: 기본 연결 테스트
+  - adb devices로 전체 기기 인식 확인
+  - 1대씩 순차 dump → 성공률/소요시간 기록
+
+Phase B: 동시성 한계 측정
+  - 동시 5대 dump → 10대 → 15대 → 20대 → 30대
+  - 각 단계에서: 평균 응답시간, 실패율, CPU/메모리 사용량 기록
+  - 실패율 > 5% 또는 응답시간 > 10초가 되는 지점 = 임계점
+
+Phase C: 프로파일 결정
+  - 임계점의 70%를 concurrency로 설정 (안전 마진)
+  - 예: 임계점 25대 → concurrency = 17~18
+```
+
+---
+
+## 4. 기술 스택 요약
+
+| 항목 | 기술 |
+|------|------|
+| 기기 자동화 | Node.js + ADB shell + XML UI dump |
+| 프론트엔드 | Magic UI + shadcn/ui (Vercel) |
+| API | Vercel Serverless Functions (JS/TS) |
+| DB | Supabase PostgreSQL |
+| 실시간 미션 전달 | Supabase Realtime (postgres_changes) |
+| 서버리스 로직 | Supabase Edge Functions |
+| 원격 접속 | SplashTop |
+| 잡 큐 (PC 로컬) | in-memory Semaphore + batch pool (Redis 불필요) |
+
+---
+
+## 5. 디렉토리 구조
+
+```
+project-root/
+├── src/                          # 각 PC에서 실행되는 Node.js Agent
+│   ├── common/
+│   │   ├── index.js
+│   │   ├── config.js             # 환경설정 + 퍼포먼스 프로파일
+│   │   ├── logger.js
+│   │   ├── errors.js
+│   │   ├── retry.js
+│   │   ├── constants.js
+│   │   └── supabase.js           # Supabase 클라이언트 초기화
+│   │
+│   ├── adb/                      # ADB + XML 자동화 코어
+│   │   ├── index.js
+│   │   ├── client.js             # ADB 명령어 래퍼 (비동기)
+│   │   ├── xml-parser.js         # XML dump 파싱, 노드 탐색
+│   │   ├── actions.js            # tap, swipe, input 원자적 액션
+│   │   ├── screen.js             # UI dump, screencap, waitForNode
+│   │   └── helpers.js            # 딜레이, 랜덤 오프셋, 휴먼 시뮬레이션
+│   │
+│   ├── device/
+│   │   ├── index.js
+│   │   ├── models.js             # Supabase CRUD
+│   │   └── service.js            # 등록, 검증, 최적화
+│   │
+│   ├── account/
+│   │   ├── index.js
+│   │   ├── models.js
+│   │   └── service.js
+│   │
+│   ├── proxy/
+│   │   ├── index.js
+│   │   ├── models.js
+│   │   └── service.js
+│   │
+│   ├── youtube/
+│   │   ├── index.js
+│   │   ├── selectors.js          # XML 셀렉터 중앙 관리
+│   │   ├── search.js
+│   │   ├── watch.js
+│   │   ├── verify.js
+│   │   ├── action.js
+│   │   └── flows.js              # E2E 미션 흐름
+│   │
+│   ├── video-manager/
+│   │   ├── index.js
+│   │   ├── models.js
+│   │   └── service.js
+│   │
+│   ├── orchestrator/
+│   │   ├── index.js
+│   │   ├── mission-runner.js     # Supabase Realtime 구독 → 미션 실행
+│   │   ├── heartbeat.js          # 하트비트 → Supabase 보고
+│   │   ├── scheduler.js          # 시간대별 활동량 조절
+│   │   └── device-pool.js        # Semaphore + batch pool (핵심)
+│   │
+│   └── agent.js                  # PC Agent 메인 진입점
+│
+├── web/                          # Vercel 프론트엔드 + API
+│   ├── app/
+│   │   ├── api/                  # Vercel API Routes
+│   │   │   ├── missions/
+│   │   │   ├── dashboard/
+│   │   │   ├── devices/
+│   │   │   └── accounts/
+│   │   └── (dashboard)/
+│   ├── components/
+│   ├── lib/
+│   ├── package.json
+│   └── vercel.json
+│
+├── supabase/
+│   ├── migrations/
+│   ├── functions/                # Edge Functions
+│   └── seed.sql
+│
+├── scripts/                      # 일회성, 스트레스 테스트
+│   └── stress-test.js            # 동시성 임계점 측정
+├── tests/
+├── _archive/
+├── .cursorrules
+├── .env
+├── package.json
+└── README.md
+```
+
+---
+
+## 6. 코딩 컨벤션
+
+### 6.1 일반
+- async/await (콜백 금지)
+- JSDoc 또는 TypeScript 타입 명시
+- console.log 금지 → logger 사용
+- 환경변수는 config.js에서만
+- 하드코딩 시크릿 금지
+
+### 6.2 모듈 규칙
+- 독립 실행 가능: `node src/youtube/search.js --test`
+- 모듈 간 require는 index.js export만
+- 순환 require 금지
+- 전역 상태 공유 금지
+- DB 접근은 models.js 통해서만
+
+### 6.3 ADB + XML 규칙
+- 기기 조작은 반드시 `src/adb/client.js` 경유
+- **좌표 하드코딩 절대 금지** — XML bounds에서 추출
+- resource-id 셀렉터 우선 → text → class → bounds
+- 셀렉터는 `selectors.js`에 중앙 관리
+- 매 액션 사이 800~2500ms 랜덤 딜레이
+- 패턴: dump → find → action → delay → dump → verify
+- **동시 ADB 호출 수 제한** — 반드시 DevicePool.semaphore 통해서
+
+### 6.4 Supabase 규칙
+- 클라이언트 초기화: `src/common/supabase.js` 1곳
+- Realtime 구독은 orchestrator에서만
+- 미션 가져갈 때 즉시 status 업데이트 (중복 방지)
+
+### 6.5 Vercel API 규칙
+- 응답: `{ success: boolean, data?: any, error?: string }`
+- Supabase 서버 클라이언트: `web/lib/supabase-server.js`
+
+---
+
+## 7. 기기 넘버링 체계
+
+| 항목 | 형식 | 예시 |
+|------|------|------|
+| PC | `PC{00-04}` | PC00(테스트), PC01~04(운영) |
+| 기기 | `{001-100}` | 001, 050, 100 |
+| 기기 코드 | `PC번호-기기번호` | PC01-001 (시스템 UNIQUE) |
+
+---
+
+## 8. PC Agent 실행 모델
+
+```
+node src/agent.js --pc=PC01 --profile=normal
+
+시작 시:
+  1. config 로드 + Supabase 연결
+  2. adb devices로 연결된 기기 탐색
+  3. Supabase에 PC + 기기 등록/업데이트
+  4. Realtime 구독 시작 (missions WHERE target_pc=PC01)
+  5. 하트비트 루프 시작 (30초)
+
+메인 루프:
+  - 미션 수신 → DevicePool에 enqueue
+  - DevicePool이 batchSize/concurrency에 맞춰 실행
+  - 결과 Supabase에 보고
+
+백그라운드:
+  - 30초: 하트비트 (기기 상태 일괄 보고)
+  - 6시간: 전체 기기 최적화
+  - Realtime 끊김 감지: 자동 재연결 + pending 미션 보완 조회
+```
+
+---
+
+## 9. 금지 사항
+
+1. 좌표 하드코딩
+2. 동기 ADB 호출 (execSync)
+3. 모듈 간 순환 require
+4. 전역 상태 공유
+5. bare catch (에러 무시)
+6. console.log (logger 사용)
+7. 하드코딩 시크릿
+8. models.js 우회한 DB 직접 호출
+9. src/adb/ 우회한 ADB 직접 exec
+10. DevicePool.semaphore 우회한 ADB 동시 호출
