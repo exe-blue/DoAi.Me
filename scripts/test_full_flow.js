@@ -28,7 +28,7 @@ const CommentGenerator = require('../agent/comment-generator');
 
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
-const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '마약왕 사살에 피의 복수 멕시코 카르텔 테러 확산 JTBC 뉴스룸';
+const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '총성 방화 멕시코 신흥 마약왕 사살 후 대혼란 범죄카르텔 보복 테러 연합뉴스TV';
 const WATCH_SEC = parseInt(process.env.WATCH_SEC || '60', 10);
 const FALLBACK_COMMENT = process.env.COMMENT || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';

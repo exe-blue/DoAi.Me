@@ -285,10 +285,13 @@ class YTActions {
         }
       }
 
+      // 고정 좌표 폴백: 댓글창 x26% y67%
       if (!inputFound) {
-        console.log(`${tag} ❌ 댓글 입력창 못 찾음`);
-        this._scrollBackToVideo(serial, scr);
-        return { success: false, method: 'input_not_found' };
+        const cx = Math.round(scr.w * 0.26);
+        const cy = Math.round(scr.h * 0.67);
+        console.log(`${tag} ⚠ XML 못 찾음 → 고정 좌표 (${cx}, ${cy})`);
+        await this.player.adb(serial, `input tap ${cx} ${cy}`);
+        inputFound = true;
       }
 
       await _sleep(1500);
@@ -309,11 +312,18 @@ class YTActions {
       if (!posted) posted = await this.player.findAndTap(serial, { contentDesc: '보내기' });
       if (!posted) posted = await this.player.findAndTap(serial, { contentDesc: 'Send' });
 
+      // 고정 좌표 폴백: 댓글 등록 x93% y74%
+      if (!posted) {
+        const sx = Math.round(scr.w * 0.93);
+        const sy = Math.round(scr.h * 0.74);
+        console.log(`${tag} ⚠ 게시 버튼 XML 못 찾음 → 고정 좌표 (${sx}, ${sy})`);
+        await this.player.adb(serial, `input tap ${sx} ${sy}`);
+        posted = true;
+      }
+
       if (posted) {
         await _sleep(2000);
         console.log(`${tag} ✅ 댓글 게시 완료 — "${commentText}"`);
-      } else {
-        console.log(`${tag} ⚠ 게시 버튼 못 찾음 — 댓글 입력은 됨`);
       }
 
       // 4. 영상으로 복귀
