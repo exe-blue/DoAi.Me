@@ -17,7 +17,8 @@ const WebSocket = require('ws');
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
 const VIDEO_URL = process.env.VIDEO_URL || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
-const WATCH_SEC = parseInt(process.env.WATCH_SEC || '15', 10);
+const WATCH_SEC = parseInt(process.env.WATCH_SEC || '30', 10);
+const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '';
 
 let ws;
 let requestId = 0;
@@ -56,6 +57,7 @@ async function run() {
   log('INIT', `Device: ${SERIAL}`);
   log('INIT', `Video: ${VIDEO_URL}`);
   log('INIT', `Watch: ${WATCH_SEC}s`);
+  log('INIT', `Search: ${SEARCH_KEYWORD || '(video ID from URL)'}`);
   console.log('─'.repeat(60));
 
   // Connect
@@ -159,16 +161,50 @@ async function run() {
     log('8-포그라운드', `⚠ 확인 불가: ${e.message}`);
   }
 
-  // Step 9: Open video via intent (직접 URL — 가장 확실한 방법)
+  // Step 9: 검색으로 영상 찾기 (광고 결과 건너뛰기)
+  const searchQuery = SEARCH_KEYWORD || extractVideoIdFromUrl(VIDEO_URL) || 'dQw4w9WgXcQ';
+  log('9-검색', `검색어: "${searchQuery}"`);
+
   try {
-    await adbShell(`am start -a android.intent.action.VIEW -d "${VIDEO_URL}"`);
-    log('9-영상열기', `✓ intent 전송: ${VIDEO_URL}`);
+    // 9a. 검색 버튼 탭 (YouTube 앱 상단 우측 돋보기)
+    await adbShell('input tap 930 80');
+    await sleep(1500);
+
+    // 9b. 검색어 입력 (base64 broadcast → 클립보드 폴백 → ASCII 폴백)
+    const b64 = Buffer.from(searchQuery, 'utf-8').toString('base64');
+    let inputOk = false;
+    try {
+      const res = await adbShell(`am broadcast -a ADB_INPUT_B64 --es msg '${b64}' 2>/dev/null`);
+      const out = extractOutput(res);
+      if (out.includes('result=0')) inputOk = true;
+    } catch {}
+    if (!inputOk) {
+      // ASCII fallback
+      const safe = searchQuery.replace(/ /g, '%s').replace(/'/g, '');
+      await adbShell(`input text '${safe}'`);
+    }
+    await sleep(1000);
+
+    // 9c. Enter로 검색 실행
+    await adbShell('input keyevent KEYCODE_ENTER');
+    log('9-검색', '✓ 검색 실행');
+    await sleep(4000);
+
+    // 9d. 검색 결과에서 스크롤 1회 (첫 번째 = 광고일 확률 높음)
+    log('9-검색', '광고 건너뛰기: 아래로 스크롤');
+    await adbShell('input swipe 540 1200 540 600 300');
+    await sleep(2000);
+
+    // 9e. 두 번째 결과 영역 탭 (약 화면 40% 위치)
+    await adbShell('input tap 540 500');
+    log('9-검색', '✓ 검색 결과 선택 (광고 다음 영상)');
+    await sleep(4000);
+
   } catch (e) {
-    log('9-영상열기', `✗ ${e.message}`);
-    cleanup();
-    return;
+    log('9-검색', `✗ 검색 실패 — intent 폴백: ${e.message}`);
+    await adbShell(`am start -a android.intent.action.VIEW -d "${VIDEO_URL}"`);
+    await sleep(5000);
   }
-  await sleep(5000);
 
   // Step 10: Ensure playing — 플레이어 탭 + 재생 키 + 재확인
   try {
@@ -209,19 +245,31 @@ async function run() {
     log('10-재생상태', `⚠ 확인 불가: ${e.message}`);
   }
 
-  // Step 11: Try skip ad
-  try {
-    const res = await adbShell('uiautomator dump /sdcard/window_dump.xml && cat /sdcard/window_dump.xml');
-    const xml = extractOutput(res);
-    if (xml.includes('skip_ad') || xml.includes('건너뛰기') || xml.includes('Skip')) {
-      log('11-광고', '⚠ 광고 감지 — 건너뛰기 시도');
-      await adbShell('input tap 960 580');
-      await sleep(2000);
-    } else {
+  // Step 11: 광고 건너뛰기 (최대 3회 반복, 5초 간격)
+  for (let adTry = 0; adTry < 3; adTry++) {
+    try {
+      await adbShell('uiautomator dump /sdcard/window_dump.xml');
+      await sleep(500);
+      const res = await adbShell('cat /sdcard/window_dump.xml');
+      const xml = extractOutput(res);
+      if (xml.includes('skip_ad') || xml.includes('건너뛰기') || xml.includes('Skip') || xml.includes('skip')) {
+        log('11-광고', `⚠ 광고 감지 (${adTry + 1}회) — 건너뛰기 탭`);
+        await adbShell('input tap 960 580');
+        await sleep(2000);
+        continue;
+      }
+      // 광고 카운트다운 대기 (건너뛰기 버튼이 아직 안 나왔을 수 있음)
+      if (xml.includes('Ad') || xml.includes('광고')) {
+        log('11-광고', `⚠ 광고 재생 중 (${adTry + 1}회) — 5초 대기 후 재시도`);
+        await sleep(5000);
+        continue;
+      }
       log('11-광고', '✓ 광고 없음');
+      break;
+    } catch (e) {
+      log('11-광고', `⚠ UI dump 실패: ${e.message}`);
+      break;
     }
-  } catch (e) {
-    log('11-광고', `⚠ UI dump 실패: ${e.message}`);
   }
 
   // Step 12: Watch
@@ -291,6 +339,13 @@ function extractOutput(res) {
   if (res.msg != null) return String(res.msg);
   if (res.stdout != null) return String(res.stdout);
   return JSON.stringify(res);
+}
+
+function extractVideoIdFromUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.searchParams.get('v') || '';
+  } catch { return ''; }
 }
 
 function cleanup() {
