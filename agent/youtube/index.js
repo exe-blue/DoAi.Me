@@ -18,4 +18,6 @@ module.exports = {
   getVideoInfo, verifyVideoMatch, verifyPlaying, verifyTargetVideo, verifyWatchCompletion, detectBotWarning,
   // actions
   likeVideo, subscribeChannel, writeComment, saveToPlaylist,
+  // flows
+  executeYouTubeMission: require('./flows').executeYouTubeMission,
 };
