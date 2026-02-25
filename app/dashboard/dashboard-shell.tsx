@@ -1,18 +1,23 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard,
   Server,
   Smartphone,
   Shield,
+  Globe,
   Tv,
-  ListTodo,
-  Settings,
+  Upload,
+  ListOrdered,
+  Zap,
   Terminal,
-  ScrollText,
+  Settings,
+  FileText,
+  AlertTriangle,
   LogOut,
+  Wifi,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,189 +36,174 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
-import { ConnectionStatus } from "@/components/connection-status";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { createClient } from "@/lib/supabase/client";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
-const navItems = [
-  { href: "/dashboard", label: "개요", icon: LayoutDashboard },
-  { href: "/dashboard/workers", label: "워커", icon: Server },
-  { href: "/dashboard/devices", label: "디바이스", icon: Smartphone },
-  { href: "/dashboard/proxies", label: "프록시 설정", icon: Shield },
-  { href: "/dashboard/channels", label: "채널", icon: Tv },
-  { href: "/dashboard/tasks", label: "작업 관리", icon: ListTodo },
-  { href: "/dashboard/settings", label: "설정", icon: Settings },
-  { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
-  { href: "/dashboard/logs", label: "로그", icon: ScrollText },
+const navGroups = [
+  {
+    label: "OVERVIEW",
+    items: [
+      { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "INFRASTRUCTURE",
+    items: [
+      { href: "/dashboard/workers", label: "PC 관리", icon: Server },
+      { href: "/dashboard/devices", label: "디바이스", icon: Smartphone },
+      { href: "/dashboard/proxies", label: "프록시", icon: Shield },
+      { href: "/dashboard/network", label: "네트워크", icon: Globe },
+    ],
+  },
+  {
+    label: "CONTENT",
+    items: [
+      { href: "/dashboard/channels", label: "채널 관리", icon: Tv },
+      { href: "/dashboard/content", label: "콘텐츠 등록", icon: Upload },
+      { href: "/dashboard/tasks", label: "작업 / 대기열", icon: ListOrdered },
+    ],
+  },
+  {
+    label: "AUTOMATION",
+    items: [
+      { href: "/dashboard/presets", label: "프리셋", icon: Zap },
+      { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
+    ],
+  },
+  {
+    label: "SYSTEM",
+    items: [
+      { href: "/dashboard/settings", label: "설정", icon: Settings },
+      { href: "/dashboard/logs", label: "로그", icon: FileText },
+      { href: "/dashboard/errors", label: "에러", icon: AlertTriangle },
+    ],
+  },
 ];
 
-function UserMenu() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const supabase = createClient();
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    supabase.auth.getUser().then(({ data: { user: u } }) => {
-      setUser(u ?? null);
-      setLoading(false);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading || !user) return null;
-
-  const email = user.email ?? "";
-  const displayName = (user.user_metadata?.name ?? email) || "U";
-  const initials = displayName
-    .toString()
-    .split(" ")
-    .map((s: string) => s[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U";
-
-  return (
-    <div className="flex items-center gap-3 px-3 py-2">
-      <Avatar className="h-8 w-8">
-        {user.user_metadata?.avatar_url && (
-          <AvatarImage src={user.user_metadata.avatar_url} alt={email} />
-        )}
-        <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-      </Avatar>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">
-          {user.user_metadata?.name ?? email}
-        </p>
-        {email && (
-          <p className="text-xs text-muted-foreground truncate">{email}</p>
-        )}
-      </div>
-      <form action="/auth/logout" method="post" className="inline">
-        <button
-          type="submit"
-          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="로그아웃"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function DashboardSidebar() {
-  const pathname = usePathname();
-
-  return (
-    <Sidebar>
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-            <Smartphone className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-sidebar-accent-foreground">
-              YouTube Agent Farm
-            </h2>
-            <p className="text-sm text-muted-foreground">Fleet Console</p>
-          </div>
-        </div>
-      </SidebarHeader>
-
-      <SidebarSeparator />
-
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>관제</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === item.href}
-                    tooltip={item.label}
-                  >
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter>
-        <UserMenu />
-        <div className="px-2 pb-2 space-y-1">
-          <p className="text-[11px] text-muted-foreground">
-            DoAi.Me Fleet Console v1.0
-          </p>
-          <div className="flex gap-2 text-[11px]">
-            <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">개인정보 취급방침</Link>
-            <span className="text-muted-foreground">·</span>
-            <Link href="/agreement" className="text-muted-foreground hover:text-foreground transition-colors">서비스 약관</Link>
-          </div>
-        </div>
-      </SidebarFooter>
-    </Sidebar>
-  );
-}
-
-function TopBar() {
-  const [currentTime, setCurrentTime] = useState("");
-
-  useEffect(() => {
-    const updateTime = () => {
-      setCurrentTime(
-        new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      );
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="flex h-14 items-center justify-between border-b border-border px-4">
-      <div className="flex items-center gap-3">
-        <SidebarTrigger />
-        <h1 className="text-lg font-semibold">YouTube Agent Farm</h1>
-      </div>
-      <div className="flex items-center gap-4">
-        <ConnectionStatus />
-        <div className="text-sm font-mono text-muted-foreground">
-          {currentTime}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [systemOk, setSystemOk] = useState(true);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const supabase = createClient();
+    if (!supabase) return;
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setSystemOk(d.status === "ok"))
+      .catch(() => setSystemOk(false));
+  }, []);
+
+  const handleLogout = async () => {
+    if (!isSupabaseConfigured()) return;
+    const supabase = createClient();
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
   return (
     <SidebarProvider>
-      <DashboardSidebar />
-      <SidebarInset>
-        <TopBar />
-        <div className="p-4">{children}</div>
+      <Sidebar className="border-r border-[#1e2130] bg-[#0f1117]">
+        <SidebarHeader className="px-4 py-5">
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+              <Wifi className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <span className="font-mono text-base font-bold text-white">
+                DoAi.Me
+              </span>
+              <span className="ml-1.5 font-mono text-[9px] tracking-[0.2em] text-blue-400">
+                COMMAND CENTER
+              </span>
+            </div>
+          </Link>
+        </SidebarHeader>
+
+        <SidebarContent className="px-2">
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel className="px-3 text-[10px] font-medium tracking-[0.15em] text-slate-500">
+                {group.label}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== "/dashboard" &&
+                        pathname.startsWith(item.href + "/"));
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive}
+                          className={
+                            isActive
+                              ? "border-l-2 border-blue-500 bg-[#1a1d2e] text-white"
+                              : "text-slate-400 hover:text-slate-200"
+                          }
+                        >
+                          <Link href={item.href}>
+                            <item.icon className="h-4 w-4" />
+                            <span className="text-[13px]">{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </SidebarContent>
+
+        <SidebarFooter className="border-t border-[#1e2130] px-3 py-3">
+          <div className="mb-2 flex items-center gap-1.5 px-1">
+            <div
+              className={`h-1.5 w-1.5 rounded-full ${systemOk ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
+            />
+            <span className="font-mono text-[10px] text-slate-500">
+              {systemOk ? "System Nominal" : "Issues Detected"}
+            </span>
+          </div>
+          <SidebarSeparator />
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-7 w-7">
+                <AvatarFallback className="bg-[#1a1d2e] text-[10px] text-slate-300">
+                  {user?.email?.[0]?.toUpperCase() || "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="text-[11px] text-slate-300 truncate max-w-[140px]">
+                  {user?.email || "User"}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="rounded p-1 text-slate-500 hover:bg-[#1a1d2e] hover:text-slate-300"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+
+      <SidebarInset className="bg-[#0a0a0f]">
+        <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b border-[#1e2130] bg-[#0a0a0f]/80 px-4 backdrop-blur-sm">
+          <SidebarTrigger className="text-slate-400" />
+        </header>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );
