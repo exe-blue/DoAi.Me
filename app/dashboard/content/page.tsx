@@ -107,7 +107,7 @@ export default function ContentPage() {
           <h1 className="text-2xl font-bold text-white">콘텐츠</h1>
           <p className="text-sm text-slate-500">{stats.total}개 등록 · {stats.active} 활성 · {stats.completed} 완료</p>
         </div>
-        <Button onClick={()=>setAddOpen(true)} size="sm" className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={()=>setAddOpen(true)} size="sm" className="bg-primary hover:bg-primary/90">
           <Plus className="mr-1.5 h-3.5 w-3.5"/> 영상 등록
         </Button>
       </div>
@@ -137,7 +137,7 @@ export default function ContentPage() {
         <div className="rounded-xl border border-[#1e2130] bg-[#12141d] p-12 text-center">
           <Upload className="mx-auto h-8 w-8 text-slate-600"/>
           <p className="mt-3 text-sm text-slate-500">등록된 콘텐츠가 없습니다</p>
-          <Button onClick={()=>setAddOpen(true)} size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700">
+          <Button onClick={()=>setAddOpen(true)} size="sm" className="mt-4 bg-primary hover:bg-primary/90">
             <Plus className="mr-1.5 h-3.5 w-3.5"/> 첫 영상 등록
           </Button>
         </div>
@@ -190,7 +190,7 @@ export default function ContentPage() {
                     </div>
                     <div className="mt-1.5 h-2 rounded-full bg-[#1e2130]">
                       <div className={cn("h-2 rounded-full transition-all",
-                        pct>=100?"bg-green-600":pct>=50?"bg-blue-600":"bg-amber-600"
+                        pct>=100?"bg-green-600":pct>=50?"bg-primary":"bg-amber-600"
                       )} style={{width:`${pct}%`}}/>
                     </div>
                     <div className="mt-1 font-mono text-[10px] text-slate-500">{done} / {target}</div>
@@ -245,7 +245,7 @@ export default function ContentPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={()=>setAddOpen(false)} className="border-[#1e2130] text-slate-400">취소</Button>
-            <Button onClick={handleAdd} disabled={addLoading||!videoUrl.trim()} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleAdd} disabled={addLoading||!videoUrl.trim()} className="bg-primary hover:bg-primary/90">
               {addLoading?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<Target className="mr-1.5 h-3.5 w-3.5"/>}
               등록
             </Button>

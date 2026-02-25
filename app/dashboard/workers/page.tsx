@@ -135,7 +135,7 @@ export default function WorkersPage() {
                   </div>
                 </div>
                 {name === "PC00" && (
-                  <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[9px] font-bold text-blue-400">TEST</span>
+                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">TEST</span>
                 )}
               </div>
 
@@ -198,7 +198,7 @@ export default function WorkersPage() {
               {/* View devices link */}
               <Link
                 href={`/dashboard/devices?pc=${w.id}`}
-                className="mt-4 flex items-center justify-center gap-1 rounded-lg border border-[#1e2130] bg-[#0d1117] py-2 text-xs text-slate-500 hover:text-blue-400 hover:border-blue-900/30 transition-colors"
+                className="mt-4 flex items-center justify-center gap-1 rounded-lg border border-[#1e2130] bg-[#0d1117] py-2 text-xs text-slate-500 hover:text-primary hover:border-primary/20 transition-colors"
               >
                 디바이스 보기 <ArrowRight className="h-3 w-3" />
               </Link>

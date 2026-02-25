@@ -46,8 +46,8 @@ export default function PresetsPage() {
             <div key={p.id} className="rounded-xl border border-[#1e2130] bg-[#12141d] p-5 hover:border-[#2a2d40]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-900/20">
-                    <Zap className="h-4 w-4 text-blue-400" />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <Zap className="h-4 w-4 text-primary" />
                   </div>
                   <div>
                     <div className="font-medium text-white">{p.name}</div>

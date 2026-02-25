@@ -164,8 +164,8 @@ export default function NetworkPage() {
 }
 
 function StatBox({icon:Icon,label,value,color}:{icon:React.ElementType;label:string;value:number;color:string}) {
-  const bg={green:"bg-green-900/20",blue:"bg-blue-900/20",red:"bg-red-900/20",amber:"bg-amber-900/20"}[color]||"bg-slate-800";
-  const txt={green:"text-green-400",blue:"text-blue-400",red:"text-red-400",amber:"text-amber-400"}[color]||"text-slate-400";
+  const bg={green:"bg-green-900/20",blue:"bg-primary/10",red:"bg-red-900/20",amber:"bg-amber-900/20"}[color]||"bg-slate-800";
+  const txt={green:"text-green-400",blue:"text-primary",red:"text-red-400",amber:"text-amber-400"}[color]||"text-slate-400";
   return (
     <div className="rounded-xl border border-[#1e2130] bg-[#12141d] p-4">
       <div className="flex items-center gap-3">

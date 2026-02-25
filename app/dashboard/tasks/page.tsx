@@ -38,7 +38,7 @@ const TABS = [
 const ST: Record<string,{color:string;icon:React.ElementType;label:string}> = {
   pending:   { color:"text-slate-400", icon:Clock,       label:"대기" },
   queued:    { color:"text-slate-400", icon:Clock,       label:"대기" },
-  running:   { color:"text-blue-400",  icon:Play,        label:"실행중" },
+  running:   { color:"text-primary",  icon:Play,        label:"실행중" },
   completed: { color:"text-green-400", icon:CheckCircle2,label:"완료" },
   failed:    { color:"text-red-400",   icon:XCircle,     label:"실패" },
   cancelled: { color:"text-slate-500", icon:Pause,       label:"취소" },
@@ -112,7 +112,7 @@ export default function TasksPage() {
               tab===t.key?"bg-[#1a1d2e] text-white":"text-slate-500 hover:text-slate-300")}>
             {t.label}
             <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-mono",
-              tab===t.key?"bg-blue-600/20 text-blue-400":"bg-[#1e2130] text-slate-500")}>
+              tab===t.key?"bg-primary/20 text-primary":"bg-[#1e2130] text-slate-500")}>
               {counts[t.key]||0}
             </span>
           </button>
@@ -201,7 +201,7 @@ export default function TasksPage() {
                                   <td className="px-4 py-1.5">
                                     <div className="flex items-center gap-1.5">
                                       <div className="h-1 w-12 rounded-full bg-[#1e2130]">
-                                        <div className="h-1 rounded-full bg-blue-600" style={{width:`${d.watch_percentage||0}%`}}/>
+                                        <div className="h-1 rounded-full bg-primary" style={{width:`${d.watch_percentage||0}%`}}/>
                                       </div>
                                       <span className="font-mono text-slate-500">{d.watch_percentage||0}%</span>
                                     </div>

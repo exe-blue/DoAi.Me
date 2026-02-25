@@ -100,7 +100,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-end gap-2">
             {saved&&<span className="flex items-center gap-1 text-xs text-green-400"><CheckCircle2 className="h-3.5 w-3.5"/>저장됨</span>}
-            <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90">
               {saving?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<Save className="mr-1.5 h-3.5 w-3.5"/>}
               저장
             </Button>
@@ -131,7 +131,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex gap-1.5">
                 <button onClick={()=>handleTrigger(s.id)}
-                  className="rounded-lg border border-[#1e2130] bg-[#0d1117] p-1.5 text-blue-400 hover:bg-blue-900/10">
+                  className="rounded-lg border border-[#1e2130] bg-[#0d1117] p-1.5 text-primary hover:bg-primary/5">
                   <Play className="h-3.5 w-3.5"/>
                 </button>
                 <button onClick={()=>handleDeleteSchedule(s.id)}

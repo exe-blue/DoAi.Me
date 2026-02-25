@@ -16,7 +16,7 @@ function cn(...c:(string|false|undefined)[]){return c.filter(Boolean).join(" ")}
 const LEVEL_STYLE: Record<string,{color:string;bg:string;icon:React.ElementType}> = {
   error: { color:"text-red-400", bg:"bg-red-900/20", icon:AlertOctagon },
   warn:  { color:"text-amber-400", bg:"bg-amber-900/20", icon:AlertTriangle },
-  info:  { color:"text-blue-400", bg:"bg-blue-900/20", icon:Info },
+  info:  { color:"text-primary", bg:"bg-primary/10", icon:Info },
   debug: { color:"text-slate-500", bg:"bg-slate-800", icon:Bug },
 };
 

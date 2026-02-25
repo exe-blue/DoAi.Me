@@ -204,7 +204,7 @@ export default function ProxiesPage() {
           } className="border-[#1e2130] bg-[#12141d] font-mono text-xs text-slate-300"/>
           <DialogFooter>
             <Button variant="outline" onClick={()=>setBulkOpen(false)} className="border-[#1e2130] text-slate-400">취소</Button>
-            <Button onClick={handleBulkAdd} disabled={actionLoading==="bulk"} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleBulkAdd} disabled={actionLoading==="bulk"} className="bg-primary hover:bg-primary/90">
               {actionLoading==="bulk"?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<Plus className="mr-1.5 h-3.5 w-3.5"/>}
               추가
             </Button>

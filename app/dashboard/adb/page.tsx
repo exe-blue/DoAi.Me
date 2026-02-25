@@ -111,7 +111,7 @@ export default function ADBPage() {
           <p className="text-sm text-slate-500">{presets.length}개 프리셋 · {devices.length}대 온라인</p>
         </div>
         <Button onClick={()=>{setCustomOpen(true);setExecResult(null);setExecDevice("all");}} size="sm"
-          className="bg-blue-600 hover:bg-blue-700">
+          className="bg-primary hover:bg-primary/90">
           <Terminal className="mr-1.5 h-3.5 w-3.5"/> 커스텀 명령
         </Button>
       </div>

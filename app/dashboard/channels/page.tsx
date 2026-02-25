@@ -97,7 +97,7 @@ export default function ChannelsPage() {
             {syncLoading?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<RefreshCw className="mr-1.5 h-3.5 w-3.5"/>}
             전체 동기화
           </Button>
-          <Button onClick={()=>setAddOpen(true)} size="sm" className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={()=>setAddOpen(true)} size="sm" className="bg-primary hover:bg-primary/90">
             <Plus className="mr-1.5 h-3.5 w-3.5"/> 채널 추가
           </Button>
         </div>
@@ -110,7 +110,7 @@ export default function ChannelsPage() {
         <div className="rounded-xl border border-[#1e2130] bg-[#12141d] p-12 text-center">
           <Tv className="mx-auto h-8 w-8 text-slate-600"/>
           <p className="mt-3 text-sm text-slate-500">등록된 채널이 없습니다</p>
-          <Button onClick={()=>setAddOpen(true)} size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700">
+          <Button onClick={()=>setAddOpen(true)} size="sm" className="mt-4 bg-primary hover:bg-primary/90">
             <Plus className="mr-1.5 h-3.5 w-3.5"/> 첫 채널 추가
           </Button>
         </div>
@@ -138,7 +138,7 @@ export default function ChannelsPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-white truncate">{ch.name}</span>
                       {ch.is_monitored && <span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[8px] font-bold text-green-400">모니터링</span>}
-                      {ch.auto_collect && <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">자동수집</span>}
+                      {ch.auto_collect && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[8px] font-bold text-primary">자동수집</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                       {ch.handle && <span>{ch.handle}</span>}
@@ -174,7 +174,7 @@ export default function ChannelsPage() {
                               {v.target_views&&v.target_views>0 && (
                                 <div className="flex items-center gap-1.5 w-20">
                                   <div className="flex-1 h-1 rounded-full bg-[#1e2130]">
-                                    <div className="h-1 rounded-full bg-blue-600" style={{width:`${pct}%`}}/>
+                                    <div className="h-1 rounded-full bg-primary" style={{width:`${pct}%`}}/>
                                   </div>
                                   <span className="font-mono text-[9px] text-slate-500">{pct}%</span>
                                 </div>
@@ -202,7 +202,7 @@ export default function ChannelsPage() {
             className="border-[#1e2130] bg-[#12141d] text-sm text-slate-300"/>
           <DialogFooter>
             <Button variant="outline" onClick={()=>setAddOpen(false)} className="border-[#1e2130] text-slate-400">취소</Button>
-            <Button onClick={handleAdd} disabled={addLoading} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleAdd} disabled={addLoading} className="bg-primary hover:bg-primary/90">
               {addLoading?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<Plus className="mr-1.5 h-3.5 w-3.5"/>}
               추가
             </Button>

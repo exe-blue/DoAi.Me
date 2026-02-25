@@ -40,7 +40,7 @@ function ActivityChart({data,tab,setTab}:{data:any[];tab:string;setTab:(t:string
   return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
     <div className="mb-4 flex items-center justify-between">
       <span className="text-xs font-bold uppercase tracking-wider text-slate-300">MISSION ACTIVITY OVERVIEW</span>
-      <div className="flex gap-1">{["TODAY","WEEK","MONTH"].map(t=><button key={t} onClick={()=>setTab(t)} className={cn("rounded px-3 py-1 text-[10px] font-bold tracking-wider",tab===t?"bg-blue-600 text-white":"text-slate-500 hover:text-slate-300")}>{t}</button>)}</div>
+      <div className="flex gap-1">{["TODAY","WEEK","MONTH"].map(t=><button key={t} onClick={()=>setTab(t)} className={cn("rounded px-3 py-1 text-[10px] font-bold tracking-wider",tab===t?"bg-primary text-white":"text-slate-500 hover:text-slate-300")}>{t}</button>)}</div>
     </div>
     <ResponsiveContainer width="100%" height={200}>
       <AreaChart data={data}>
@@ -58,7 +58,7 @@ function ActivityChart({data,tab,setTab}:{data:any[];tab:string;setTab:(t:string
 function WorkersPanel({workers}:{workers:Worker[]}){
   return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5 relative overflow-hidden">
     <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Server className="h-4 w-4 text-slate-500"/><span className="text-xs font-bold uppercase tracking-wider text-slate-300">AGENT ALLOCATION</span><span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[10px] text-green-400">{workers.filter(w=>w.status==="online").length} online</span></div>
-      <Link href="/dashboard/workers" className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5">View All<ArrowRight className="h-3 w-3"/></Link></div>
+      <Link href="/dashboard/workers" className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5">View All<ArrowRight className="h-3 w-3"/></Link></div>
     <div className="relative z-10 space-y-2.5">{workers.map(w=>{const name=w.pc_number||w.hostname||"PC??";const on=w.online_count||0,tot=w.device_count||100;const pct=tot>0?Math.round((on/tot)*100):0;
       return(<div key={w.id} className="flex items-center gap-3 rounded-lg bg-[#0d1117]/50 px-3 py-2"><div className={cn("h-2 w-2 rounded-full",w.status==="online"?"bg-green-500":"bg-slate-600")}/><span className="w-12 font-mono text-sm font-bold text-white">{name}</span><div className="flex-1 h-2 rounded-full bg-[#1e2130]"><div className="h-2 rounded-full bg-green-600 transition-all" style={{width:`${pct}%`}}/></div><span className="font-mono text-xs text-slate-400 w-14 text-right">{on}/{tot}</span></div>);
     })}{workers.length===0&&<p className="py-4 text-center text-xs text-slate-600">연결된 PC 없음</p>}</div>
@@ -108,7 +108,7 @@ function WorkerDetail({workers}:{workers:Worker[]}){
     <div className="flex items-center justify-between mb-4"><span className="text-xs font-bold uppercase tracking-wider text-slate-300">워커 상세</span><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold",w.status==="online"?"bg-green-900/30 text-green-400":"bg-slate-800 text-slate-500")}>{w.status==="online"?"온라인":"오프라인"}</span></div>
     <div className="grid grid-cols-2 gap-3 text-xs mb-4"><div><span className="text-slate-500">워커 이름</span><div className="font-mono font-bold text-white">{name}</div></div><div><span className="text-slate-500">IP 주소</span><div className="font-mono text-slate-300">{w.ip_local||"N/A"}</div></div>
       <div><span className="text-slate-500">기동 시간</span><div className="text-slate-300">{timeSince(w.last_heartbeat)}</div></div><div><span className="text-slate-500">마지막 하트비트</span><div className="text-slate-300">{timeSince(w.last_heartbeat)}</div></div></div>
-    <div><span className="text-xs text-slate-500">디바이스 상태</span><div className="mt-1.5 h-3 rounded-full bg-[#1e2130] overflow-hidden flex"><div className="h-3 bg-green-600" style={{width:`${pct}%`}}/><div className="h-3 bg-blue-600" style={{width:"0%"}}/></div>
+    <div><span className="text-xs text-slate-500">디바이스 상태</span><div className="mt-1.5 h-3 rounded-full bg-[#1e2130] overflow-hidden flex"><div className="h-3 bg-green-600" style={{width:`${pct}%`}}/><div className="h-3 bg-primary" style={{width:"0%"}}/></div>
       <div className="mt-1 flex gap-3 text-[10px] text-slate-500"><span>{on} 온라인</span><span>0 사용중</span><span>0 에러</span><span>{tot-on} 오프라인</span></div></div>
   </div>);
 }
@@ -124,7 +124,7 @@ function SystemHealth({data,health}:{data:RealtimeData|null;health:boolean}){
   </div>);
 }
 function HealthStat({icon:Icon,label,value,color}:{icon:React.ElementType;label:string;value:string;color:string}){
-  const c={green:"text-green-400",blue:"text-blue-400",red:"text-red-400",amber:"text-amber-400"}[color]||"text-slate-400";
+  const c={green:"text-green-400",blue:"text-primary",red:"text-red-400",amber:"text-amber-400"}[color]||"text-slate-400";
   return(<div className="text-center"><Icon className={cn("mx-auto h-4 w-4 mb-1",c)}/><div className="font-mono text-lg font-bold text-white">{value}</div><div className="text-[9px] text-slate-500">{label}</div></div>);
 }
 
@@ -183,14 +183,14 @@ function RightPanel({data,health,errors}:{data:RealtimeData|null;health:boolean;
 
       {/* Notifications */}
       <div className="flex-1 p-5 space-y-3 overflow-y-auto">
-        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="flex h-4 w-4 items-center justify-center rounded bg-blue-600 text-[9px] font-bold text-white">{notifs.length}</span><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">NOTIFICATIONS</span></div><button className="text-[9px] uppercase tracking-wider text-slate-600 hover:text-slate-400">CLEAR ALL</button></div>
+        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="flex h-4 w-4 items-center justify-center rounded bg-primary text-[9px] font-bold text-white">{notifs.length}</span><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">NOTIFICATIONS</span></div><button className="text-[9px] uppercase tracking-wider text-slate-600 hover:text-slate-400">CLEAR ALL</button></div>
         {notifs.map((n,i)=>(<div key={i} className="rounded-lg border border-[#1e2130] bg-[#12141d] p-3"><div className="flex items-center gap-2"><div className={cn("h-1.5 w-1.5 rounded-full",n.dot)}/><span className="text-[10px] font-bold text-white">{n.title}</span><span className={cn("rounded px-1 text-[8px]",n.tag==="ERR"?"bg-red-900/30 text-red-400":"bg-green-900/30 text-green-400")}>{n.tag}</span></div><p className="mt-1 text-[11px] text-slate-500">{n.desc}</p><p className="mt-0.5 text-[9px] text-slate-600">{n.time}</p></div>))}
         <button className="w-full text-center text-[10px] font-bold text-slate-500 hover:text-slate-300 py-2">SHOW ALL ({notifs.length})</button>
       </div>
 
       {/* Bottom status */}
       <div className="border-t border-[#1e2130] px-5 py-3">
-        <div className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5"><span className="flex h-4 w-4 items-center justify-center rounded bg-white/20 text-[9px] font-bold text-white">!</span><span className="text-[10px] font-bold text-white">SYSTEM NOMINAL</span><span className="ml-auto text-[10px] text-blue-200">+</span></div>
+        <div className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5"><span className="flex h-4 w-4 items-center justify-center rounded bg-white/20 text-[9px] font-bold text-white">!</span><span className="text-[10px] font-bold text-white">SYSTEM NOMINAL</span><span className="ml-auto text-[10px] text-primary/70">+</span></div>
       </div>
     </div>
   );

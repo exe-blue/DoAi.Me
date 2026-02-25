@@ -73,7 +73,7 @@ export default function CompletedPage() {
                   <td className="px-4 py-2.5">
                     <div className="flex gap-2">
                       {(item.actions?.liked || item.did_like) && <Heart className="h-3.5 w-3.5 text-red-400" />}
-                      {(item.actions?.commented || item.did_comment) && <MessageSquare className="h-3.5 w-3.5 text-blue-400" />}
+                      {(item.actions?.commented || item.did_comment) && <MessageSquare className="h-3.5 w-3.5 text-primary" />}
                       {!(item.actions?.liked || item.did_like) && !(item.actions?.commented || item.did_comment) && (
                         <Eye className="h-3.5 w-3.5 text-slate-500" />
                       )}
