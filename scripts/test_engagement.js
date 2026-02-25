@@ -120,7 +120,7 @@ async function trySkipAd() {
         }
       }
     }
-    const adSignals = ['ad_badge', 'ad_progress_text', 'ad_info_button', 'ad_cta_button', '광고'];
+    const adSignals = ['ad_badge', 'ad_progress_text', 'ad_info_button', 'ad_cta_button', '광고', '스폰서', 'Sponsored'];
     for (const sig of adSignals) {
       if (xml.includes(sig)) {
         log('광고', `광고 신호 "${sig}" 감지 → 고정 좌표 탭`);
@@ -133,17 +133,12 @@ async function trySkipAd() {
 
 async function skipAdFixedCoord() {
   const scr = await getScreen();
-  // 위치 A: 플레이어 내부 우하단
-  const ax = Math.round(scr.w * 0.876);
-  const ay = Math.round(scr.h * 0.33);
-  log('광고', `탭 A 플레이어 내부 (${ax}, ${ay})`);
-  await adb(`input tap ${ax} ${ay}`);
-  await sleep(500);
-  // 위치 B: 화면 하단 우측 (풀스크린 광고)
-  const bx = Math.round(scr.w * 0.876);
-  const by = Math.round(scr.h * 0.857);
-  log('광고', `탭 B 화면 하단 (${bx}, ${by})`);
-  await adb(`input tap ${bx} ${by}`);
+  const sx = Math.round(scr.w * 0.85);
+  const sy = Math.round(scr.h * 0.20);
+  log('광고', `건너뛰기 탭 (${sx}, ${sy}) [x85% y20%]`);
+  await adb(`input tap ${sx} ${sy}`);
+  await sleep(800);
+  await adb(`input tap ${sx} ${sy}`);
   return true;
 }
 
@@ -217,7 +212,8 @@ async function run() {
 
     const adXml = await dumpUI();
     const hasAd = adXml && (adXml.includes('ad_badge') || adXml.includes('skip_ad') ||
-      adXml.includes('ad_progress') || adXml.includes('ad_cta'));
+      adXml.includes('ad_progress') || adXml.includes('ad_cta') ||
+      adXml.includes('스폰서') || adXml.includes('Sponsored'));
     const hasTitle = adXml && adXml.includes('video_title');
 
     if (hasTitle && !hasAd) { log('4-광고', `✓ 광고 끝남 (${adsSkipped}개)`); break; }
