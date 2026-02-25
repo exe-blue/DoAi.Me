@@ -160,14 +160,28 @@ async function trySkipAd() {
   return false;
 }
 
-/** 전략 2: 고정 좌표로 건너뛰기 (SurfaceView 위 버튼은 dump에 안 잡힘) */
+/**
+ * 전략 2: 고정 좌표 건너뛰기 — 두 위치 모두 탭
+ * 위치 A: 플레이어 하단 우측 (미니 플레이어 광고: 플레이어 영역 내)
+ * 위치 B: 화면 하단 우측 (풀스크린/확장 플레이어 광고)
+ * 어느 위치에 버튼이 있을지 모르므로 둘 다 탭.
+ */
 async function skipAdFixedCoord() {
   const scr = await getScreen();
-  // 세로: x87.6% y85.7% (946, 1646 @1080x1920) / 가로: x88.5% y79.6% (1700, 860 @1920x1080)
-  const sx = Math.round(scr.w * 0.876);
-  const sy = Math.round(scr.h * 0.857);
-  log('광고', `고정 좌표 탭 (${sx}, ${sy})`);
-  await adb(`input tap ${sx} ${sy}`);
+
+  // 위치 A: 플레이어 하단 우측 (player_view bounds ~[0,56][1080,664] 기준)
+  // 건너뛰기 버튼은 플레이어 우하단: x~88%, y~플레이어 하단(34%)
+  const ax = Math.round(scr.w * 0.876);
+  const ay = Math.round(scr.h * 0.33);
+  log('광고', `탭 A 플레이어 내부 (${ax}, ${ay})`);
+  await adb(`input tap ${ax} ${ay}`);
+  await sleep(500);
+
+  // 위치 B: 화면 하단 우측 (풀스크린/확장 광고)
+  const bx = Math.round(scr.w * 0.876);
+  const by = Math.round(scr.h * 0.857);
+  log('광고', `탭 B 화면 하단 (${bx}, ${by})`);
+  await adb(`input tap ${bx} ${by}`);
   return true;
 }
 
@@ -247,38 +261,56 @@ async function run() {
   }
   await sleep(5000);
 
-  // 7. 프리롤 광고 건너뛰기
-  // SurfaceView 광고는 uiautomator에 안 잡힐 수 있음 → 항상 고정좌표 시도
-  log('7-광고', '6초 대기 (광고 건너뛰기 버튼 활성화 대기)...');
+  // 7. 프리롤 광고 건너뛰기 (최대 광고 2개 연속 대응, 총 5회 시도)
+  log('7-광고', '6초 대기 (첫 번째 광고 건너뛰기 버튼 활성화)...');
   await sleep(6000);
 
-  for (let i = 0; i < 3; i++) {
-    // 전략 1: XML에서 skip_ad_button / 건너뛰기 등 탐색
+  let adsSkipped = 0;
+  for (let i = 0; i < 5; i++) {
+    // 전략 1: XML에서 skip 버튼 탐색
     const skipped = await trySkipAd();
     if (skipped) {
-      log('7-광고', `✓ XML 기반 건너뛰기 성공 (${i + 1}회)`);
-      await sleep(2000);
-      break;
+      adsSkipped++;
+      log('7-광고', `✓ 광고 #${adsSkipped} XML 건너뛰기 (시도 ${i + 1})`);
+      await sleep(3000);
+      continue; // 두 번째 광고 있을 수 있음
     }
 
-    // 전략 2: XML에 없어도 무조건 고정 좌표 탭 (SurfaceView 대응)
+    // 전략 2: 고정 좌표 두 위치 탭
     log('7-광고', `고정 좌표 탭 시도 (${i + 1}회)`);
     await skipAdFixedCoord();
     await sleep(2000);
 
-    // 탭 후 광고가 사라졌는지 재생 상태로 확인
+    // 광고 끝났는지 확인: 영상 제목이 보이면 광고 끝
+    const xml = await dumpUI();
+    const hasVideoTitle = xml && xml.includes('video_title');
+    const hasAdSignal = xml && (xml.includes('ad_badge') || xml.includes('skip_ad') ||
+      xml.includes('ad_progress') || xml.includes('ad_cta'));
+
+    if (hasVideoTitle && !hasAdSignal) {
+      log('7-광고', `✓ 광고 끝남 (총 ${adsSkipped}개 건너뜀)`);
+      break;
+    }
+
+    if (hasAdSignal) {
+      adsSkipped++;
+      log('7-광고', `광고 #${adsSkipped} 감지 — 6초 대기 후 재시도`);
+      await sleep(6000);
+      continue;
+    }
+
+    // 재생 상태로 최종 확인
     try {
       const res = await adb('dumpsys media_session | grep "state="');
-      const s = out(res);
-      if (s.includes('state=3')) {
-        log('7-광고', '✓ 재생 시작됨 (광고 끝남 또는 원래 없었음)');
+      if (out(res).includes('state=3')) {
+        log('7-광고', '✓ 재생 중 확인');
         break;
       }
     } catch {}
 
-    if (i < 2) {
-      log('7-광고', '아직 광고 중 — 5초 추가 대기');
-      await sleep(5000);
+    if (i < 4) {
+      log('7-광고', '상태 불명 — 3초 대기 후 재시도');
+      await sleep(3000);
     }
   }
 

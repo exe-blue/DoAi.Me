@@ -133,10 +133,17 @@ async function trySkipAd() {
 
 async function skipAdFixedCoord() {
   const scr = await getScreen();
-  const sx = Math.round(scr.w * 0.876);
-  const sy = Math.round(scr.h * 0.857);
-  log('광고', `고정 좌표 탭 (${sx}, ${sy})`);
-  await adb(`input tap ${sx} ${sy}`);
+  // 위치 A: 플레이어 내부 우하단
+  const ax = Math.round(scr.w * 0.876);
+  const ay = Math.round(scr.h * 0.33);
+  log('광고', `탭 A 플레이어 내부 (${ax}, ${ay})`);
+  await adb(`input tap ${ax} ${ay}`);
+  await sleep(500);
+  // 위치 B: 화면 하단 우측 (풀스크린 광고)
+  const bx = Math.round(scr.w * 0.876);
+  const by = Math.round(scr.h * 0.857);
+  log('광고', `탭 B 화면 하단 (${bx}, ${by})`);
+  await adb(`input tap ${bx} ${by}`);
   return true;
 }
 
@@ -190,34 +197,38 @@ async function run() {
   log('3-선택', `✓ 영상 탭: (${midX}, ${tapY})`);
   await sleep(5000);
 
-  // 프리롤 광고 건너뛰기 — 항상 6초 대기 후 시도 (SurfaceView 대응)
-  log('4-광고', '6초 대기 (광고 건너뛰기 버튼 활성화 대기)...');
+  // 프리롤 광고 건너뛰기 (최대 2개 연속, 5회 시도)
+  log('4-광고', '6초 대기 (첫 광고 건너뛰기 활성화)...');
   await sleep(6000);
 
-  for (let i = 0; i < 3; i++) {
+  let adsSkipped = 0;
+  for (let i = 0; i < 5; i++) {
     const skipped = await trySkipAd();
     if (skipped) {
-      log('4-광고', `✓ XML 기반 건너뛰기 (${i + 1}회)`);
-      await sleep(2000);
-      break;
+      adsSkipped++;
+      log('4-광고', `✓ 광고 #${adsSkipped} 건너뛰기 (${i + 1}회)`);
+      await sleep(3000);
+      continue;
     }
 
-    log('4-광고', `고정 좌표 탭 시도 (${i + 1}회)`);
+    log('4-광고', `고정 좌표 탭 (${i + 1}회)`);
     await skipAdFixedCoord();
     await sleep(2000);
 
+    const adXml = await dumpUI();
+    const hasAd = adXml && (adXml.includes('ad_badge') || adXml.includes('skip_ad') ||
+      adXml.includes('ad_progress') || adXml.includes('ad_cta'));
+    const hasTitle = adXml && adXml.includes('video_title');
+
+    if (hasTitle && !hasAd) { log('4-광고', `✓ 광고 끝남 (${adsSkipped}개)`); break; }
+    if (hasAd) { adsSkipped++; log('4-광고', `광고 #${adsSkipped} — 6초 대기`); await sleep(6000); continue; }
+
     try {
       const res = await adb('dumpsys media_session | grep "state="');
-      if (out(res).includes('state=3')) {
-        log('4-광고', '✓ 재생 시작됨');
-        break;
-      }
+      if (out(res).includes('state=3')) { log('4-광고', '✓ 재생 중'); break; }
     } catch {}
 
-    if (i < 2) {
-      log('4-광고', '아직 광고 중 — 5초 추가 대기');
-      await sleep(5000);
-    }
+    if (i < 4) { await sleep(3000); }
   }
 
   // Ensure playing
