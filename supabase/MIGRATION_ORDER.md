@@ -25,6 +25,7 @@ Supabase를 새로 세팅했거나 스키마를 복구할 때, 아래 순서대�
 | 15 | `20260213080500_step10_task_devices_config.sql` | task_devices.config (repair에 반영됨) |
 | 16 | `20260213080600_step11_channels_content.sql` | channels/videos 컬럼 |
 | 17 | `20260213_step12_task_queue_schedules.sql` | task_queue, task_schedules |
+| 18 | `20260226140000_task_devices_refill_on_complete.sql` | 한 대 완료 시 같은 task에 pending 1건 리필 트리거 |
 
 **요약:**  
 - 이미 테이블이 있으면 `00001`, `00002`는 건너뛰고, **`20260215000000_repair_schema.sql`** 만 실행해도 누락된 테이블(task_devices, system_events)과 컬럼을 채울 수 있습니다.  

@@ -54,17 +54,22 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [edited, setEdited] = useState<Record<string, string>>({});
 
-  const { data: settingsData, isLoading: settingsLoading, mutate: mutateSettings } = useSWR<Setting[]>(
+  const { data: settingsData, isLoading: settingsLoading, mutate: mutateSettings } = useSWR<{ settings: Record<string, { value: unknown; description?: string | null }> }>(
     "/api/settings",
     fetcher
   );
-  const { data: schedulesData, isLoading: schedulesLoading, mutate: mutateSchedules } = useSWR<Schedule[]>(
+  const { data: schedulesData, isLoading: schedulesLoading, mutate: mutateSchedules } = useSWR<{ schedules: Schedule[] }>(
     "/api/schedules",
     fetcher
   );
 
-  const settingsList = Array.isArray(settingsData) ? settingsData : (settingsData as { settings?: Setting[] })?.settings ?? [];
-  const schedules = Array.isArray(schedulesData) ? schedulesData : (schedulesData as { schedules?: Schedule[] })?.schedules ?? [];
+  const settingsRecord = settingsData?.settings ?? {};
+  const settingsList: Setting[] = Object.entries(settingsRecord).map(([key, v]) => ({
+    key,
+    value: typeof v.value === "string" ? v.value : JSON.stringify(v.value ?? ""),
+    description: v.description ?? undefined,
+  }));
+  const schedules = schedulesData?.schedules ?? [];
 
   const editedMap = Object.keys(edited).length > 0 ? edited : Object.fromEntries(
     settingsList.map((s) => [s.key, s.value ?? ""])
@@ -72,16 +77,10 @@ export default function SettingsPage() {
 
   const handleSave = useCallback(async () => {
     const entries = Object.entries(editedMap).map(([key, value]) => ({ key, value }));
-    const prev = Object.fromEntries(settingsList.map((s) => [s.key, s.value ?? ""]));
-    setEdited(editedMap);
-    mutateSettings(
-      (current) => (Array.isArray(current) ? current.map((s) => ({ ...s, value: editedMap[s.key] ?? s.value })) : current),
-      false
-    );
     setSaving(true);
     setSaved(false);
     const res = await apiClient.put("/api/settings", {
-      body: { settings: entries },
+      body: Object.fromEntries(entries.map((e) => [e.key, e.value])),
     });
     setSaving(false);
     if (res.success) {
@@ -89,10 +88,9 @@ export default function SettingsPage() {
       mutateSettings();
       setTimeout(() => setSaved(false), 3000);
     } else {
-      mutateSettings(prev as unknown as Promise<Setting[]>, false);
-      setEdited(prev);
+      mutateSettings();
     }
-  }, [editedMap, settingsList, mutateSettings]);
+  }, [editedMap, mutateSettings]);
 
   const handleDeleteSchedule = async (id: string) => {
     const res = await apiClient.delete(`/api/schedules/${id}`);

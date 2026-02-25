@@ -7,11 +7,28 @@ import { createAuthServerClient } from "@/lib/supabase/auth-server";
 
 export const dynamic = "force-dynamic";
 
+function sortTasksByPriority<T extends { source?: string | null; priority?: number | null; createdAt?: string }>(
+  items: T[]
+): T[] {
+  return [...items].sort((a, b) => {
+    const aManual = (a.source ?? "channel_auto") === "manual" ? 0 : 1;
+    const bManual = (b.source ?? "channel_auto") === "manual" ? 0 : 1;
+    if (aManual !== bManual) return aManual - bManual;
+    const pa = a.priority ?? 5;
+    const pb = b.priority ?? 5;
+    if (pa !== pb) return pb - pa;
+    const ta = a.createdAt ?? "";
+    const tb = b.createdAt ?? "";
+    return new Date(tb).getTime() - new Date(ta).getTime();
+  });
+}
+
 export async function GET() {
   try {
     const rows = await getTasksWithDetails();
     const tasks = rows.map((row) => mapTaskRow(row as any));
-    return NextResponse.json({ tasks });
+    const sorted = sortTasksByPriority(tasks);
+    return NextResponse.json({ tasks: sorted });
   } catch (error) {
     console.error("Error fetching tasks:", error);
     return NextResponse.json(
@@ -47,9 +64,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const { contentMode, videoId, channelId, videoIds, distribution, workerId, deviceCount, variables } = result.data;
+      const { contentMode, videoId, channelId, videoIds, distribution, workerId, deviceCount, variables, source, priority } = result.data;
 
-      // Merge with defaults for variables
       const fullVariables = variables ? {
         watchPercent: variables.watchPercent ?? 80,
         commentProb: variables.commentProb ?? 10,
@@ -68,6 +84,8 @@ export async function POST(request: NextRequest) {
         variables: fullVariables,
         workerId,
         createdByUserId,
+        source: source ?? (priority != null && priority >= 6 ? "manual" : undefined),
+        priority: priority ?? (source === "manual" ? 8 : undefined),
       });
 
       return NextResponse.json(task, { status: 201 });
@@ -82,9 +100,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { videoId, channelId, workerId, deviceCount, variables } = result.data;
+    const { videoId, channelId, workerId, deviceCount, variables, source, priority } = result.data;
 
-    // Merge with defaults for variables
     const fullVariables = variables ? {
       watchPercent: variables.watchPercent ?? 80,
       commentProb: variables.commentProb ?? 10,
@@ -98,6 +115,8 @@ export async function POST(request: NextRequest) {
       variables: fullVariables,
       workerId,
       createdByUserId,
+      source: source ?? (priority != null && priority >= 6 ? "manual" : undefined),
+      priority: priority ?? (source === "manual" ? 8 : undefined),
     });
 
     return NextResponse.json(task, { status: 201 });

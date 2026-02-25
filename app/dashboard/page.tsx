@@ -68,6 +68,8 @@ interface TaskListItem {
   title?: string;
   createdAt?: string;
   completedAt?: string;
+  source?: "manual" | "channel_auto" | null;
+  priority?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,9 +388,20 @@ function RecentTasks({ tasks, loading, error, onRetry }: {
         ) : (
           list.map((t) => (
             <div key={t.id} className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2">
-              <span className="font-mono text-[11px] text-foreground truncate flex-1" title={t.id}>
-                {t.title || t.id.slice(0, 8)}
-              </span>
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className={cn(
+                  "font-mono text-[11px] text-foreground truncate",
+                  t.source === "manual" && "font-semibold"
+                )} title={t.id}>
+                  {t.title || t.id.slice(0, 8)}
+                </span>
+                {t.source === "manual" && (
+                  <span className="shrink-0 rounded bg-blue-500/20 px-1 py-0.5 text-[8px] font-medium text-blue-400">직접</span>
+                )}
+                {t.source === "channel_auto" && (
+                  <span className="shrink-0 rounded bg-green-500/20 px-1 py-0.5 text-[8px] font-medium text-green-400">자동</span>
+                )}
+              </div>
               <span className={cn(
                 "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
                 t.status === "completed" || t.status === "done" ? "bg-status-success/20 text-status-success" :

@@ -33,14 +33,13 @@ export async function upsertVideo(video: {
   channel_name?: string | null;
   thumbnail_url?: string | null;
   duration_sec?: number | null;
+  source?: "manual" | "channel_auto" | null;
 }) {
   const supabase = createServerClient();
+  const row = { ...video, updated_at: new Date().toISOString() } as any;
   const { data, error } = await supabase
     .from("videos")
-    .upsert(
-      { ...video, updated_at: new Date().toISOString() } as any,
-      { onConflict: "id" }
-    )
+    .upsert(row, { onConflict: "id" })
     .select()
     .returns<VideoRow[]>()
     .single();
@@ -87,8 +86,18 @@ export async function createVideo(video: {
   id: string;
   title: string;
   channel_name?: string | null;
+  thumbnail_url?: string | null;
+  duration_sec?: number | null;
   priority?: string | null;
   status?: string | null;
+  source?: "manual" | "channel_auto" | null;
+  target_views?: number | null;
+  prob_like?: number | null;
+  prob_comment?: number | null;
+  watch_duration_sec?: number | null;
+  watch_duration_min_pct?: number | null;
+  watch_duration_max_pct?: number | null;
+  prob_subscribe?: number | null;
 }) {
   const supabase = createServerClient();
   const { data, error } = await supabase
@@ -128,6 +137,13 @@ export async function updateVideo(
     priority?: string | null;
     status?: string | null;
     duration_sec?: number | null;
+    target_views?: number | null;
+    prob_like?: number | null;
+    prob_comment?: number | null;
+    watch_duration_sec?: number | null;
+    watch_duration_min_pct?: number | null;
+    watch_duration_max_pct?: number | null;
+    prob_subscribe?: number | null;
   }
 ) {
   const supabase = createServerClient();

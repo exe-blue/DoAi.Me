@@ -348,10 +348,27 @@ export class SupabaseSync {
   // ── tasks (레거시 — ADB/스크립트 등 범용 태스크) ─────────
 
   async fetchPendingTasks(): Promise<TaskRow[]> {
+    // PC 단위 가드레일: 이 PC에 배정된 pending task_device가 있는 task만 가져옴 (다른 PC 태스크를 불러오지 않음)
+    const { data: taskIds, error: tdError } = await this.supabase
+      .from("task_devices")
+      .select("task_id")
+      .eq("pc_id", this.pcId)
+      .in("status", ["pending"])
+      .limit(50);
+
+    if (tdError || !taskIds?.length) {
+      if (tdError) log.error("fetchPendingTasks task_devices failed", { error: tdError.message });
+      const distinctIds = [...new Set((taskIds ?? []).map((r) => r.task_id))];
+      if (distinctIds.length === 0) return [];
+    }
+
+    const distinctIds = [...new Set((taskIds ?? []).map((r) => r.task_id))];
+    if (distinctIds.length === 0) return [];
+
     const { data, error } = await this.supabase
       .from("tasks")
       .select("*")
-      .eq("pc_id", this.pcId)
+      .in("id", distinctIds)
       .in("status", ["pending"])
       .order("created_at", { ascending: true })
       .limit(10);

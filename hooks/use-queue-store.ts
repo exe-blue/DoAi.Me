@@ -11,6 +11,7 @@ export interface QueueItem {
   dispatched_task_id: string | null;
   created_at: string;
   dispatched_at: string | null;
+  source?: "manual" | "channel_auto" | null;
 }
 
 interface QueueStats {

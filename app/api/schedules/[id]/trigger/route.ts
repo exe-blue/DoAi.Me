@@ -31,17 +31,23 @@ export async function POST(
       throw fetchErr;
     }
 
-    // Insert into task_queue
+    const insertRow: Record<string, unknown> = {
+      task_config: {
+        ...schedule.task_config,
+        _schedule_id: schedule.id,
+        _manual_trigger: true,
+      },
+      priority: 5,
+      status: "queued",
+    };
+    try {
+      const { data: probe } = await tq(supabase).select("source").limit(1).maybeSingle();
+      if (probe && "source" in probe) insertRow.source = "channel_auto";
+    } catch {
+      // source column may not exist
+    }
     const { data: queueItem, error: insertErr } = await tq(supabase)
-      .insert({
-        task_config: {
-          ...schedule.task_config,
-          _schedule_id: schedule.id,
-          _manual_trigger: true,
-        },
-        priority: 0,
-        status: "queued",
-      })
+      .insert(insertRow)
       .select()
       .single();
 
