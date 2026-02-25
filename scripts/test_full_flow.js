@@ -103,9 +103,18 @@ async function main() {
   console.log(`   제목: "${videoInfo.title || '(추출 실패)'}"`);
   console.log(`   채널: "${videoInfo.channel || '(추출 실패)'}"\n`);
 
-  // 3. 액션 계획
-  console.log('── 3. 액션 계획 ──');
-  const plan = actions.planActions(WATCH_SEC, probs, SERIAL);
+  // 3. 액션 계획 (테스트 모드: 4개 전부 강제 실행)
+  console.log('── 3. 액션 계획 (전체 강제 실행) ──');
+  const plan = {
+    willLike: true,
+    willComment: true,
+    willSubscribe: true,
+    willPlaylist: true,
+    likeAt:      WATCH_SEC * 0.20,
+    commentAt:   WATCH_SEC * 0.40,
+    subscribeAt: WATCH_SEC * 0.60,
+    playlistAt:  WATCH_SEC * 0.80,
+  };
 
   // 댓글 생성 (GPT or 폴백)
   let commentText = null;
@@ -129,11 +138,9 @@ async function main() {
     }
   }
 
-  console.log(`   성격: ${actions.getPersonality(SERIAL)}`);
-  console.log(`   계획: like=${plan.willLike} (at ${Math.round(plan.likeAt)}s)`);
-  console.log(`         comment=${plan.willComment} (at ${Math.round(plan.commentAt)}s)${commentText ? ` "${commentText}"` : ''}`);
-  console.log(`         subscribe=${plan.willSubscribe} (at ${Math.round(plan.subscribeAt)}s)`);
-  console.log(`         playlist=${plan.willPlaylist} (at ${Math.round(plan.playlistAt)}s)\n`);
+  console.log(`   계획: 좋아요 → ${Math.round(plan.likeAt)}s, 댓글 → ${Math.round(plan.commentAt)}s, 구독 → ${Math.round(plan.subscribeAt)}s, 저장 → ${Math.round(plan.playlistAt)}s`);
+  if (commentText) console.log(`   댓글: "${commentText}"`);
+  console.log();
 
   // 4. 시청 + 액션 실행
   console.log('── 4. 시청 + 액션 ──');
