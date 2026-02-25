@@ -187,26 +187,28 @@ async function run() {
   scr = await getScreen();
   log('5-검색', `✓ 검색 결과 페이지 열림 (${scr.w}x${scr.h} ${scr.landscape ? '가로' : '세로'})`);
 
-  // 6. 검색 결과에서 스크롤 + 영상 선택
+  // 6. 검색 결과에서 영상 선택 (광고면 스크롤, 아니면 바로 탭)
   const midX = Math.round(scr.w / 2);
 
   // UI dump로 첫 번째 결과가 광고인지 확인
   let xml = await dumpUI();
   const hasAdLabel = xml.includes('광고') || xml.includes('Ad ·') || xml.includes('Sponsored');
+
   if (hasAdLabel) {
-    log('6-선택', '⚠ 첫 결과가 광고 — 스크롤해서 건너뛰기');
+    log('6-선택', '⚠ 첫 결과가 광고 — 스크롤 후 선택');
+    const fromY = Math.round(scr.h * 0.75);
+    const toY = Math.round(scr.h * 0.25);
+    await adb(`input swipe ${midX} ${fromY} ${midX} ${toY} 400`);
+    await sleep(2000);
+    const tapY = Math.round(scr.h * 0.35);
+    log('6-선택', `영상 탭: (${midX}, ${tapY})`);
+    await adb(`input tap ${midX} ${tapY}`);
+  } else {
+    // 광고 아님 → 첫 번째 결과 바로 탭 (검색 결과 상단 영역)
+    const tapY = Math.round(scr.h * 0.35);
+    log('6-선택', `✓ 광고 없음 — 첫 결과 바로 탭: (${midX}, ${tapY})`);
+    await adb(`input tap ${midX} ${tapY}`);
   }
-
-  // 스크롤 1회 (광고 + 상단 UI 지나감)
-  const fromY = Math.round(scr.h * 0.75);
-  const toY = Math.round(scr.h * 0.25);
-  await adb(`input swipe ${midX} ${fromY} ${midX} ${toY} 400`);
-  await sleep(2000);
-
-  // 화면 중간 영역의 영상 썸네일 탭
-  const tapY = Math.round(scr.h * 0.35);
-  log('6-선택', `영상 탭: (${midX}, ${tapY})`);
-  await adb(`input tap ${midX} ${tapY}`);
   await sleep(5000);
 
   // 7. 프리롤 광고 건너뛰기 (최대 3회)
