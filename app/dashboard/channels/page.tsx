@@ -91,7 +91,9 @@ function parseChannelInput(input: string): { handle?: string; channelId?: string
   if (/^@[\w-]+$/i.test(t)) return { handle: t };
   try {
     const u = new URL(t.startsWith("http") ? t : `https://${t}`);
-    if (u.hostname.includes("youtube.com")) {
+    const allowedHosts = ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"];
+    const host = u.hostname.toLowerCase();
+    if (allowedHosts.includes(host)) {
       const handleMatch = u.pathname.match(/\/@([\w-]+)/);
       if (handleMatch) return { handle: `@${handleMatch[1]}` };
       const channelMatch = u.pathname.match(/\/channel\/(UC[\w-]+)/);
