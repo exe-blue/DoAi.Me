@@ -356,12 +356,10 @@ export class SupabaseSync {
       .in("status", ["pending"])
       .limit(50);
 
-    if (tdError || !taskIds?.length) {
-      if (tdError) log.error("fetchPendingTasks task_devices failed", { error: tdError.message });
-      const distinctIds = [...new Set((taskIds ?? []).map((r) => r.task_id))];
-      if (distinctIds.length === 0) return [];
+    if (tdError) {
+      log.error("fetchPendingTasks task_devices failed", { error: tdError.message });
+      return [];
     }
-
     const distinctIds = [...new Set((taskIds ?? []).map((r) => r.task_id))];
     if (distinctIds.length === 0) return [];
 

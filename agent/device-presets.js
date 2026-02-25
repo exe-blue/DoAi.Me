@@ -623,10 +623,46 @@ async function init(xiaowei, serial, supabase, pcId) {
   // 4. 최적화
   const optResult = await optimize(xiaowei, serial);
 
-  // 5. YouTube 테스트
+  // 5. 프록시 자동 할당 (해당 PC의 미할당 프록시 1개 claim → devices.proxy_id + proxies.device_id 갱신 후 ADB 적용)
+  if (supabase && pcId) {
+    try {
+      const { data: deviceRow, error: devErr } = await supabase
+        .from("devices")
+        .select("id, proxy_id")
+        .eq("serial_number", serial)
+        .maybeSingle();
+
+      if (!devErr && deviceRow && !deviceRow.proxy_id) {
+        const { data: proxyRow, error: proxyErr } = await supabase
+          .from("proxies")
+          .select("id, address, username, password, type")
+          .eq("worker_id", pcId)
+          .is("device_id", null)
+          .limit(1)
+          .maybeSingle();
+
+        if (!proxyErr && proxyRow) {
+          await supabase.from("proxies").update({ device_id: deviceRow.id }).eq("id", proxyRow.id);
+          await supabase.from("devices").update({ proxy_id: proxyRow.id }).eq("id", deviceRow.id);
+
+          const [host, port] = (proxyRow.address || "").split(":");
+          if (host && port) {
+            await xiaowei.adbShell(serial, `settings put global http_proxy ${host}:${port}`);
+            console.log(`[Preset:Init] ${serial.substring(0, 6)} — proxy assigned and applied: ${proxyRow.address}`);
+          }
+        } else {
+          console.warn(`[Preset:Init] ${serial.substring(0, 6)} — no unassigned proxy for this PC; skipping`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Preset:Init] proxy auto-assign error: ${err.message}`);
+    }
+  }
+
+  // 6. YouTube 테스트
   const testResult = await ytTest(xiaowei, serial);
 
-  // 6. DB 상태 업데이트
+  // 7. DB 상태 업데이트
   const finalStatus = testResult.pass ? "online" : "error";
   if (supabase) {
     try {

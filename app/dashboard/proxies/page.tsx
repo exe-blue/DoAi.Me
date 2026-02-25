@@ -14,6 +14,8 @@ import {
   XCircle,
   AlertTriangle,
   Trash2,
+  Globe,
+  Smartphone,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -77,6 +79,23 @@ const ST: Record<
 };
 
 const PROXIES_KEY = "/api/proxies";
+const DEVICES_KEY = "/api/devices";
+const WORKERS_KEY = "/api/workers";
+
+interface DeviceRow {
+  id: string;
+  pc_id: string | null;
+  proxy_id: string | null;
+  management_code: string | null;
+  serial_number?: string | null;
+  name?: string | null;
+}
+
+interface WorkerRow {
+  id: string;
+  pc_number?: string | null;
+  hostname?: string | null;
+}
 
 export default function ProxiesPage() {
   const [search, setSearch] = useState("");
@@ -84,14 +103,27 @@ export default function ProxiesPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [viewTab, setViewTab] = useState<"proxy" | "device">("proxy");
 
   const { data, error, isLoading, mutate } = useSWR<{ proxies: Proxy[] }>(
     PROXIES_KEY,
     fetcher,
     { refreshInterval: 30_000 }
   );
+  const { data: devicesData } = useSWR<{ devices: DeviceRow[] }>(
+    DEVICES_KEY,
+    fetcher,
+    { refreshInterval: 30_000 }
+  );
+  const { data: workersData } = useSWR<{ workers: WorkerRow[] }>(
+    WORKERS_KEY,
+    fetcher,
+    { refreshInterval: 30_000 }
+  );
 
   const proxies = data?.proxies ?? [];
+  const devices = devicesData?.devices ?? [];
+  const workers = workersData?.workers ?? [];
 
   const filtered = useMemo(() => {
     return proxies.filter((p) => {
@@ -109,6 +141,22 @@ export default function ProxiesPage() {
     });
   }, [proxies, statusFilter, search]);
 
+  const deviceLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of devices) {
+      const pc = workers.find((w) => w.id === d.pc_id);
+      const pcNum = pc?.pc_number ?? "?";
+      const code = d.management_code ?? d.serial_number ?? d.id.slice(0, 8);
+      map.set(d.id, `${pcNum}-${code}`);
+    }
+    return map;
+  }, [devices, workers]);
+
+  const unassignedDevicesCount = useMemo(
+    () => devices.filter((d) => !d.proxy_id).length,
+    [devices]
+  );
+
   const counts = useMemo(
     () => ({
       total: proxies.length,
@@ -119,8 +167,10 @@ export default function ProxiesPage() {
       unassigned: proxies.filter(
         (p) => !p.device_serial && !p.device_id
       ).length,
+      unassignedDevices: unassignedDevicesCount,
+      totalDevices: devices.length,
     }),
-    [proxies]
+    [proxies, unassignedDevicesCount, devices.length]
   );
 
   const handleBulkAdd = async () => {
@@ -171,20 +221,45 @@ export default function ProxiesPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">프록시</h1>
           <p className="text-sm text-slate-500">
-            {counts.total}개 등록 · {counts.active} 활성 · {counts.unassigned}{" "}
-            미할당
+            {counts.total}개 등록 · {counts.active} 활성 · {counts.unassigned} 프록시 미할당
+            {counts.totalDevices > 0 && ` · 기기 ${counts.totalDevices}대 중 ${counts.unassignedDevices}대 미할당`}
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
-        <MiniStat label="전체" value={counts.total} color="blue" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MiniStat label="전체 프록시" value={counts.total} color="blue" />
         <MiniStat label="활성" value={counts.active} color="green" />
         <MiniStat label="무효" value={counts.invalid} color="red" />
-        <MiniStat label="미할당" value={counts.unassigned} color="amber" />
+        <MiniStat label="프록시 미할당" value={counts.unassigned} color="amber" />
       </div>
 
-      <div className="flex gap-2">
+      {counts.unassignedDevices > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3">
+          <Smartphone className="h-5 w-5 shrink-0 text-amber-400" />
+          <span className="text-sm font-medium text-amber-200">
+            미할당 기기: <strong>{counts.unassignedDevices}</strong>대
+          </span>
+          <span className="text-xs text-amber-200/80">
+            (전체 기기 {counts.totalDevices}대 중 프록시가 배정되지 않은 기기)
+          </span>
+          <Button
+            onClick={handleAutoAssign}
+            size="sm"
+            disabled={actionLoading === "assign"}
+            className="ml-auto gap-1.5 bg-amber-600 hover:bg-amber-500"
+          >
+            {actionLoading === "assign" ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Globe className="h-3.5 w-3.5" />
+            )}
+            전체 자동 할당
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={() => setBulkOpen(true)}
           variant="outline"
@@ -205,7 +280,7 @@ export default function ProxiesPage() {
           ) : (
             <Wand2 className="mr-1.5 h-3.5 w-3.5" />
           )}
-          자동 할당
+          전체 자동 할당
         </Button>
         <div className="flex-1" />
         <div className="relative">
@@ -230,6 +305,35 @@ export default function ProxiesPage() {
         </Select>
       </div>
 
+      <div className="flex gap-1 rounded-lg border border-[#1e2130] bg-[#12141d] p-1">
+        <button
+          type="button"
+          onClick={() => setViewTab("proxy")}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            viewTab === "proxy"
+              ? "bg-primary text-primary-foreground"
+              : "text-slate-400 hover:text-white"
+          )}
+        >
+          <Shield className="mr-1.5 inline h-3.5 w-3.5" />
+          프록시 기준
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewTab("device")}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            viewTab === "device"
+              ? "bg-primary text-primary-foreground"
+              : "text-slate-400 hover:text-white"
+          )}
+        >
+          <Smartphone className="mr-1.5 inline h-3.5 w-3.5" />
+          기기 기준
+        </button>
+      </div>
+
       {error && (
         <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-center text-sm text-red-400">
           목록을 불러오지 못했습니다.{" "}
@@ -249,6 +353,57 @@ export default function ProxiesPage() {
           {[1, 2, 3, 4, 5, 6, 7].map((i) => (
             <Skeleton key={i} className="h-11 w-full" />
           ))}
+        </div>
+      ) : viewTab === "device" ? (
+        <div className="overflow-hidden rounded-xl border border-[#1e2130] bg-[#12141d]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#1e2130] text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3">기기</th>
+                <th className="px-4 py-3">PC</th>
+                <th className="px-4 py-3">프록시</th>
+                <th className="px-4 py-3">주소</th>
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map((d) => {
+                const proxy = d.proxy_id ? proxies.find((p) => p.id === d.proxy_id) : null;
+                const pc = workers.find((w) => w.id === d.pc_id);
+                const label = deviceLabelMap.get(d.id) ?? d.management_code ?? d.serial_number ?? d.id.slice(0, 8);
+                return (
+                  <tr
+                    key={d.id}
+                    className="border-b border-[#1e2130]/50 transition-colors hover:bg-[#1a1d2e]/30"
+                  >
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-300">{label}</td>
+                    <td className="px-4 py-2.5 text-xs text-slate-400">{pc?.pc_number ?? pc?.hostname ?? "—"}</td>
+                    <td className="px-4 py-2.5">
+                      {proxy ? (
+                        <span className="flex items-center gap-1.5 text-xs text-green-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> 배정됨
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-400">미할당</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                      {proxy?.address ?? "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {devices.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-600">
+                    등록된 기기 없음
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="border-t border-[#1e2130] px-4 py-2 text-xs text-slate-500">
+            기기 {devices.length}대 · 미할당 {counts.unassignedDevices}대
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-[#1e2130] bg-[#12141d]">
@@ -298,9 +453,11 @@ export default function ProxiesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
-                      {p.device_serial ?? p.device_id ?? (
-                        <span className="text-slate-600">미할당</span>
-                      )}
+                      {p.device_id
+                        ? (deviceLabelMap.get(p.device_id) ?? p.device_serial ?? p.device_id.slice(0, 8))
+                        : (p.device_serial ? String(p.device_serial) : (
+                            <span className="text-slate-600">미할당</span>
+                          ))}
                     </td>
                     <td className="px-4 py-2.5">
                       <span

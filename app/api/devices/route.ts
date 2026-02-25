@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       .order("last_seen", { ascending: false });
 
     if (workerId) {
-      query = query.eq("worker_id", workerId);
+      query = query.eq("pc_id", workerId);
     }
     if (status) {
       query = query.eq("status", status as any);
