@@ -379,18 +379,20 @@ class YTActions {
       if (!found) found = await this.player.findAndTap(serial, { resourceId: RES.SAVE_MENU });
       if (!found) found = await this.player.findAndTap(serial, { contentDesc: '저장' });
 
-      // 2. 못 찾으면 버튼 행(y52%)에서 좌로 스크롤하여 노출
+      // 2. 못 찾으면 버튼 행(y52%)에서 좌로 스크롤 (최대 2회)
       if (!found) {
-        console.log(`${tag} 저장 버튼 안 보임 → 좌로 스크롤 (y=${btnY})`);
-        await this.player.adb(serial,
-          `input swipe ${Math.round(scr.w * 0.80)} ${btnY} ${Math.round(scr.w * 0.20)} ${btnY} 400`);
-        await _sleep(1500);
+        for (let swipeN = 1; swipeN <= 2; swipeN++) {
+          console.log(`${tag} 저장 버튼 안 보임 → 좌로 스크롤 ${swipeN}회 (y=${btnY})`);
+          await this.player.adb(serial,
+            `input swipe ${Math.round(scr.w * 0.80)} ${btnY} ${Math.round(scr.w * 0.20)} ${btnY} 400`);
+          await _sleep(1500);
 
-        // 스크롤 후 다시 찾기
-        found = await this.player.findAndTap(serial, { resourceId: RES.SAVE_PLAYLIST });
-        if (!found) found = await this.player.findAndTap(serial, { resourceId: RES.SAVE_MENU });
-        if (!found) found = await this.player.findAndTap(serial, { contentDesc: '저장' });
-        if (!found) found = await this.player.findAndTap(serial, { textContains: '저장' });
+          found = await this.player.findAndTap(serial, { resourceId: RES.SAVE_PLAYLIST });
+          if (!found) found = await this.player.findAndTap(serial, { resourceId: RES.SAVE_MENU });
+          if (!found) found = await this.player.findAndTap(serial, { contentDesc: '저장' });
+          if (!found) found = await this.player.findAndTap(serial, { textContains: '저장' });
+          if (found) break;
+        }
       }
 
       if (!found) {
