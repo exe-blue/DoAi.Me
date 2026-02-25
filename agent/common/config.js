@@ -217,13 +217,38 @@ class AgentConfig extends EventEmitter {
 
 /** 상수 정의 */
 const CONSTANTS = {
+  // 물리 환경
   MAX_DEVICES_PER_PC: 100,
   DEVICES_PER_GROUP: 20,
   PC_COUNT: 5,
   TOTAL_DEVICES: 500,
   SCREEN_WIDTH: 1080,
   SCREEN_HEIGHT: 1920,
-  STALE_THRESHOLD_MS: 30 * 60 * 1000,
+
+  // 타임아웃
+  STALE_THRESHOLD_MS: 30 * 60 * 1000,      // 30분
+  DEAD_THRESHOLD_MS: 90 * 1000,             // 90초 (하트비트)
+
+  // 계정 운영
+  ACCOUNT_MAX_CONTINUOUS_HOURS: 4,           // 연속 활동 최대 시간
+  ACCOUNT_COOLDOWN_MINUTES: 30,              // 과활동 후 쿨다운
+  ACCOUNT_WARMUP_DAYS: 3,                    // 신규 계정 워밍업 기간
+  ACCOUNT_ROTATION_PER_DEVICE_PER_DAY: 3,   // 기기당 일일 로테이션
+
+  // 프록시 운영
+  PROXY_MAX_DEVICES: 5,                      // 프록시당 최대 기기
+  PROXY_HEALTH_CHECK_MS: 5 * 60 * 1000,     // 5분
+  PROXY_FAIL_THRESHOLD: 3,                   // 연속 실패 → invalid
+
+  // 봇 감지 대응
+  BOT_COOLDOWN_CAPTCHA_MIN: 120,             // 캡차 → 2시간 쿨다운
+  BOT_COOLDOWN_LOGIN_MIN: 30,                // 로그인 요구 → 30분
+  BOT_MAX_LIKES_PER_HOUR: 10,               // 시간당 좋아요 제한
+  BOT_MAX_COMMENTS_PER_HOUR: 3,             // 시간당 댓글 제한
+
+  // 로그
+  LOG_RETENTION_DAYS: 7,                     // 프로덕션 로그 보관
+  LOG_RETENTION_DAYS_DEV: 14,                // 개발 로그 보관
 };
 
 // Export singleton

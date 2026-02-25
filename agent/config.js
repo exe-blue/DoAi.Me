@@ -7,6 +7,7 @@
 const EventEmitter = require("events");
 require("dotenv").config();
 
+// Env validation (warn, don't exit — tests may not have env vars)
 const requiredEnv = [
   ["SUPABASE_URL", process.env.SUPABASE_URL],
   ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
@@ -14,8 +15,7 @@ const requiredEnv = [
 ];
 for (const [name, val] of requiredEnv) {
   if (val === undefined || val === "") {
-    console.error(`[Config] Missing required env: ${name}`);
-    process.exit(1);
+    console.warn(`[Config] ⚠ Missing env: ${name} (required for production)`);
   }
 }
 
