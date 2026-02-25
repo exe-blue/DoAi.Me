@@ -64,15 +64,16 @@ const navGroups = [
   {
     label: "",
     items: [
-      { href: "/dashboard/presets", label: "명령 모듈", icon: Zap },
-      { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
-      { href: "/dashboard/logs", label: "작업로그", icon: FileText },
-      { href: "/dashboard/errors", label: "디바이스 에러", icon: AlertTriangle },
+      { href: "/dashboard/tasks", label: "작업관리", icon: ListOrdered },
+      { href: "/dashboard/presets", label: "명령모듈", icon: Zap },
+      { href: "/dashboard/adb", label: "ADB콘솔", icon: Terminal },
     ],
   },
   {
     label: "",
     items: [
+      { href: "/dashboard/logs", label: "로그", icon: FileText },
+      { href: "/dashboard/errors", label: "에러", icon: AlertTriangle },
       { href: "/dashboard/settings", label: "설정", icon: Settings },
     ],
   },
