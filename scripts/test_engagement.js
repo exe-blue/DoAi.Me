@@ -99,40 +99,43 @@ async function findAllMatches(pattern) {
   return results;
 }
 
-/** 광고 건너뛰기: 1회 dump에서 바로 좌표 추출 + 탭 */
+/** 광고 건너뛰기 (전략 1: XML bounds, 전략 2: 고정 좌표 946,1646) */
 async function trySkipAd() {
   const xml = await dumpUI();
-  if (!xml) return false;
-
-  const keywords = ['skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
-  for (const kw of keywords) {
-    if (!xml.includes(kw)) continue;
-
-    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patterns = [
-      new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
-      new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
-    ];
-
-    for (const re of patterns) {
-      const m = xml.match(re);
-      if (m) {
-        const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
-        const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
-        log('광고', `"${kw}" 발견 → 탭 (${cx}, ${cy})`);
-        await adb(`input tap ${cx} ${cy}`);
-        return true;
+  if (xml) {
+    const keywords = ['skip_ad_button', 'skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
+    for (const kw of keywords) {
+      if (!xml.includes(kw)) continue;
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patterns = [
+        new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
+        new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
+      ];
+      for (const re of patterns) {
+        const m = xml.match(re);
+        if (m) {
+          const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
+          const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
+          log('광고', `"${kw}" XML에서 발견 → 탭 (${cx}, ${cy})`);
+          await adb(`input tap ${cx} ${cy}`);
+          return true;
+        }
       }
     }
-
-    const scr = await getScreen();
-    const sx = Math.round(scr.w * 0.85);
-    const sy = Math.round(scr.h * 0.22);
-    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭 (${sx}, ${sy})`);
-    await adb(`input tap ${sx} ${sy}`);
-    return true;
+    if (xml.includes('광고') || xml.includes('ad_badge') || xml.includes('Ad')) {
+      return await skipAdFixedCoord();
+    }
   }
   return false;
+}
+
+async function skipAdFixedCoord() {
+  const scr = await getScreen();
+  const sx = Math.round(scr.w * 0.876);
+  const sy = Math.round(scr.h * 0.857);
+  log('광고', `고정 좌표 탭 (${sx}, ${sy})`);
+  await adb(`input tap ${sx} ${sy}`);
+  return true;
 }
 
 async function run() {
@@ -185,22 +188,30 @@ async function run() {
   log('3-선택', `✓ 영상 탭: (${midX}, ${tapY})`);
   await sleep(5000);
 
-  // 프리롤 광고 건너뛰기 (최대 3회, 5초 간격)
+  // 프리롤 광고 건너뛰기 (6초 대기 → 탭)
+  log('4-광고', '광고 확인 중...');
   for (let i = 0; i < 3; i++) {
-    const skipped = await trySkipAd();
-    if (skipped) {
-      log('4-광고', `건너뛰기 성공 (${i + 1}회)`);
+    const adXml = await dumpUI();
+    const hasAd = adXml && (adXml.includes('ad_badge') || adXml.includes('skip_ad') ||
+      adXml.includes('건너뛰기') || adXml.includes('광고'));
+
+    if (!hasAd && i === 0) {
+      await sleep(6000);
+      const skipped = await trySkipAd();
+      if (skipped) { log('4-광고', '✓ 광고 건너뛰기 완료'); await sleep(2000); }
+      else { log('4-광고', '✓ 광고 없음'); }
+      break;
+    }
+
+    if (hasAd) {
+      log('4-광고', `광고 감지 (${i + 1}회) — 6초 대기`);
+      await sleep(6000);
+      const skipped = await trySkipAd();
+      if (!skipped) await skipAdFixedCoord();
       await sleep(2000);
     } else {
-      // 광고 카운트다운 중일 수 있음 (아직 건너뛰기 버튼 안 나옴)
-      const adXml = await dumpUI();
-      if (adXml.includes('광고') || adXml.includes('Ad ')) {
-        log('4-광고', `광고 재생 중 — 5초 대기 (${i + 1}회)`);
-        await sleep(5000);
-      } else {
-        log('4-광고', '✓ 광고 없음');
-        break;
-      }
+      log('4-광고', '✓ 광고 없음');
+      break;
     }
   }
 
@@ -236,10 +247,10 @@ async function run() {
     await sleep(1500);
 
     // uiautomator로 좋아요 버튼 찾기
-    let likeBtn = await findElement('content-desc="[^"]*좋아요[^"]*"');
+    // resource-id 우선 (가장 안정적), content-desc 폴백
+    let likeBtn = await findElement('resource-id="com.google.android.youtube:id/like_button"');
+    if (!likeBtn) likeBtn = await findElement('content-desc="좋아요"');
     if (!likeBtn) likeBtn = await findElement('content-desc="[^"]*like this video[^"]*"');
-    if (!likeBtn) likeBtn = await findElement('content-desc="[^"]*Like[^"]*"');
-    if (!likeBtn) likeBtn = await findElement('resource-id="com.google.android.youtube:id/like_button"');
 
     if (likeBtn) {
       log('7-좋아요', `✓ 버튼 발견: (${likeBtn.x}, ${likeBtn.y})`);

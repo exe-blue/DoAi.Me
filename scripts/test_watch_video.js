@@ -118,42 +118,53 @@ async function inputText(text) {
 }
 
 /** 광고 건너뛰기 시도 */
-/** 광고 건너뛰기: 1회 dump에서 바로 좌표 추출 + 탭 */
+/**
+ * 광고 건너뛰기.
+ * 전략 1: uiautomator dump에서 skip_ad_button bounds 추출 → 탭
+ * 전략 2: dump에 없으면 고정 좌표 탭 (x87.6% y85.7% = 946,1646 @1080x1920)
+ * YouTube 광고 UI는 SurfaceView 위에 렌더링되어 uiautomator에 안 잡힐 수 있음.
+ */
 async function trySkipAd() {
+  // 전략 1: XML에서 찾기
   const xml = await dumpUI();
-  if (!xml) return false;
-
-  const keywords = ['skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
-  for (const kw of keywords) {
-    if (!xml.includes(kw)) continue;
-
-    // 해당 키워드 포함 노드에서 bounds 직접 추출 (같은 XML에서)
-    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patterns = [
-      new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
-      new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
-    ];
-
-    for (const re of patterns) {
-      const m = xml.match(re);
-      if (m) {
-        const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
-        const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
-        log('광고', `"${kw}" 발견 → 탭 (${cx}, ${cy})`);
-        await adb(`input tap ${cx} ${cy}`);
-        return true;
+  if (xml) {
+    const keywords = ['skip_ad_button', 'skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
+    for (const kw of keywords) {
+      if (!xml.includes(kw)) continue;
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patterns = [
+        new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
+        new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
+      ];
+      for (const re of patterns) {
+        const m = xml.match(re);
+        if (m) {
+          const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
+          const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
+          log('광고', `"${kw}" XML에서 발견 → 탭 (${cx}, ${cy})`);
+          await adb(`input tap ${cx} ${cy}`);
+          return true;
+        }
       }
     }
 
-    // bounds 못 찾았지만 키워드는 있음 → 폴백 좌표 (x85% y22%)
-    const scr = await getScreen();
-    const sx = Math.round(scr.w * 0.85);
-    const sy = Math.round(scr.h * 0.22);
-    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭 (${sx}, ${sy})`);
-    await adb(`input tap ${sx} ${sy}`);
-    return true;
+    // 광고 관련 텍스트 있지만 bounds 못 찾음 → 전략 2 진행
+    if (xml.includes('광고') || xml.includes('ad_badge') || xml.includes('Ad')) {
+      return await skipAdFixedCoord();
+    }
   }
   return false;
+}
+
+/** 전략 2: 고정 좌표로 건너뛰기 (SurfaceView 위 버튼은 dump에 안 잡힘) */
+async function skipAdFixedCoord() {
+  const scr = await getScreen();
+  // 세로: x87.6% y85.7% (946, 1646 @1080x1920) / 가로: x88.5% y79.6% (1700, 860 @1920x1080)
+  const sx = Math.round(scr.w * 0.876);
+  const sy = Math.round(scr.h * 0.857);
+  log('광고', `고정 좌표 탭 (${sx}, ${sy})`);
+  await adb(`input tap ${sx} ${sy}`);
+  return true;
 }
 
 async function run() {
@@ -232,21 +243,35 @@ async function run() {
   }
   await sleep(5000);
 
-  // 7. 프리롤 광고 건너뛰기 (최대 3회)
+  // 7. 프리롤 광고 건너뛰기
+  // 광고 감지: 6초 대기 (건너뛰기 버튼 활성화) → 탭 → 재확인
+  log('7-광고', '광고 확인 중...');
   for (let i = 0; i < 3; i++) {
-    const skipped = await trySkipAd();
-    if (skipped) {
-      log('7-광고', `광고 건너뛰기 (${i + 1}회)`);
-        await sleep(2000);
-    } else {
-      const adXml = await dumpUI();
-      if (adXml.includes('Ad') || adXml.includes('광고')) {
-        log('7-광고', `광고 재생 중 — 5초 대기`);
-        await sleep(5000);
-      } else {
-        log('7-광고', '✓ 광고 없음');
-        break;
+    const xml = await dumpUI();
+    const hasAd = xml && (xml.includes('ad_badge') || xml.includes('skip_ad') ||
+      xml.includes('건너뛰기') || xml.includes('광고'));
+
+    if (!hasAd && i === 0) {
+      // 첫 시도에 광고 없으면 6초 대기 후 한번 더 확인 (로딩 지연)
+      await sleep(6000);
+      const skipped = await trySkipAd();
+      if (skipped) { log('7-광고', '✓ 광고 건너뛰기 완료'); await sleep(2000); }
+      else { log('7-광고', '✓ 광고 없음'); }
+      break;
+    }
+
+    if (hasAd) {
+      log('7-광고', `광고 감지 (${i + 1}회) — 6초 대기 후 건너뛰기`);
+      await sleep(6000);
+      const skipped = await trySkipAd();
+      if (!skipped) {
+        // XML에 안 잡혀도 고정 좌표로 시도
+        await skipAdFixedCoord();
       }
+      await sleep(2000);
+    } else {
+      log('7-광고', '✓ 광고 없음');
+      break;
     }
   }
 
