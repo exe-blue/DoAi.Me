@@ -4,7 +4,7 @@
 const { ADBDevice, extractOutput } = require('./client');
 const { parseUI, UITree, UINode } = require('./xml-parser');
 const { dumpUI, waitForNode, getForegroundApp, getPlaybackState, isScreenOn } = require('./screen');
-const { sleep, randInt, humanDelay, jitterCoord, pctToAbs } = require('./helpers');
+const { sleep, randInt, humanDelay, jitterCoord, pctToAbs, moduleTransitionDelay, missionStartDelay, randomSwipeDuration } = require('./helpers');
 
 module.exports = {
   ADBDevice,
@@ -22,4 +22,7 @@ module.exports = {
   humanDelay,
   jitterCoord,
   pctToAbs,
+  moduleTransitionDelay,
+  missionStartDelay,
+  randomSwipeDuration,
 };

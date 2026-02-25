@@ -23,4 +23,6 @@ module.exports = {
   // preflight
   preflightCheck: require('./preflight').preflightCheck,
   quickSelectorCheck: require('./preflight').quickSelectorCheck,
+  // warmup
+  WarmupManager: require('./warmup').WarmupManager,
 };

@@ -31,4 +31,19 @@ function pctToAbs(xPct, yPct, screenW = 1080, screenH = 1920) {
   };
 }
 
-module.exports = { sleep, randInt, humanDelay, jitterCoord, pctToAbs };
+/** 모듈 간 전환 딜레이 (3~8초, 봇 감지 방지) */
+function moduleTransitionDelay() {
+  return sleep(randInt(3000, 8000));
+}
+
+/** 미션 시작 전 랜덤 대기 (0~30초, 동시 시작 방지) */
+function missionStartDelay() {
+  return sleep(randInt(0, 30000));
+}
+
+/** 스와이프 속도 랜덤화 (200~600ms) */
+function randomSwipeDuration() {
+  return randInt(200, 600);
+}
+
+module.exports = { sleep, randInt, humanDelay, jitterCoord, pctToAbs, moduleTransitionDelay, missionStartDelay, randomSwipeDuration };
