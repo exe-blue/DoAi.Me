@@ -167,6 +167,7 @@ class SupabaseSync {
         battery_level: d.battery ?? null,
         last_seen_at: now,
       };
+      if (d.ipIntranet != null) row.ip_intranet = d.ipIntranet;
       if (d.task_status != null) row.task_status = d.task_status;
       if (d.current_assignment_id != null) row.current_assignment_id = d.current_assignment_id;
       if (d.current_video_title != null) row.current_video_title = d.current_video_title;

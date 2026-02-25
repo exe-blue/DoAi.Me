@@ -157,23 +157,43 @@ class AdbReconnectManager {
   }
 
   /**
-   * Reconnect a single device with retries
+   * Reconnect a single device with retries.
+   * OTG(IP:5555) 방식: IP 주소가 있으면 `adb connect IP:5555`로 재연결 시도.
    * @param {string} serial
    * @returns {Promise<{serial: string, status: string, isDead?: boolean}|null>}
    */
   async reconnectDevice(serial) {
     let success = false;
 
+    // IP 주소 조회 (DB에 저장된 ip_intranet 또는 시리얼에서 추출)
+    const ip = await this._getDeviceIp(serial);
+
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}`);
+        console.log(`[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}${ip ? ` (IP: ${ip})` : ''}`);
 
+        // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
+        if (ip) {
+          try {
+            const connectResult = await Promise.race([
+              this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
+              this.timeoutPromise(this.reconnectTimeout)
+            ]);
+            const connectOut = this._extractOutput(connectResult);
+            if (connectOut && (connectOut.includes('connected') || connectOut.includes('already'))) {
+              success = true;
+              console.log(`[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`);
+              break;
+            }
+          } catch {}
+        }
+
+        // 방법 2: Xiaowei adb connect (기본)
         const result = await Promise.race([
           this.xiaowei.adb(serial, 'connect'),
           this.timeoutPromise(this.reconnectTimeout)
         ]);
 
-        // Check if reconnect succeeded
         if (result && !result.error) {
           success = true;
           console.log(`[ADB Reconnect] ✓ ${serial} reconnected`);
@@ -185,7 +205,6 @@ class AdbReconnectManager {
         console.log(`[ADB Reconnect] ✗ ${serial} attempt ${attempt} error: ${err.message}`);
       }
 
-      // Wait before retry (unless this is the last attempt)
       if (attempt < this.maxRetries) {
         await this.sleep(1000);
       }
@@ -295,6 +314,40 @@ class AdbReconnectManager {
     }
 
     return [];
+  }
+
+  /**
+   * DB에서 기기 IP 주소 조회 (ip_intranet)
+   * @param {string} serial
+   * @returns {Promise<string|null>}
+   */
+  async _getDeviceIp(serial) {
+    try {
+      const { data } = await this.supabaseSync.supabase
+        .from('devices')
+        .select('ip_intranet')
+        .eq('serial_number', serial)
+        .maybeSingle();
+      return data?.ip_intranet || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Xiaowei 응답에서 텍스트 출력 추출
+   * @param {object} res
+   * @returns {string}
+   */
+  _extractOutput(res) {
+    if (!res) return '';
+    if (typeof res === 'string') return res;
+    if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+      const vals = Object.values(res.data);
+      if (vals.length > 0 && typeof vals[0] === 'string') return vals[0];
+    }
+    if (res.msg) return String(res.msg);
+    return '';
   }
 
   /**
