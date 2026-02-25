@@ -3,6 +3,8 @@
  * 디바이스별 상태 추적 및 작업 자동 배정.
  * claim_next_assignment RPC로 작업 선점 후 TaskExecutor로 실행.
  */
+const { getLogger } = require("./common/logger");
+const log = getLogger("device-orchestrator");
 const presets = require("./device-presets");
 
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -20,6 +22,8 @@ const STATUS = {
 const SAME_JOB_MAX_DEVICES = 5;
 const ORCHESTRATE_INTERVAL_MS = 3000;
 const WATCH_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const CIRCUIT_BREAKER_FAILURES = 3; // after this many consecutive failures, skip device for cooldown
+const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 min
 
 class DeviceOrchestrator {
   /**
@@ -43,8 +47,8 @@ class DeviceOrchestrator {
 
   start() {
     if (this._pollTimer) return;
-    console.log(`[DeviceOrchestrator] Starting (every ${ORCHESTRATE_INTERVAL_MS / 1000}s, maxConcurrent=${this.maxConcurrent})`);
-    this._pollTimer = setInterval(() => this._orchestrate().catch((e) => console.error("[DeviceOrchestrator]", e)), ORCHESTRATE_INTERVAL_MS);
+    log.info(`[DeviceOrchestrator] Starting (every ${ORCHESTRATE_INTERVAL_MS / 1000}s, maxConcurrent=${this.maxConcurrent})`);
+    this._pollTimer = setInterval(() => this._orchestrate().catch((e) => log.error("[DeviceOrchestrator]", e)), ORCHESTRATE_INTERVAL_MS);
   }
 
   stop() {
@@ -52,7 +56,7 @@ class DeviceOrchestrator {
       clearInterval(this._pollTimer);
       this._pollTimer = null;
     }
-    console.log("[DeviceOrchestrator] Stopped");
+    log.info("[DeviceOrchestrator] Stopped");
   }
 
   /**
@@ -74,7 +78,7 @@ class DeviceOrchestrator {
         }
       }
     } catch (err) {
-      console.error("[DeviceOrchestrator] list error:", err.message);
+      log.error("[DeviceOrchestrator] list error:", err.message);
       return;
     }
 
@@ -82,8 +86,11 @@ class DeviceOrchestrator {
       this._ensureDeviceState(serial);
       const state = this.deviceStates.get(serial);
       const busy = !!(state.assignmentId && this._runningAssignments.has(state.assignmentId));
-      console.log(`[Orchestrator] ${serial.substring(0, 6)} status=${state.status} busy=${busy}`);
+      log.info(`[Orchestrator] ${serial.substring(0, 6)} status=${state.status} busy=${busy}`);
       if (state.status === STATUS.idle) {
+        if (state.circuitBreakerUntil && Date.now() < state.circuitBreakerUntil) {
+          continue; // still in cooldown
+        }
         await this._assignWork(serial);
         continue;
       }
@@ -91,15 +98,19 @@ class DeviceOrchestrator {
         const hasPending = await this._hasPendingAssignment();
         if (hasPending) {
           state.status = STATUS.idle;
-          console.log(`[DeviceOrchestrator] ${serial.substring(0, 6)} free_watch → idle (pending work)`);
+          log.info(`[DeviceOrchestrator] ${serial.substring(0, 6)} free_watch → idle (pending work)`);
         }
         continue;
       }
       if (state.status === STATUS.watching && state.startedAt) {
         const elapsed = Date.now() - state.startedAt;
         if (elapsed > WATCH_TIMEOUT_MS) {
-          console.warn(`[DeviceOrchestrator] ${serial.substring(0, 6)} watch timeout (${Math.round(elapsed / 60000)}m)`);
-          this._setState(serial, STATUS.error, { errorCount: (state.errorCount || 0) + 1 });
+          log.warn(`[DeviceOrchestrator] ${serial.substring(0, 6)} watch timeout (${Math.round(elapsed / 60000)}m)`);
+          const nextFailures = (state.consecutiveFailures || 0) + 1;
+          const extra = nextFailures >= CIRCUIT_BREAKER_FAILURES
+            ? { circuitBreakerUntil: Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS }
+            : {};
+          this._setState(serial, STATUS.error, { errorCount: (state.errorCount || 0) + 1, consecutiveFailures: nextFailures, ...extra });
         }
         continue;
       }
@@ -119,6 +130,8 @@ class DeviceOrchestrator {
         startedAt: null,
         watchProgress: 0,
         errorCount: 0,
+        consecutiveFailures: 0,
+        circuitBreakerUntil: null,
         dailyWatchCount: 0,
         dailyWatchSeconds: 0,
         lastTaskAt: null,
@@ -137,12 +150,12 @@ class DeviceOrchestrator {
    */
   async _assignWork(serial) {
     const running = this._runningAssignments.size;
-    console.log(`[Orchestrator] _assignWork(${serial.substring(0, 6)}) active=${running}/${this.maxConcurrent}`);
+    log.info(`[Orchestrator] _assignWork(${serial.substring(0, 6)}) active=${running}/${this.maxConcurrent}`);
     if (running >= this.maxConcurrent) return;
 
-    console.log(`[Orchestrator] calling claim_next_assignment pcId=${this.pcId}`);
+    log.info(`[Orchestrator] calling claim_next_assignment pcId=${this.pcId}`);
     const assignment = await this._getNextAssignment(serial);
-    console.log(`[Orchestrator] claim result: ${assignment ? assignment.id.substring(0, 8) : "null"}`);
+    log.info(`[Orchestrator] claim result: ${assignment ? assignment.id.substring(0, 8) : "null"}`);
     if (assignment) {
       const jobId = assignment.job_id;
       const sameJobCount = await this._countDevicesOnJob(jobId);
@@ -152,19 +165,28 @@ class DeviceOrchestrator {
       }
       this._setState(serial, STATUS.searching, { assignmentId: assignment.id, videoTitle: assignment.video_title || null });
       this._executeTargetWatch(serial, assignment).catch((err) => {
-        console.error(`[DeviceOrchestrator] ${serial.substring(0, 6)} target watch error:`, err.message);
+        log.error(`[DeviceOrchestrator] ${serial.substring(0, 6)} target watch error:`, err.message);
         this._runningAssignments.delete(assignment.id);
-        this._setState(serial, STATUS.error, { errorCount: (this.deviceStates.get(serial)?.errorCount || 0) + 1 });
+        const s = this.deviceStates.get(serial) || {};
+        const nextFailures = (s.consecutiveFailures || 0) + 1;
+        const extra = nextFailures >= CIRCUIT_BREAKER_FAILURES
+          ? { circuitBreakerUntil: Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS }
+          : {};
+        this._setState(serial, STATUS.error, {
+          errorCount: (s.errorCount || 0) + 1,
+          consecutiveFailures: nextFailures,
+          ...extra,
+        });
       });
       return;
     }
 
-    console.log(`[Orchestrator] ${serial.substring(0, 6)} no assignment → checking free_watch`);
+    log.info(`[Orchestrator] ${serial.substring(0, 6)} no assignment → checking free_watch`);
     const hasPending = await this._hasPendingAssignment();
     if (!hasPending) {
       this._setState(serial, STATUS.free_watch);
       this._executeFreeWatch(serial).catch((err) => {
-        console.error(`[DeviceOrchestrator] ${serial.substring(0, 6)} free watch error:`, err.message);
+        log.error(`[DeviceOrchestrator] ${serial.substring(0, 6)} free watch error:`, err.message);
         this._setState(serial, STATUS.idle);
       });
     }
@@ -188,14 +210,14 @@ class DeviceOrchestrator {
         : { p_pc_id: this.pcId, p_device_serial: serial };
       const { data, error } = await this.supabase.rpc("claim_next_assignment", rpcParams);
       if (error) {
-        console.warn("[DeviceOrchestrator] claim_next_assignment error:", error.message);
+        log.warn("[DeviceOrchestrator] claim_next_assignment error:", error.message);
         return null;
       }
       if (Array.isArray(data) && data.length > 0) return data[0];
       if (data && typeof data === "object" && data.id) return data;
       return null;
     } catch (err) {
-      console.warn("[DeviceOrchestrator] _getNextAssignment:", err.message);
+      log.warn("[DeviceOrchestrator] _getNextAssignment:", err.message);
       return null;
     }
   }
@@ -241,7 +263,7 @@ class DeviceOrchestrator {
         .update({ status: "pending" })
         .eq("id", assignmentId);
     } catch (err) {
-      console.warn("[DeviceOrchestrator] _releaseAssignment:", err.message);
+      log.warn("[DeviceOrchestrator] _releaseAssignment:", err.message);
     }
   }
 
@@ -253,7 +275,7 @@ class DeviceOrchestrator {
     if (state?.status !== STATUS.free_watch) return;
     try {
       await presets.warmup(this.xiaowei, serial, { durationSec: 120 });
-      console.log(`[Orchestrator] ${serial.substring(0, 6)} warmup done → idle`);
+      log.info(`[Orchestrator] ${serial.substring(0, 6)} warmup done → idle`);
       this._setState(serial, STATUS.idle);
       const s = this.deviceStates.get(serial);
       if (s) {
@@ -297,22 +319,27 @@ class DeviceOrchestrator {
     s.videoTitle = null;
     s.startedAt = null;
     s.errorCount = 0;
+    s.consecutiveFailures = 0;
+    s.circuitBreakerUntil = null;
     s.status = STATUS.idle;
   }
 
   /**
-   * error 상태 복구: YouTube 재시작 후 idle
+   * error 상태 복구: circuit breaker cooldown 경과 후에만 YouTube 재시작 → idle
    */
   async _tryRecoverError(serial) {
     const state = this.deviceStates.get(serial);
     if (state.status !== STATUS.error) return;
+    if (state.circuitBreakerUntil && Date.now() < state.circuitBreakerUntil) {
+      return; // still in cooldown
+    }
     try {
       await this.xiaowei.stopApk(serial, "com.google.android.youtube");
       await _sleep(1000);
-      this._setState(serial, STATUS.idle, { errorCount: 0 });
-      console.log(`[DeviceOrchestrator] ${serial.substring(0, 6)} recovered from error → idle`);
+      this._setState(serial, STATUS.idle, { errorCount: 0, consecutiveFailures: 0, circuitBreakerUntil: null });
+      log.info(`[DeviceOrchestrator] ${serial.substring(0, 6)} recovered from error → idle`);
     } catch (err) {
-      console.warn(`[DeviceOrchestrator] ${serial.substring(0, 6)} recover failed:`, err.message);
+      log.warn(`[DeviceOrchestrator] ${serial.substring(0, 6)} recover failed:`, err.message);
     }
   }
 

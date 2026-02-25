@@ -26,6 +26,7 @@ const SETTING_KEY_MAP = {
   proxy_check_interval: "proxyCheckInterval",
   proxy_policy: "proxyPolicy",
   max_concurrent_tasks: "maxConcurrentTasks",
+  task_execution_timeout_ms: "taskExecutionTimeoutMs",
   device_interval: "deviceInterval",
   watch_duration: "watchDuration",
   task_interval: "taskInterval",
@@ -40,6 +41,7 @@ class AgentConfig extends EventEmitter {
 
     // ── Static env vars (never change at runtime) ──
     this.pcNumber = process.env.PC_NUMBER || "PC00";  // ^PC[0-9]{2}$ format (DB constraint)
+    this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
@@ -55,6 +57,7 @@ class AgentConfig extends EventEmitter {
     this.proxyCheckInterval = 300000;
     this.proxyPolicy = "sticky";
     this.maxConcurrentTasks = 20;
+    this.taskExecutionTimeoutMs = parseInt(process.env.TASK_EXECUTION_TIMEOUT_MS || "300000", 10); // 5 min default
     this.deviceInterval = 500;
     this.watchDuration = [30, 120];
     this.taskInterval = [1000, 3000];

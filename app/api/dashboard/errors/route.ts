@@ -16,19 +16,18 @@ export async function GET(request: Request) {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
     const { data } = await supabase
-      .from("execution_logs")
-      .select("message, level, created_at")
-      .eq("status", "failed")
+      .from("task_logs")
+      .select("message, status, created_at")
+      .in("status", ["error", "failed"])
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(500);
 
-    // 유형별 집계
     const typeMap: Record<string, { count: number; severity: string; lastOccurred: string }> = {};
     for (const row of data || []) {
       const type = classifyError(row.message || "");
       if (!typeMap[type]) {
-        typeMap[type] = { count: 0, severity: row.level || "error", lastOccurred: row.created_at };
+        typeMap[type] = { count: 0, severity: row.status || "error", lastOccurred: row.created_at ?? "" };
       }
       typeMap[type].count++;
     }

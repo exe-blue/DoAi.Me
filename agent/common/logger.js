@@ -106,7 +106,7 @@ const rootLogger = winston.createLogger({
       filename: path.join(LOG_DIR, dailyFilename()),
       format: jsonFormat,
       maxsize: 50 * 1024 * 1024, // 50MB
-      maxFiles: 14,
+      maxFiles: 7, // keep 7 days
     }),
   ],
 });

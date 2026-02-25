@@ -56,9 +56,42 @@ if (-not $nodeVer.StartsWith("v22")) {
     Write-Host "    ⚠ Node.js 22.x 권장" -ForegroundColor Yellow
 }
 
-# 6. 완료
+# 6. PM2 (optional)
+$pm2Installed = $null -ne (Get-Command pm2 -ErrorAction SilentlyContinue)
+if ($pm2Installed) {
+    Write-Host "[6] PM2 확인됨"
+    pm2 restart agent 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        pm2 start agent/ecosystem.config.js
+    }
+    Write-Host "    Windows 부팅 시 자동 시작: pm2-startup install && pm2 save (관리자 권한)"
+} else {
+    Write-Host "[6] PM2 미설치 — 수동 실행: node agent\agent.js" -ForegroundColor Yellow
+    Write-Host "    설치: npm install -g pm2 pm2-windows-startup"
+}
+
+# 7. Smoke test (optional, requires agent running and Supabase env)
+Write-Host "[7] Smoke test..."
+$smokeExit = 0
+try {
+    & node scripts/smoke-test.js 2>&1 | ForEach-Object { Write-Host "    $_" }
+    $smokeExit = $LASTEXITCODE
+} catch {
+    Write-Host "    ⚠ Smoke test 스킵 또는 실패 (Agent 실행 후 재실행 권장)" -ForegroundColor Yellow
+}
+
+# 8. 완료
 Write-Host ""
 Write-Host "═══════════════════════════════════════" -ForegroundColor Green
 Write-Host "  배포 완료: $currentTag → $newCommit" -ForegroundColor Green
-Write-Host "  시작: node agent\agent.js" -ForegroundColor Green
+if ($pm2Installed) {
+    Write-Host "  PM2: pm2 status / pm2 logs" -ForegroundColor Green
+} else {
+    Write-Host "  시작: node agent\agent.js" -ForegroundColor Green
+}
+if ($smokeExit -eq 0) {
+    Write-Host "  Smoke test: PASS" -ForegroundColor Green
+} else {
+    Write-Host "  Smoke test: FAIL (Agent 기동 후 node scripts\smoke-test.js 재실행)" -ForegroundColor Yellow
+}
 Write-Host "═══════════════════════════════════════" -ForegroundColor Green

@@ -95,15 +95,18 @@ class SupabaseSync {
   }
 
   /**
-   * Update PC heartbeat status
+   * Update PC heartbeat status (명세 4.3: worker_id, agent_version, status, system)
    * @param {string} pcId
    * @param {string} status - 'online' | 'offline' | 'error'
+   * @param {{ agent_version?: string, system?: { cpu_usage?: number, memory_free_mb?: number, adb_server_ok?: boolean, usb_devices_count?: number, uptime_seconds?: number } }} opts
    */
-  async updatePcStatus(pcId, status) {
+  async updatePcStatus(pcId, status, opts = {}) {
     const update = {
       status,
       last_heartbeat: new Date().toISOString(),
     };
+    if (opts.agent_version != null) update.agent_version = opts.agent_version;
+    if (opts.system != null) update.system = opts.system;
 
     const { error } = await this.supabase
       .from("pcs")
@@ -175,6 +178,10 @@ class SupabaseSync {
       if (d.consecutive_errors != null) row.consecutive_errors = d.consecutive_errors;
       if (d.daily_watch_count != null) row.daily_watch_count = d.daily_watch_count;
       if (d.daily_watch_seconds != null) row.daily_watch_seconds = d.daily_watch_seconds;
+      if (d.device_code != null) row.device_code = d.device_code;
+      if (d.proxy_id != null) row.proxy_id = d.proxy_id;
+      if (d.account_id != null) row.account_id = d.account_id;
+      if (d.current_task_id != null) row.current_task_id = d.current_task_id;
       return row;
     });
 
@@ -484,6 +491,28 @@ class SupabaseSync {
   }
 
   /**
+   * 명세 4.1 에러 로그: Agent 레벨 오류를 command_logs에 기록 (Supabase 유지)
+   * @param {string} message - 오류 메시지
+   * @param {object} [details] - 추가 정보
+   */
+  async insertAgentErrorLog(message, details = {}) {
+    try {
+      const { error } = await this.supabase.from("command_logs").insert({
+        command: "agent_error",
+        target_type: "all",
+        status: "completed",
+        initiated_by: "agent",
+        worker_id: this.pcId || null,
+        results: [{ error: message, ...details }],
+        completed_at: new Date().toISOString(),
+      });
+      if (error) console.error(`[Supabase] insertAgentErrorLog failed: ${error.message}`);
+    } catch (err) {
+      console.error(`[Supabase] insertAgentErrorLog: ${err.message}`);
+    }
+  }
+
+  /**
    * Insert an execution log entry (buffered — batched INSERT).
    * Returns immediately with { ok: true, logId: null }.
    * @param {string} executionId - task/execution ID
@@ -696,6 +725,136 @@ class SupabaseSync {
   }
 
   /**
+   * Get pending task_queue rows for this PC (명세 4.4 보완 폴링용)
+   * @param {string} pcNumber - e.g. "PC01"
+   * @returns {Promise<Array>}
+   */
+  async getPendingTaskQueueItems(pcNumber) {
+    const { data, error } = await this.supabase
+      .from("task_queue")
+      .select("*")
+      .eq("target_worker", pcNumber)
+      .eq("status", "queued")
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(`[Supabase] getPendingTaskQueueItems failed: ${error.message}`);
+      return [];
+    }
+    return data || [];
+  }
+
+  /**
+   * Create task from task_queue item and mark queue as dispatched (명세 4.4)
+   * @param {object} item - task_queue row
+   * @param {string} pcId - this PC UUID
+   * @returns {Promise<object|null>} created task row or null
+   */
+  async createTaskFromQueueItem(item, pcId) {
+    const taskConfig = item.task_config || {};
+    const insertData = {
+      video_id: taskConfig.videoId || taskConfig.video_id || null,
+      channel_id: taskConfig.channelId || taskConfig.channel_id || null,
+      type: taskConfig.type || "youtube",
+      task_type: taskConfig.taskType || taskConfig.task_type || "view_farm",
+      device_count: taskConfig.deviceCount || taskConfig.device_count || 20,
+      payload: taskConfig.variables || taskConfig.payload || {
+        watchPercent: 80,
+        commentProb: 10,
+        likeProb: 40,
+        saveProb: 5,
+        subscribeToggle: false,
+      },
+      status: "pending",
+      pc_id: pcId,
+    };
+
+    const { data: task, error: taskErr } = await this.supabase
+      .from("tasks")
+      .insert(insertData)
+      .select("*")
+      .single();
+
+    if (taskErr) {
+      console.error(`[Supabase] createTaskFromQueueItem insert failed: ${taskErr.message}`);
+      return null;
+    }
+
+    const { error: updateErr } = await this.supabase
+      .from("task_queue")
+      .update({
+        status: "dispatched",
+        dispatched_task_id: task.id,
+        dispatched_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+
+    if (updateErr) {
+      console.error(`[Supabase] createTaskFromQueueItem queue update failed: ${updateErr.message}`);
+    }
+    return task;
+  }
+
+  /**
+   * Subscribe to task_queue and commands (명세 4.4: Realtime 구독)
+   * @param {string} pcNumber - e.g. "PC01"
+   * @param {{ onTaskQueue: (row: object) => void, onCommand: (row: object) => void }} callbacks
+   * @param {number} timeoutMs
+   * @returns {Promise<{status: string, channel: object}>}
+   */
+  subscribeToTaskQueueAndCommands(pcNumber, callbacks, timeoutMs = 10000) {
+    console.log(`[Supabase] Subscribing to task_queue + commands for ${pcNumber}`);
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ status: this._workerChannelStatus || "TIMED_OUT", channel: this._workerChannel });
+      }, timeoutMs);
+
+      this._workerChannel = this.supabase
+        .channel(`worker-${pcNumber}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "task_queue",
+            filter: `target_worker=eq.${pcNumber}`,
+          },
+          (payload) => {
+            if (payload.new && payload.new.status === "queued") {
+              console.log(`[Supabase] [task_queue] 수신: ${payload.new.id}`);
+              callbacks.onTaskQueue(payload.new);
+            }
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "commands",
+            filter: `target_worker=eq.${pcNumber}`,
+          },
+          (payload) => {
+            if (payload.new && payload.new.status === "pending") {
+              console.log(`[Supabase] [commands] 수신: ${payload.new.id}`);
+              callbacks.onCommand(payload.new);
+            }
+          }
+        )
+        .subscribe((status) => {
+          this._workerChannelStatus = status;
+          console.log(`[Supabase] worker-${pcNumber} status: ${status}`);
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            clearTimeout(timeout);
+            resolve({ status, channel: this._workerChannel });
+          }
+        });
+    });
+  }
+
+  /**
    * Subscribe to new tasks via postgres_changes (fallback).
    * Returns a Promise that resolves when subscription is confirmed or times out.
    * @param {string} pcId
@@ -812,6 +971,12 @@ class SupabaseSync {
       await this.supabase.removeChannel(this.taskSubscription);
       this.taskSubscription = null;
       console.log("[Supabase] Unsubscribed from postgres_changes");
+    }
+
+    if (this._workerChannel) {
+      await this.supabase.removeChannel(this._workerChannel);
+      this._workerChannel = null;
+      console.log("[Supabase] Unsubscribed from worker task_queue+commands");
     }
 
     // All task log channels

@@ -5,13 +5,33 @@ export async function GET() {
   try {
     const supabase = createServerClient();
 
-    const { data: workers, error: workersError } = await supabase
-      .from("workers")
-      .select("id, display_name, hostname, status, last_heartbeat");
+    type PcRow = { id: string; pc_number: string | null; hostname: string | null; status: string | null; last_heartbeat: string | null };
+    let workersList: Array<{ id: string; name: string; status: string; last_heartbeat: string | null }> = [];
+    const { data: pcsData, error: pcsError } = await (supabase as any)
+      .from("pcs")
+      .select("id, pc_number, hostname, status, last_heartbeat") as { data: PcRow[] | null; error: unknown };
 
-    if (workersError) throw workersError;
+    if (!pcsError && pcsData?.length) {
+      workersList = pcsData.map((p) => ({
+        id: p.id,
+        name: p.pc_number ?? p.hostname ?? "",
+        status: p.status ?? "offline",
+        last_heartbeat: p.last_heartbeat,
+      }));
+    } else {
+      const { data: workersData, error: workersError } = await supabase
+        .from("workers")
+        .select("id, display_name, hostname, status, last_heartbeat");
+      if (workersError) throw workersError;
+      workersList = (workersData ?? []).map((w) => ({
+        id: w.id,
+        name: w.display_name ?? w.hostname ?? "",
+        status: w.status ?? "offline",
+        last_heartbeat: w.last_heartbeat,
+      }));
+    }
 
-    const onlineWorker = workers?.find((w) => w.status === "online") ?? workers?.[0] ?? null;
+    const onlineWorker = workersList.find((w) => w.status === "online") ?? workersList[0] ?? null;
 
     const { data: devices, error: devicesError } = await supabase
       .from("devices")
@@ -82,7 +102,7 @@ export async function GET() {
       worker: onlineWorker
         ? {
             id: onlineWorker.id,
-            name: onlineWorker.display_name ?? onlineWorker.hostname,
+            name: onlineWorker.name,
             status: onlineWorker.status,
             last_heartbeat: onlineWorker.last_heartbeat,
           }

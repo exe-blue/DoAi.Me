@@ -1,7 +1,8 @@
 /**
  * DoAi.Me - Heartbeat Loop
- * Periodically syncs device status and worker health to Supabase
+ * Periodically syncs device status and worker health to Supabase (명세 4.3 포맷)
  */
+const os = require("os");
 
 /**
  * Parse device list from Xiaowei response
@@ -85,14 +86,25 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
         }
       }
 
-      // 2. Update PC status
+      // 2. Update PC status (명세 4.3: agent_version, status, system)
       const uptimeSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
+      const agentVersion = config.agentVersion || process.env.AGENT_VERSION || "0.1.0-alpha";
+      const system = {
+        cpu_usage: Math.min(100, Math.round((os.loadavg()[0] || 0) * 25)) || 0,
+        memory_free_mb: Math.round(os.freemem() / (1024 * 1024)),
+        adb_server_ok: xiaowei.connected,
+        usb_devices_count: devices.length,
+        uptime_seconds: uptimeSec,
+      };
+      await supabaseSync.updatePcStatus(pcId, "online", { agent_version: agentVersion, system });
 
-      await supabaseSync.updatePcStatus(pcId, "online");
-
-      // 3. Batch upsert all devices in a single query
+      // 3. Batch upsert all devices (명세 4.3: device_code PC01-001 형식)
+      const devicesWithCode = devices.map((d, i) => ({
+        ...d,
+        device_code: `${config.pcNumber}-${String(i + 1).padStart(3, "0")}`,
+      }));
       const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
-      await supabaseSync.batchUpsertDevices(devices, pcId);
+      await supabaseSync.batchUpsertDevices(devicesWithCode, pcId);
 
       // 4. Sync device task states from orchestrator (task_status, watch_progress, etc.)
       const orchestrator = typeof getDeviceOrchestrator === "function" ? getDeviceOrchestrator() : null;

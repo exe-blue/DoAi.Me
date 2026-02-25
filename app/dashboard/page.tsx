@@ -9,6 +9,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetcher } from "@/lib/api";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,14 @@ interface ErrorsData {
 
 interface HealthData {
   status: string;
+}
+
+interface TaskListItem {
+  id: string;
+  status?: string;
+  title?: string;
+  createdAt?: string;
+  completedAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +163,7 @@ function ActivityChart({ data, loading }: { data: RealtimeData | null; loading: 
   const [tab, setTab] = useState("TODAY");
   const currentHour = useCurrentHour();
 
-  const chartData = useMemo(() => buildChartData(data), [data?.todayStats?.views, currentHour]);
+  const chartData = useMemo(() => buildChartData(data), [data?.todayStats?.views, data?.todayStats?.errors, currentHour]);
 
   if (loading) {
     return (
@@ -211,24 +220,19 @@ function ActivityChart({ data, loading }: { data: RealtimeData | null; loading: 
   );
 }
 
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
+/** Build 24h chart from realtime API (todayStats only; no per-hour from API yet). */
 function buildChartData(data: RealtimeData | null) {
   const now = new Date();
-  const dayKey = now.getFullYear() * 400 + now.getMonth() * 32 + now.getDate();
-  const views = data?.todayStats?.views ?? 0;
+  const viewsToday = data?.todayStats?.views ?? 0;
+  const errorsToday = data?.todayStats?.errors ?? 0;
+  const currentHour = now.getHours();
   return Array.from({ length: 24 }, (_, h) => {
-    const active = h <= now.getHours();
-    const scale = views > 0 ? views / 24 : 30;
-    const base = dayKey * 72 + h * 3;
+    const isCurrentHour = h === currentHour;
     return {
       hour: String(h).padStart(2, "0") + ":00",
-      views: active ? Math.floor(seededRandom(base) * scale + scale * 0.3) : 0,
-      likes: active ? Math.floor(seededRandom(base + 1) * (scale * 0.3) + scale * 0.05) : 0,
-      comments: active ? Math.floor(seededRandom(base + 2) * (scale * 0.1) + 1) : 0,
+      views: isCurrentHour ? viewsToday : 0,
+      likes: 0,
+      comments: isCurrentHour ? errorsToday : 0,
     };
   });
 }
@@ -349,6 +353,59 @@ function SecurityStatus({ data, loading }: { data: RealtimeData | null; loading:
 }
 
 // ---------------------------------------------------------------------------
+// Recent Tasks — GET /api/tasks?limit=5 (client slice)
+// ---------------------------------------------------------------------------
+
+function RecentTasks({ tasks, loading, error, onRetry }: {
+  tasks: TaskListItem[];
+  loading: boolean;
+  error?: Error;
+  onRetry?: () => void;
+}) {
+  if (error) return <ErrorBlock message={error.message} onRetry={onRetry} />;
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+        <Skeleton className="h-4 w-28" />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+  const list = tasks.slice(0, 5);
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Activity className="h-4 w-4 text-status-info" />
+        <span className="text-xs font-bold uppercase tracking-wider text-foreground">RECENT TASKS</span>
+      </div>
+      <div className="space-y-2">
+        {list.length === 0 ? (
+          <p className="py-4 text-center text-xs text-muted-foreground">No tasks</p>
+        ) : (
+          list.map((t) => (
+            <div key={t.id} className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2">
+              <span className="font-mono text-[11px] text-foreground truncate flex-1" title={t.id}>
+                {t.title || t.id.slice(0, 8)}
+              </span>
+              <span className={cn(
+                "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                t.status === "completed" || t.status === "done" ? "bg-status-success/20 text-status-success" :
+                t.status === "failed" ? "bg-status-error/20 text-status-error" :
+                "bg-muted text-muted-foreground"
+              )}>
+                {t.status ?? "—"}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Right Panel (notifications + clock)
 // ---------------------------------------------------------------------------
 
@@ -358,9 +415,11 @@ function RightPanel({ data, health }: {
 }) {
   const [time, setTime] = useState(new Date());
 
-  const { data: errorsData } = useSWR<ErrorsData>("/api/dashboard/errors?hours=24", {
-    refreshInterval: 30_000,
-  });
+  const { data: errorsData } = useSWR<ErrorsData>(
+    "/api/dashboard/errors?hours=24",
+    fetcher,
+    { refreshInterval: 30_000 }
+  );
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
@@ -371,22 +430,23 @@ function RightPanel({ data, health }: {
 
   const logs: Array<{ type: string; title: string; desc: string; time: string; color: string }> = [];
 
-  if (errorsData?.errors) {
-    for (const e of errorsData.errors.slice(0, 3)) {
+  if (errorsData?.errors?.length) {
+    for (const e of errorsData.errors.slice(0, 5)) {
       logs.push({
         type: "error",
-        title: e.type?.toUpperCase() ?? "ERROR",
-        desc: `${e.count}건 발생`,
+        title: (e.type ?? "error").toUpperCase(),
+        desc: `${e.count ?? 0}건 발생`,
         time: e.lastOccurred ? new Date(e.lastOccurred).toLocaleTimeString("ko-KR") : "",
         color: "bg-status-error",
       });
     }
   }
 
+  const viewsToday = data?.todayStats?.views ?? 0;
   logs.push({
     type: "success",
-    title: "TASK COMPLETED",
-    desc: `${data?.todayStats?.views ?? 0}건 시청 완료`,
+    title: "TODAY VIEWS",
+    desc: viewsToday === 0 ? "No data yet" : `${viewsToday}건 시청 완료`,
     time: "today",
     color: "bg-status-success",
   });
@@ -480,42 +540,49 @@ function useRealtimeDevices() {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  // SWR hooks
+  // 1. 스탯 카드: GET /api/overview (30s)
+  const {
+    data: overview,
+    error: ovError,
+    isLoading: ovLoading,
+    mutate: mutateOverview,
+  } = useSWR<OverviewData>("/api/overview", fetcher, { refreshInterval: 30_000 });
+
   const {
     data: realtime,
     error: rtError,
     isLoading: rtLoading,
     mutate: mutateRt,
-  } = useSWR<RealtimeData>("/api/dashboard/realtime", { refreshInterval: 30_000 });
+  } = useSWR<RealtimeData>("/api/dashboard/realtime", fetcher, { refreshInterval: 60_000 });
 
   const {
     data: workersRaw,
     error: wError,
     isLoading: wLoading,
     mutate: mutateW,
-  } = useSWR<{ workers: WorkerData[] }>("/api/workers", { refreshInterval: 30_000 });
+  } = useSWR<{ workers: WorkerData[] }>("/api/workers", fetcher, { refreshInterval: 30_000 });
+
+  const { data: health } = useSWR<HealthData>("/api/health", fetcher, { refreshInterval: 60_000 });
 
   const {
-    data: overview,
-    isLoading: ovLoading,
-  } = useSWR<OverviewData>("/api/overview", { refreshInterval: 30_000 });
+    data: tasksData,
+    error: tasksError,
+    isLoading: tasksLoading,
+    mutate: mutateTasks,
+  } = useSWR<{ tasks: TaskListItem[] }>("/api/tasks", fetcher, { refreshInterval: 30_000 });
 
-  const {
-    data: health,
-  } = useSWR<HealthData>("/api/health", { refreshInterval: 60_000 });
-
-  // Supabase Realtime
   useRealtimeDevices();
 
-  // Derived values with fallbacks
-  const workers = workersRaw?.workers ?? [];
-  const online = realtime?.online ?? overview?.devices?.online ?? 0;
-  const total = realtime?.totalDevices ?? overview?.devices?.total ?? 0;
-  const onlinePct = total > 0 ? Math.round((online / total) * 100) : 0;
-  const views = realtime?.todayStats?.views ?? 0;
-  const activeTasks = realtime?.activeMissions ?? (overview?.tasks?.running ?? 0) + (overview?.tasks?.pending ?? 0);
+  // 스탯 카드 전용: overview 기반 (null 방어)
+  const statsOnline = overview?.devices?.online ?? 0;
+  const statsTotal = overview?.devices?.total ?? 0;
+  const statsOnlinePct = statsTotal > 0 ? Math.round((statsOnline / statsTotal) * 100) : 0;
+  const statsViewsToday = overview?.tasks?.completed_today ?? 0;
+  const statsActiveTasks = (overview?.tasks?.running ?? 0) + (overview?.tasks?.pending ?? 0);
 
-  const anyLoading = rtLoading || ovLoading;
+  const workers = workersRaw?.workers ?? [];
+  const recentTasksList = tasksData?.tasks ?? [];
+  const lastUpdated = overview?.timestamp ?? realtime?.timestamp;
 
   return (
     <div className="flex h-[calc(100vh-3rem)]">
@@ -531,48 +598,56 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => { mutateRt(); mutateW(); }}
+              onClick={() => { mutateOverview(); mutateRt(); mutateW(); }}
               aria-label="새로고침"
               className="rounded border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground transition-colors"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
-            {realtime?.timestamp && (
+            {lastUpdated && (
               <span className="font-mono text-[11px] text-muted-foreground">
-                Last updated {new Date(realtime.timestamp).toLocaleTimeString("ko-KR", { hour12: false })}
+                Last updated {new Date(lastUpdated).toLocaleTimeString("ko-KR", { hour12: false })}
               </span>
             )}
           </div>
         </div>
 
-        {/* KPI Cards */}
-        {rtError && !realtime ? (
-          <ErrorBlock message={rtError.message} onRetry={() => mutateRt()} />
+        {/* KPI Cards — GET /api/overview */}
+        {ovError && !overview ? (
+          <ErrorBlock message={ovError.message} onRetry={() => mutateOverview()} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <KPICard
               label="DEVICE ONLINE RATE"
-              value={`${onlinePct}%`}
-              trend={onlinePct > 90 ? "up" : onlinePct > 0 ? "down" : "neutral"}
-              loading={anyLoading}
+              value={`${statsOnlinePct}%`}
+              trend={statsOnlinePct >= 90 ? "up" : statsOnlinePct > 0 ? "down" : "neutral"}
+              loading={ovLoading}
             />
             <KPICard
               label="TOTAL VIEWS TODAY"
-              value={fmt(views)}
-              trend={views > 0 ? "up" : "neutral"}
-              loading={anyLoading}
+              value={fmt(statsViewsToday)}
+              trend={statsViewsToday > 0 ? "up" : "neutral"}
+              loading={ovLoading}
             />
             <KPICard
               label="ACTIVE TASKS"
-              value={String(activeTasks)}
-              trend={activeTasks > 0 ? "up" : "neutral"}
-              loading={anyLoading}
+              value={String(statsActiveTasks)}
+              trend={statsActiveTasks > 0 ? "up" : "neutral"}
+              loading={ovLoading}
             />
           </div>
         )}
 
-        {/* Chart */}
+        {/* Chart — GET /api/dashboard/realtime (60s) */}
         <ActivityChart data={realtime ?? null} loading={rtLoading} />
+
+        {/* Recent Tasks — GET /api/tasks (30s) */}
+        <RecentTasks
+          tasks={recentTasksList}
+          loading={tasksLoading}
+          error={tasksError}
+          onRetry={() => mutateTasks()}
+        />
 
         {/* Bottom: PC Ranking + Device Status */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

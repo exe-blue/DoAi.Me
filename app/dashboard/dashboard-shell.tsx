@@ -37,6 +37,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -87,6 +88,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [systemOk, setSystemOk] = useState(true);
+
+  const { data: workersData } = useSWR<{ workers: Array<{ id: string; pc_number?: string; hostname?: string; status: string; last_heartbeat: string | null }> }>(
+    "/api/workers",
+    (url) => fetch(url).then((r) => r.json()),
+    { refreshInterval: 30_000 }
+  );
+  const workers = workersData?.workers ?? [];
+
+  function pcStatus(lastHeartbeat: string | null): "online" | "stale" | "offline" {
+    if (!lastHeartbeat) return "offline";
+    const ageSec = Math.round((Date.now() - new Date(lastHeartbeat).getTime()) / 1000);
+    if (ageSec < 90) return "online";
+    if (ageSec < 300) return "stale";
+    return "offline";
+  }
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -182,6 +198,30 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               {systemOk ? "System Nominal" : "Issues Detected"}
             </span>
           </div>
+          {workers.length > 0 && (
+            <div className="mb-2 space-y-1 px-1">
+              {workers.map((w) => {
+                const status = pcStatus(w.last_heartbeat);
+                const label = w.pc_number ?? w.hostname ?? w.id.slice(0, 8);
+                return (
+                  <div key={w.id} className="flex items-center gap-1.5">
+                    <div
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        status === "online"
+                          ? "bg-status-success"
+                          : status === "stale"
+                            ? "bg-status-warning"
+                            : "bg-status-error"
+                      } ${status === "online" ? "animate-pulse" : ""}`}
+                    />
+                    <span className="font-mono text-[10px] text-muted-foreground truncate">
+                      {label} {status === "online" ? "online" : status === "stale" ? "stale" : "offline"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <SidebarSeparator />
           <div className="flex items-center justify-between pt-2">
             <div className="flex items-center gap-2">

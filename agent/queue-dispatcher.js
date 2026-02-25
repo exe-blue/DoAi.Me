@@ -96,11 +96,12 @@ class QueueDispatcher {
 
       if (available === 0 || currentQueueSize === 0) return;
 
-      // 3. Dequeue items (up to available slots)
+      // 3. Dequeue items (target_worker NULL만 — 지정 PC 항목은 해당 Agent가 Realtime으로 수신)
       const { data: queueItems, error: dequeueErr } = await this.supabase
         .from("task_queue")
         .select("*")
         .eq("status", "queued")
+        .is("target_worker", null)
         .order("priority", { ascending: false })
         .order("created_at", { ascending: true })
         .limit(available);

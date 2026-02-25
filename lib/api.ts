@@ -1,5 +1,18 @@
 import { toast } from "sonner";
 
+/**
+ * API 클라이언트 기반 — 모든 API 호출 공통 래퍼.
+ * 응답 형식: { success, data?, error? }. 에러 시 toast (silent 옵션으로 비활성화 가능).
+ *
+ * 사용 예:
+ *   // SWR
+ *   const { data, error, isLoading } = useSWR('/api/dashboard/realtime', fetcher);
+ *
+ *   // 직접 호출 (POST, PATCH 등)
+ *   const result = await apiClient.post('/api/tasks', { body: taskData });
+ *   if (result.success) { ... }
+ */
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -23,7 +36,7 @@ interface RequestOptions {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);
