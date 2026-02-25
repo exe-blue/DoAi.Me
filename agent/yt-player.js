@@ -263,6 +263,47 @@ class YTPlayer {
     return { playing, adsSkipped, screen };
   }
 
+  /**
+   * 현재 재생 중인 영상의 제목/채널명 추출 (댓글 생성용)
+   * @returns {Promise<{title: string, channel: string}>}
+   */
+  async getVideoInfo(serial) {
+    const info = { title: '', channel: '' };
+    try {
+      const xml = await this.dumpUI(serial);
+      if (!xml) return info;
+
+      // 영상 제목: resource-id="com.google.android.youtube:id/title"
+      const titleNode = xml.match(
+        /resource-id="com\.google\.android\.youtube:id\/title"[^>]*text="([^"]*)"/i
+      ) || xml.match(
+        /text="([^"]*)"[^>]*resource-id="com\.google\.android\.youtube:id\/title"/i
+      );
+      if (titleNode) info.title = titleNode[1];
+
+      // 채널명: resource-id="com.google.android.youtube:id/channel_name"
+      const channelNode = xml.match(
+        /resource-id="com\.google\.android\.youtube:id\/channel_name"[^>]*text="([^"]*)"/i
+      ) || xml.match(
+        /text="([^"]*)"[^>]*resource-id="com\.google\.android\.youtube:id\/channel_name"/i
+      );
+      if (channelNode) info.channel = channelNode[1];
+
+      // 폴백: content-desc에서 제목 추출 시도
+      if (!info.title) {
+        const descMatch = xml.match(/content-desc="([^"]{10,})"[^>]*resource-id="[^"]*video_title/i);
+        if (descMatch) info.title = descMatch[1];
+      }
+
+      if (info.title || info.channel) {
+        console.log(`[YTPlayer] 영상 정보: "${info.title}" / ${info.channel}`);
+      }
+    } catch (err) {
+      console.warn(`[YTPlayer] 영상 정보 추출 실패: ${err.message}`);
+    }
+    return info;
+  }
+
   /** 홈으로 이동 */
   async goHome(serial) {
     await this.adb(serial, 'input keyevent KEYCODE_HOME');

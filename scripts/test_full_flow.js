@@ -21,12 +21,14 @@
 const WebSocket = require('ws');
 const YTPlayer = require('../agent/yt-player');
 const YTActions = require('../agent/yt-actions');
+const CommentGenerator = require('../agent/comment-generator');
 
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
 const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '마약왕 사살에 피의 복수 멕시코 카르텔 테러 확산 JTBC 뉴스룸';
 const WATCH_SEC = parseInt(process.env.WATCH_SEC || '30', 10);
-const COMMENT = process.env.COMMENT || '좋은 영상이네요 👍';
+const FALLBACK_COMMENT = process.env.COMMENT || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 const probs = {
   like: parseInt(process.env.PROB_LIKE || '100', 10),
@@ -95,22 +97,50 @@ async function main() {
   const { playing, adsSkipped } = await player.startVideo(SERIAL, SEARCH_KEYWORD);
   console.log(`   재생: ${playing ? '✓' : '⚠'} | 광고: ${adsSkipped}개 건너뜀\n`);
 
-  // 2. 액션 계획
-  console.log('── 2. 액션 계획 ──');
+  // 2. 영상 정보 수집 (댓글 생성용)
+  console.log('── 2. 영상 정보 수집 ──');
+  const videoInfo = await player.getVideoInfo(SERIAL);
+  console.log(`   제목: "${videoInfo.title || '(추출 실패)'}"`);
+  console.log(`   채널: "${videoInfo.channel || '(추출 실패)'}"\n`);
+
+  // 3. 액션 계획
+  console.log('── 3. 액션 계획 ──');
   const plan = actions.planActions(WATCH_SEC, probs, SERIAL);
-  const commentText = plan.willComment ? COMMENT : null;
+
+  // 댓글 생성 (GPT or 폴백)
+  let commentText = null;
+  if (plan.willComment) {
+    if (OPENAI_API_KEY) {
+      console.log('   댓글 생성: OpenAI API 호출 중...');
+      const gen = new CommentGenerator(OPENAI_API_KEY);
+      commentText = await gen.generate(
+        videoInfo.title || SEARCH_KEYWORD,
+        videoInfo.channel || ''
+      );
+      if (commentText) {
+        console.log(`   GPT 댓글: "${commentText}"`);
+      } else {
+        console.log('   GPT 생성 실패 → 폴백 댓글 사용');
+        commentText = FALLBACK_COMMENT || null;
+      }
+    } else {
+      console.log('   OPENAI_API_KEY 없음 → 폴백 댓글 사용');
+      commentText = FALLBACK_COMMENT || null;
+    }
+  }
+
   console.log(`   성격: ${actions.getPersonality(SERIAL)}`);
   console.log(`   계획: like=${plan.willLike} (at ${Math.round(plan.likeAt)}s)`);
-  console.log(`         comment=${plan.willComment} (at ${Math.round(plan.commentAt)}s)`);
+  console.log(`         comment=${plan.willComment} (at ${Math.round(plan.commentAt)}s)${commentText ? ` "${commentText}"` : ''}`);
   console.log(`         subscribe=${plan.willSubscribe} (at ${Math.round(plan.subscribeAt)}s)`);
   console.log(`         playlist=${plan.willPlaylist} (at ${Math.round(plan.playlistAt)}s)\n`);
 
-  // 3. 시청 + 액션 실행
-  console.log('── 3. 시청 + 액션 ──');
+  // 4. 시청 + 액션 실행
+  console.log('── 4. 시청 + 액션 ──');
   const result = await actions.executeWatchLoop(SERIAL, WATCH_SEC, plan, commentText);
 
-  // 4. 종료
-  console.log('\n── 4. 종료 ──');
+  // 5. 종료
+  console.log('\n── 5. 종료 ──');
   await player.goHome(SERIAL);
   console.log('   ✓ 홈으로 이동');
 
