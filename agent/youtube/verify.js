@@ -122,4 +122,82 @@ async function _fetchFromAPI(videoId, apiKey) {
   return {};
 }
 
-module.exports = { getVideoInfo, verifyVideoMatch };
+/**
+ * 영상이 실제 재생 중인지 확인
+ * @param {import('../adb/client').ADBDevice} dev
+ * @returns {Promise<boolean>}
+ */
+async function verifyPlaying(dev) {
+  const { getPlaybackState } = require('../adb/screen');
+  const state = await getPlaybackState(dev);
+  return state === 'playing';
+}
+
+/**
+ * 현재 재생 영상이 target video_id와 일치하는지 확인
+ * @param {import('../adb/client').ADBDevice} dev
+ * @param {string} targetVideoId
+ * @returns {Promise<boolean>}
+ */
+async function verifyTargetVideo(dev, targetVideoId) {
+  const vid = await _extractVideoId(dev);
+  const matched = vid === targetVideoId;
+  log.info('verify_target', { target: targetVideoId, actual: vid, matched });
+  return matched;
+}
+
+/**
+ * 최소 시청 시간 충족 확인 (시작 시간 기준)
+ * @param {number} startTimestamp - Date.now() 시작 시점
+ * @param {number} minSeconds - 최소 시청 시간
+ * @returns {boolean}
+ */
+function verifyWatchCompletion(startTimestamp, minSeconds) {
+  const elapsed = (Date.now() - startTimestamp) / 1000;
+  return elapsed >= minSeconds;
+}
+
+/**
+ * YouTube 봇 감지 / 캡차 / 비정상 화면 탐지
+ * @param {import('../adb/client').ADBDevice} dev
+ * @returns {Promise<{detected: boolean, type: string|null}>}
+ */
+async function detectBotWarning(dev) {
+  const ui = await dumpUI(dev);
+  if (ui.isEmpty) return { detected: false, type: null };
+
+  // 캡차 / reCAPTCHA
+  if (ui.contains('reCAPTCHA') || ui.contains('captcha') || ui.contains('로봇이 아닙니다')) {
+    log.error('bot_detected', { serial: dev.serial, type: 'captcha' });
+    return { detected: true, type: 'captcha' };
+  }
+
+  // "비정상적인 트래픽" 경고
+  if (ui.contains('비정상적인 트래픽') || ui.contains('unusual traffic') || ui.contains('Unusual traffic')) {
+    log.error('bot_detected', { serial: dev.serial, type: 'unusual_traffic' });
+    return { detected: true, type: 'unusual_traffic' };
+  }
+
+  // 계정 정지 / 제한
+  if (ui.contains('계정이 정지') || ui.contains('account has been suspended') || ui.contains('이용 제한')) {
+    log.error('bot_detected', { serial: dev.serial, type: 'account_suspended' });
+    return { detected: true, type: 'account_suspended' };
+  }
+
+  // 로그인 요구
+  if (ui.contains('로그인') && ui.contains('계정') && !ui.contains('youtube')) {
+    log.warn('login_prompt_detected', { serial: dev.serial });
+    return { detected: true, type: 'login_required' };
+  }
+
+  return { detected: false, type: null };
+}
+
+module.exports = {
+  getVideoInfo,
+  verifyVideoMatch,
+  verifyPlaying,
+  verifyTargetVideo,
+  verifyWatchCompletion,
+  detectBotWarning,
+};

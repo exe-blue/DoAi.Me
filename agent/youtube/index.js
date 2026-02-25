@@ -4,7 +4,8 @@
 const { RES, COORDS, AD_SIGNALS, AD_SKIP_KEYWORDS, YT_PACKAGE } = require('./selectors');
 const { openSearchResults, selectFromResults, extractSearchResults, searchAndSelect } = require('./search');
 const { trySkipAd, skipAdFixed, handlePrerollAds, ensurePlaying, simulateHumanBehavior, watchVideo } = require('./watch');
-const { getVideoInfo, verifyVideoMatch } = require('./verify');
+const { getVideoInfo, verifyVideoMatch, verifyPlaying, verifyTargetVideo, verifyWatchCompletion, detectBotWarning } = require('./verify');
+const { likeVideo, subscribeChannel, writeComment, saveToPlaylist } = require('./action');
 
 module.exports = {
   // selectors
@@ -14,5 +15,7 @@ module.exports = {
   // watch
   trySkipAd, handlePrerollAds, ensurePlaying, simulateHumanBehavior, watchVideo,
   // verify
-  getVideoInfo, verifyVideoMatch,
+  getVideoInfo, verifyVideoMatch, verifyPlaying, verifyTargetVideo, verifyWatchCompletion, detectBotWarning,
+  // actions
+  likeVideo, subscribeChannel, writeComment, saveToPlaylist,
 };
