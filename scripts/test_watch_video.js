@@ -10,7 +10,7 @@ const WebSocket = require('ws');
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
 const WATCH_SEC = parseInt(process.env.WATCH_SEC || '30', 10);
-const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '[에디터픽] 마약왕 사살에 폭주하는 카르텔 보복';
+const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '마약왕 사살에 피의 복수 멕시코 카르텔 테러 확산 JTBC 뉴스룸';
 
 let ws;
 const pendingQueue = [];
@@ -145,11 +145,11 @@ async function trySkipAd() {
       }
     }
 
-    // bounds 못 찾았지만 키워드는 있음 → 폴백 좌표
-    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭`);
+    // bounds 못 찾았지만 키워드는 있음 → 폴백 좌표 (x85% y22%)
     const scr = await getScreen();
-    const sx = scr.landscape ? Math.round(scr.w * 0.88) : Math.round(scr.w * 0.89);
-    const sy = scr.landscape ? Math.round(scr.h * 0.85) : Math.round(scr.h * 0.3);
+    const sx = Math.round(scr.w * 0.85);
+    const sy = Math.round(scr.h * 0.22);
+    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭 (${sx}, ${sy})`);
     await adb(`input tap ${sx} ${sy}`);
     return true;
   }

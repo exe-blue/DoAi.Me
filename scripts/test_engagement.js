@@ -11,7 +11,7 @@ const WebSocket = require('ws');
 
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
-const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '[에디터픽] 마약왕 사살에 폭주하는 카르텔 보복';
+const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '마약왕 사살에 피의 복수 멕시코 카르텔 테러 확산 JTBC 뉴스룸';
 const COMMENT_TEXT = process.env.COMMENT || '좋은 영상이네요 👍';
 const DO_LIKE = (process.env.DO_LIKE || 'true') !== 'false';
 const DO_COMMENT = (process.env.DO_COMMENT || 'true') !== 'false';
@@ -125,9 +125,11 @@ async function trySkipAd() {
       }
     }
 
-    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭`);
     const scr = await getScreen();
-    await adb(`input tap ${Math.round(scr.w * 0.89)} ${Math.round(scr.h * 0.3)}`);
+    const sx = Math.round(scr.w * 0.85);
+    const sy = Math.round(scr.h * 0.22);
+    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭 (${sx}, ${sy})`);
+    await adb(`input tap ${sx} ${sy}`);
     return true;
   }
   return false;
