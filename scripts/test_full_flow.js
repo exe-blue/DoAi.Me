@@ -26,15 +26,15 @@ const CommentGenerator = require('../agent/comment-generator');
 const SERIAL = process.env.SERIAL || '423349535a583098';
 const XIAOWEI_URL = process.env.XIAOWEI_URL || 'ws://127.0.0.1:22222/';
 const SEARCH_KEYWORD = process.env.SEARCH_KEYWORD || '마약왕 사살에 피의 복수 멕시코 카르텔 테러 확산 JTBC 뉴스룸';
-const WATCH_SEC = parseInt(process.env.WATCH_SEC || '30', 10);
+const WATCH_SEC = parseInt(process.env.WATCH_SEC || '60', 10);
 const FALLBACK_COMMENT = process.env.COMMENT || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 const probs = {
   like: parseInt(process.env.PROB_LIKE || '100', 10),
-  comment: parseInt(process.env.PROB_COMMENT || '0', 10),
-  subscribe: parseInt(process.env.PROB_SUBSCRIBE || '0', 10),
-  playlist: parseInt(process.env.PROB_PLAYLIST || '0', 10),
+  comment: parseInt(process.env.PROB_COMMENT || '100', 10),
+  subscribe: parseInt(process.env.PROB_SUBSCRIBE || '100', 10),
+  playlist: parseInt(process.env.PROB_PLAYLIST || '100', 10),
 };
 
 // Xiaowei WebSocket wrapper (FIFO response matching)
