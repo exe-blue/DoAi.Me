@@ -25,7 +25,12 @@ export async function GET() {
 
     const mappedChannels = channelsWithCount.map((ch) => ({
       ...mapChannelRow(ch),
-      video_count: ch.videos?.[0]?.count || 0,
+      video_count: ch.videos?.[0]?.count ?? 0,
+      last_collected_at: ch.last_collected_at ?? null,
+      is_monitored: ch.is_monitored ?? false,
+      handle: ch.handle ?? null,
+      status: ch.status ?? null,
+      auto_collect: ch.auto_collect ?? false,
     }));
 
     const mappedContents = await Promise.all(

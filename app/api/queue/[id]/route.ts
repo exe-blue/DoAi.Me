@@ -20,6 +20,7 @@ export async function PUT(
 
     const updateFields: Record<string, unknown> = {};
     if (typeof body.priority === "number") updateFields.priority = body.priority;
+    if (body.source === "manual" || body.source === "channel_auto") updateFields.source = body.source;
     if (body.task_config && typeof body.task_config === "object") {
       updateFields.task_config = body.task_config;
     }

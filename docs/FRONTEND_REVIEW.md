@@ -3,7 +3,7 @@
 ## 1. 현재 적용된 수정사항 요약
 
 | 항목 | 위치 | 상태 |
-| ------ | ------ | ------ |
+| --- | --- | --- |
 | 대시보드 셸(사이드바) | `app/dashboard/dashboard-shell.tsx` | ✅ 레이아웃에서 사용 중 (`app/dashboard/layout.tsx`) |
 | CSS 변수(디자인 토큰) | `app/globals.css` (`:root`) | ✅ 정의됨 (sidebar, status 등) |
 | Tailwind 확장 | `tailwind.config.ts` | ✅ `hsl(var(--*))` 매핑 완료 |

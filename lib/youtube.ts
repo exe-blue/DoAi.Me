@@ -95,6 +95,49 @@ export async function resolveChannelHandle(handle: string): Promise<YouTubeChann
 }
 
 /**
+ * Fetches a single video by ID
+ * @param videoId - YouTube video ID
+ * @returns Video information or throws if not found / private
+ */
+export async function fetchVideoById(videoId: string): Promise<YouTubeVideoInfo & { viewCount?: string; publishedAt?: string }> {
+  if (!API_KEY) {
+    throw new Error('YOUTUBE_API_KEY environment variable is not set');
+  }
+
+  const url = new URL(`${YOUTUBE_API_BASE}/videos`);
+  url.searchParams.set('part', 'snippet,contentDetails,statistics');
+  url.searchParams.set('id', videoId);
+  url.searchParams.set('key', API_KEY);
+
+  const response = await fetch(url.toString());
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`YouTube API error (videos.list): ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error('영상을 찾을 수 없습니다. 비공개이거나 삭제되었을 수 있습니다.');
+  }
+
+  const item = data.items[0];
+  const duration = item.contentDetails?.duration ? formatDuration(item.contentDetails.duration) : '0:00';
+
+  return {
+    videoId: item.id,
+    title: item.snippet?.title ?? '',
+    thumbnail: item.snippet?.thumbnails?.maxres?.url ?? item.snippet?.thumbnails?.high?.url ?? item.snippet?.thumbnails?.default?.url ?? '',
+    duration,
+    channelTitle: item.snippet?.channelTitle ?? '',
+    channelId: item.snippet?.channelId ?? '',
+    publishedAt: item.snippet?.publishedAt,
+    viewCount: item.statistics?.viewCount ?? '0',
+  };
+}
+
+/**
  * Fetches recent videos from a channel
  * @param channelId - YouTube channel ID
  * @param hoursAgo - Number of hours to look back (default: 24)

@@ -13,7 +13,14 @@ const DEFAULT_VARIABLES: TaskVariables = {
 export async function createManualTask(
   videoId: string,
   channelId: string,
-  options: { deviceCount?: number; variables?: TaskVariables; workerId?: string; createdByUserId?: string } = {}
+  options: {
+    deviceCount?: number;
+    variables?: TaskVariables;
+    workerId?: string;
+    createdByUserId?: string;
+    source?: "manual" | "channel_auto";
+    priority?: number;
+  } = {}
 ) {
   const supabase = createServerClient();
 
@@ -21,19 +28,23 @@ export async function createManualTask(
     ...(options.variables ?? DEFAULT_VARIABLES),
   };
 
+  const insertRow: Record<string, unknown> = {
+    video_id: videoId,
+    channel_id: channelId,
+    type: "youtube",
+    task_type: "view_farm",
+    device_count: options.deviceCount ?? 20,
+    payload,
+    status: "pending",
+    ...(options.workerId ? { worker_id: options.workerId } : {}),
+    ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
+    ...(options.priority != null ? { priority: options.priority } : {}),
+  };
+  if (options.source) insertRow.source = options.source;
+
   const { data: task, error } = await supabase
     .from("tasks")
-    .insert({
-      video_id: videoId,
-      channel_id: channelId,
-      type: "youtube",
-      task_type: "view_farm",
-      device_count: options.deviceCount ?? 20,
-      payload,
-      status: "pending",
-      ...(options.workerId ? { worker_id: options.workerId } : {}),
-      ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
-    })
+    .insert(insertRow)
     .select()
     .single();
 
@@ -58,6 +69,8 @@ type BatchTaskOptions = {
   variables?: TaskVariables;
   workerId?: string;
   createdByUserId?: string;
+  source?: "manual" | "channel_auto";
+  priority?: number;
 };
 
 export async function createBatchTask(options: BatchTaskOptions) {
@@ -110,64 +123,104 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
   if (!channelId) throw new Error("channelId could not be determined");
 
-  // Step 2: Create the task
+  const taskRow: Record<string, unknown> = {
+    video_id: videos[0].id,
+    channel_id: channelId,
+    type: "youtube",
+    task_type: "view_farm",
+    device_count: deviceCount,
+    payload,
+    status: "pending",
+    ...(options.workerId ? { worker_id: options.workerId } : {}),
+    ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
+    ...(options.priority != null ? { priority: options.priority } : {}),
+  };
+  if (options.source) taskRow.source = options.source;
+
   const { data: task, error: taskError } = await supabase
     .from("tasks")
-    .insert({
-      video_id: videos[0].id, // Use first video as primary
-      channel_id: channelId,
-      type: "youtube",
-      task_type: "view_farm",
-      device_count: deviceCount,
-      payload,
-      status: "pending",
-      ...(options.workerId ? { worker_id: options.workerId } : {}),
-      ...(options.createdByUserId ? { created_by: options.createdByUserId } : {}),
-    })
+    .insert(taskRow)
     .select()
     .single();
 
   if (taskError) throw taskError;
 
-  // Step 3: Distribute videos to devices and create task_devices rows
+  // Step 3: Create task_devices per PC (가드레일: PC당 최대 deviceCount, 다른 PC에서 가져오지 않음)
   const distribution = options.distribution ?? "round_robin";
-  const deviceConfigs = _distributeVideos(videos, deviceCount, distribution);
+  const perPcCap = deviceCount;
+  type TaskDeviceInsertRow = TaskDeviceInsert & { pc_id?: string | null };
 
-  // Fetch worker's devices to get real serials
-  let deviceSerials: string[] = [];
-  if (options.workerId) {
-    const { data: devices, error: devicesError } = await supabase
-      .from("devices")
-      .select("serial")
-      .eq("worker_id", options.workerId)
-      .limit(deviceCount)
-      .returns<Array<{ serial: string }>>();
-    if (devicesError) throw devicesError;
-    deviceSerials = devices.map((d) => d.serial);
+  const { data: pcs } = await supabase
+    .from("pcs")
+    .select("id")
+    .returns<Array<{ id: string }>>();
+  const pcList = pcs ?? [];
+
+  const allTaskDevices: TaskDeviceInsertRow[] = [];
+  const allConfigs: Array<{ video_url: string; video_id: string }> = [];
+
+  if (pcList.length > 0) {
+    for (const pc of pcList) {
+      const { data: devices } = await supabase
+        .from("devices")
+        .select("serial")
+        .eq("pc_id", pc.id)
+        .limit(perPcCap)
+        .returns<Array<{ serial: string }>>();
+      const serials = devices ?? [];
+      const cap = Math.min(perPcCap, serials.length || perPcCap);
+      const deviceConfigsForPc = _distributeVideos(videos, cap, distribution);
+      for (let i = 0; i < cap; i++) {
+        const serial = serials[i]?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
+        allTaskDevices.push({
+          task_id: task.id,
+          device_serial: serial,
+          status: "pending",
+          config: deviceConfigsForPc[i] as Json,
+          worker_id: options.workerId ?? null,
+          pc_id: pc.id,
+        });
+        allConfigs.push(deviceConfigsForPc[i]);
+      }
+    }
   }
 
-  // If we have fewer serials than deviceCount, generate placeholder serials
-  while (deviceSerials.length < deviceCount) {
-    deviceSerials.push(`device_${deviceSerials.length + 1}`);
+  // Fallback: PC가 없거나 모든 PC에 기기가 없으면 기존 방식(workerId 또는 플레이스홀더)
+  if (allTaskDevices.length === 0) {
+    const deviceConfigs = _distributeVideos(videos, deviceCount, distribution);
+    let deviceSerials: string[] = [];
+    if (options.workerId) {
+      const { data: devices, error: devicesError } = await supabase
+        .from("devices")
+        .select("serial")
+        .eq("worker_id", options.workerId)
+        .limit(deviceCount)
+        .returns<Array<{ serial: string }>>();
+      if (!devicesError) deviceSerials = (devices ?? []).map((d) => d.serial);
+    }
+    while (deviceSerials.length < deviceCount) {
+      deviceSerials.push(`device_${deviceSerials.length + 1}`);
+    }
+    for (let i = 0; i < deviceCount; i++) {
+      allTaskDevices.push({
+        task_id: task.id,
+        device_serial: deviceSerials[i],
+        status: "pending",
+        config: deviceConfigs[i] as Json,
+        worker_id: options.workerId ?? null,
+      });
+      allConfigs.push(deviceConfigs[i]);
+    }
   }
 
-  const taskDevices: TaskDeviceInsert[] = deviceSerials.slice(0, deviceCount).map((serial, idx) => {
-    const config = deviceConfigs[idx];
-    return {
-      task_id: task.id,
-      device_serial: serial,
-      status: "pending",
-      config: config as Json,
-      worker_id: options.workerId ?? null,
-    };
-  });
-
-  const { error: taskDevicesError } = await supabase.from("task_devices").insert(taskDevices);
+  const { error: taskDevicesError } = await supabase
+    .from("task_devices")
+    .insert(allTaskDevices as TaskDeviceInsert[]);
   if (taskDevicesError) throw taskDevicesError;
 
   // Step 4: Increment completed_views for assigned videos
   const videoIdCounts = new Map<string, number>();
-  for (const config of deviceConfigs) {
+  for (const config of allConfigs) {
     const count = videoIdCounts.get(config.video_id) ?? 0;
     videoIdCounts.set(config.video_id, count + 1);
   }

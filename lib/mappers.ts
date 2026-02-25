@@ -76,7 +76,7 @@ export function mapChannelRow(row: ChannelRow): Channel {
 }
 
 export function mapVideoRow(
-  row: VideoRow & { channels?: { name: string } | null },
+  row: VideoRow & { channels?: { name: string } | null; source?: string | null },
   taskId: string | null = null
 ): Content {
   const channelName = row.channels?.name ?? row.channel_name ?? "";
@@ -91,12 +91,22 @@ export function mapVideoRow(
     registeredAt: row.created_at ?? "",
     taskId,
     status: mapVideoStatusToContentStatus(row.status ?? ""),
+    source: row.source === "manual" || row.source === "channel_auto" ? row.source : undefined,
   };
 }
 
 export function mapTaskRow(
   row: TaskRow & {
-    videos?: { title: string; thumbnail_url: string | null; duration_sec: number | null; id: string } | null;
+    videos?: {
+      title: string;
+      thumbnail_url: string | null;
+      duration_sec: number | null;
+      id: string;
+      target_views?: number | null;
+      completed_views?: number | null;
+      prob_like?: number | null;
+      prob_comment?: number | null;
+    } | null;
     channels?: { name: string } | null;
   },
   logs: string[] = []
@@ -109,6 +119,12 @@ export function mapTaskRow(
     cancelled: "stopped",
   };
   const result = row.result && typeof row.result === "object" && !Array.isArray(row.result) ? row.result as Record<string, unknown> : null;
+  const targetViews = row.videos?.target_views ?? null;
+  const completedViews = row.videos?.completed_views ?? null;
+  const progressFromVideo =
+    targetViews != null && targetViews > 0 && completedViews != null
+      ? Math.min(100, Math.round((completedViews / targetViews) * 100))
+      : null;
   return {
     id: row.id,
     title: row.videos?.title ?? "",
@@ -121,11 +137,16 @@ export function mapTaskRow(
     isPriority: (row.priority ?? 5) <= 3,
     assignedDevices: 0,
     totalDevices: row.device_count ?? 0,
-    progress: calculateProgress(row.status || "pending", result),
+    progress: progressFromVideo ?? calculateProgress(row.status || "pending", result),
     variables: extractVariables(row.payload),
     createdAt: row.created_at ?? "",
     completedAt: row.completed_at ?? "",
     logs,
+    targetViews: targetViews ?? undefined,
+    completedViews: completedViews ?? undefined,
+    probLike: row.videos?.prob_like ?? undefined,
+    probComment: row.videos?.prob_comment ?? undefined,
+    source: (row as { source?: string }).source ?? undefined,
     result,
   };
 }

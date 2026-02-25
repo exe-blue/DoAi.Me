@@ -35,6 +35,8 @@ interface Task {
   completed_at?: string;
   error?: string;
   result?: unknown;
+  source?: "manual" | "channel_auto" | null;
+  priority?: number | null;
 }
 
 interface TaskDevice {
@@ -239,9 +241,22 @@ export default function TasksPage() {
                       <span className="truncate text-sm font-medium text-white">
                         {title}
                       </span>
+                      {t.source === "manual" && (
+                        <span className="shrink-0 rounded bg-blue-500/20 px-1.5 py-0.5 text-[9px] font-medium text-blue-400">
+                          직접 등록
+                        </span>
+                      )}
+                      {t.source === "channel_auto" && (
+                        <span className="shrink-0 rounded bg-green-500/20 px-1.5 py-0.5 text-[9px] font-medium text-green-400">
+                          자동 등록
+                        </span>
+                      )}
                       <span className="rounded bg-[#1a1d2e] px-1.5 py-0.5 font-mono text-[9px] text-slate-500">
                         {taskType}
                       </span>
+                      {t.priority != null && (
+                        <span className="font-mono text-[9px] text-slate-500">P{t.priority}</span>
+                      )}
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
                       <span className={st.color}>{st.label}</span>
