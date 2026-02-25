@@ -171,80 +171,63 @@ async function run() {
   let scr = await getScreen();
   log('3-화면', `${scr.w}x${scr.h} (${scr.landscape ? '가로' : '세로'})`);
 
-  // 4. YouTube 종료 → 실행
+  // 4. YouTube 종료
   await adb('am force-stop com.google.android.youtube');
   await sleep(1000);
-  await adb('monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1');
-  log('4-YouTube', '✓ 앱 실행');
-  await sleep(4000);
 
-  // 화면 방향 재확인 (YouTube가 가로로 바꿀 수 있음)
+  // 5. YouTube 검색 결과 URL로 직접 열기 (한글 입력 불필요)
+  const encodedQuery = encodeURIComponent(SEARCH_KEYWORD);
+  const searchUrl = `https://www.youtube.com/results?search_query=${encodedQuery}`;
+  log('5-검색', `YouTube 검색 결과 URL 열기`);
+  log('5-검색', `검색어: "${SEARCH_KEYWORD}"`);
+  await adb(`am start -a android.intent.action.VIEW -d '${searchUrl}'`);
+  await sleep(5000);
+
+  // 화면 방향 재확인
   scr = await getScreen();
-  log('4-YouTube', `현재 화면: ${scr.w}x${scr.h} (${scr.landscape ? '가로' : '세로'})`);
+  log('5-검색', `✓ 검색 결과 페이지 열림 (${scr.w}x${scr.h} ${scr.landscape ? '가로' : '세로'})`);
 
-  // 5. 검색 아이콘 찾기 (uiautomator → 폴백 좌표)
-  log('5-검색', '검색 아이콘 찾기...');
-  let searchBtn = await findElement('content-desc="검색"');
-  if (!searchBtn) searchBtn = await findElement('content-desc="Search"');
-  if (!searchBtn) searchBtn = await findElement('resource-id="com.google.android.youtube:id/menu_item_1"');
-
-  if (searchBtn) {
-    log('5-검색', `✓ 검색 버튼 발견: (${searchBtn.x}, ${searchBtn.y})`);
-    await adb(`input tap ${searchBtn.x} ${searchBtn.y}`);
-  } else {
-    // 폴백: 화면 크기 기반 추정 좌표
-    const sx = scr.landscape ? Math.round(scr.w * 0.90) : Math.round(scr.w * 0.86);
-    const sy = scr.landscape ? Math.round(scr.h * 0.07) : Math.round(scr.h * 0.04);
-    log('5-검색', `⚠ 버튼 못 찾음 — 추정 좌표 (${sx}, ${sy})`);
-    await adb(`input tap ${sx} ${sy}`);
-  }
-  await sleep(2000);
-
-  // 6. 검색어 입력
-  log('6-입력', `"${SEARCH_KEYWORD}"`);
-  await inputText(SEARCH_KEYWORD);
-  await sleep(1000);
-  await adb('input keyevent KEYCODE_ENTER');
-  log('6-입력', '✓ 검색 실행');
-  await sleep(4000);
-
-  // 화면 재확인
-  scr = await getScreen();
-
-  // 7. 검색 결과에서 스크롤 + 영상 선택
-  log('7-선택', '검색 결과 — 광고 건너뛰기 위해 스크롤');
+  // 6. 검색 결과에서 스크롤 + 영상 선택
   const midX = Math.round(scr.w / 2);
-  // 스크롤: 화면 하단 70% → 30% (광고 1개 지나감)
-  const fromY = Math.round(scr.h * 0.70);
-  const toY = Math.round(scr.h * 0.30);
+
+  // UI dump로 첫 번째 결과가 광고인지 확인
+  let xml = await dumpUI();
+  const hasAdLabel = xml.includes('광고') || xml.includes('Ad ·') || xml.includes('Sponsored');
+  if (hasAdLabel) {
+    log('6-선택', '⚠ 첫 결과가 광고 — 스크롤해서 건너뛰기');
+  }
+
+  // 스크롤 1회 (광고 + 상단 UI 지나감)
+  const fromY = Math.round(scr.h * 0.75);
+  const toY = Math.round(scr.h * 0.25);
   await adb(`input swipe ${midX} ${fromY} ${midX} ${toY} 400`);
   await sleep(2000);
 
-  // 두 번째 결과 영역 탭 (화면 중앙 약간 위)
-  const tapY = Math.round(scr.h * 0.40);
-  log('7-선택', `탭: (${midX}, ${tapY})`);
+  // 화면 중간 영역의 영상 썸네일 탭
+  const tapY = Math.round(scr.h * 0.35);
+  log('6-선택', `영상 탭: (${midX}, ${tapY})`);
   await adb(`input tap ${midX} ${tapY}`);
   await sleep(5000);
 
-  // 8. 광고 건너뛰기 (최대 3회)
+  // 7. 프리롤 광고 건너뛰기 (최대 3회)
   for (let i = 0; i < 3; i++) {
     const skipped = await trySkipAd();
     if (skipped) {
-      log('8-광고', `광고 건너뛰기 (${i + 1}회)`);
-      await sleep(2000);
+      log('7-광고', `광고 건너뛰기 (${i + 1}회)`);
+        await sleep(2000);
     } else {
-      const xml = await dumpUI();
-      if (xml.includes('Ad') || xml.includes('광고')) {
-        log('8-광고', `광고 재생 중 — 5초 대기`);
+      const adXml = await dumpUI();
+      if (adXml.includes('Ad') || adXml.includes('광고')) {
+        log('7-광고', `광고 재생 중 — 5초 대기`);
         await sleep(5000);
       } else {
-        log('8-광고', '✓ 광고 없음');
+        log('7-광고', '✓ 광고 없음');
         break;
       }
     }
   }
 
-  // 9. 재생 확인 + 강제 재생
+  // 8. 재생 확인 + 강제 재생
   scr = await getScreen();
   const playerX = Math.round(scr.w / 2);
   const playerY = scr.landscape ? Math.round(scr.h / 2) : Math.round(scr.h * 0.18);
@@ -258,18 +241,18 @@ async function run() {
     const res = await adb('dumpsys media_session | grep "state="');
     const s = out(res);
     if (s.includes('state=3')) {
-      log('9-재생', '✓ 재생 중');
+      log('8-재생', '✓ 재생 중');
     } else {
-      log('9-재생', '⚠ 재생 안 됨 — MEDIA_PLAY 전송');
+      log('8-재생', '⚠ 재생 안 됨 — MEDIA_PLAY 전송');
       await adb('input keyevent KEYCODE_MEDIA_PLAY');
     }
   } catch {
-    log('9-재생', '⚠ 상태 확인 불가');
+    log('8-재생', '⚠ 상태 확인 불가');
   }
 
-  // 10. 시청
+  // 9. 시청
   console.log('─'.repeat(60));
-  log('10-시청', `${WATCH_SEC}초 시청 시작`);
+  log('9-시청', `${WATCH_SEC}초 시청 시작`);
 
   for (let i = 0; i < WATCH_SEC; i += 5) {
     const tick = Math.min(5, WATCH_SEC - i);
@@ -278,7 +261,7 @@ async function run() {
     if (i > 0 && i % 15 === 0) {
       await adb('input keyevent KEYCODE_WAKEUP').catch(() => {});
       const skipped = await trySkipAd();
-      if (skipped) log('10-시청', '⏭ 중간 광고 건너뛰기');
+      if (skipped) log('9-시청', '⏭ 중간 광고 건너뛰기');
     }
 
     if (i % 10 === 0) {
@@ -287,23 +270,23 @@ async function run() {
         const s = out(res);
         const playing = s.includes('state=3');
         if (playing) {
-          log('10-시청', `${i + tick}/${WATCH_SEC}s ▶ 재생 중`);
+          log('9-시청', `${i + tick}/${WATCH_SEC}s ▶ 재생 중`);
         } else {
-          log('10-시청', `${i + tick}/${WATCH_SEC}s ⏸ 멈춤 → 재생 시도`);
+          log('9-시청', `${i + tick}/${WATCH_SEC}s ⏸ 멈춤 → 재생 시도`);
           await adb(`input tap ${playerX} ${playerY}`);
           await sleep(500);
           await adb(`input tap ${playerX} ${playerY}`);
           await adb('input keyevent KEYCODE_MEDIA_PLAY');
         }
       } catch {
-        log('10-시청', `${i + tick}/${WATCH_SEC}s`);
+        log('9-시청', `${i + tick}/${WATCH_SEC}s`);
       }
     }
   }
 
-  log('10-시청', `✓ ${WATCH_SEC}초 시청 완료`);
+  log('9-시청', `✓ ${WATCH_SEC}초 시청 완료`);
   await adb('input keyevent KEYCODE_HOME');
-  log('11-종료', '✓ 홈으로 이동');
+  log('10-종료', '✓ 홈으로 이동');
   console.log('─'.repeat(60));
   log('완료', '✅ 전체 테스트 완료');
   done();
