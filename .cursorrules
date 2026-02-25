@@ -1,46 +1,181 @@
-# DoAi.Me - YouTube Agent Farm
+# .cursorrules — DoAi.Me YouTube Agent Farm
 
-## 프로젝트 개요
-Galaxy S9 500대를 이용한 YouTube 자동 시청 시스템.
-Supabase(DB) → Next.js(웹앱) → Node.js Agent(PC) → Xiaowei(디바이스 제어) → Galaxy S9(YouTube 앱)
+> Cursor AI가 코드를 생성/수정할 때 반드시 참고하는 프로젝트 컨텍스트와 규칙.
 
-## 기술 스택
-- **웹앱**: Next.js 14 (App Router), React, TypeScript, Tailwind, shadcn/ui
-- **Agent**: Node.js (CommonJS, .js 파일), WebSocket
-- **DB**: Supabase (PostgreSQL), REST API
-- **디바이스 제어**: Xiaowei 클라이언트 (WebSocket + ADB)
-- **배포**: Vercel (웹앱), Windows PC (Agent)
+---
 
-## 아키텍처 플로우
+## 1. 프로젝트 개요
+
+YouTube Agent Farm — Galaxy S9 500대를 이용한 YouTube 자동화 시스템.
+자동화 방식: Node.js → Xiaowei WebSocket → ADB shell → XML UI dump 파싱 → 좌표/노드 기반 액션
+
+---
+
+## 2. 인프라 구성
+
+### 2.1 물리 환경
+| 구분 | 사양 |
+|------|------|
+| PC 대수 | 5대 (PC00 ~ PC04) |
+| PC OS | Windows |
+| 연결 방식 | USB OTG (PC 1대당 Galaxy S9 100대) |
+| 총 기기 | 500대 (Galaxy S9, 1080×1920) |
+| 디바이스 제어 | Xiaowei WebSocket (`ws://127.0.0.1:22222/`) → ADB |
+| PC00 | 테스트/개발용 (직접 접근 가능) |
+| PC01~PC04 | 원격 운영 (Supabase polling 기반) |
+
+### 2.2 서버리스 백엔드
+| 서비스 | 용도 |
+|--------|------|
+| **Vercel** | Next.js 프론트엔드 + API Routes (Serverless) |
+| **Supabase** | PostgreSQL DB, Realtime 구독, Auth |
+
+### 2.3 아키텍처 흐름
 ```
-videos(active) → VideoDispatcher(60s) → jobs + job_assignments(pending)
-→ TaskExecutor(15s poll) → _watchVideoOnDevice() → Xiaowei ADB → Galaxy S9
-→ completed → VideoDispatcher가 추가 assignment 생성 (target_views까지)
+Vercel (Next.js + API Routes)
+    ↕ REST API
+Supabase (DB + Realtime + Auth)
+    ↕ Realtime 구독 / Polling
+PC00~PC04 (Node.js Agent)
+    ↕ Xiaowei WebSocket
+Galaxy S9 × 100대 (ADB + YouTube 앱)
 ```
 
-## 프로젝트 구조
+### 2.4 잡 수신 방식
+1순위: Supabase Broadcast (`room:tasks`) — 저지연
+2순위: Supabase postgres_changes — 실시간 폴백
+3순위: Polling (N초마다 pending tasks 조회) — 최종 폴백
+
+---
+
+## 3. 기술 스택
+
+### 확정
+| 항목 | 기술 |
+|------|------|
+| 웹앱 | Next.js 15 (App Router), React 18, TypeScript, Tailwind, shadcn/ui |
+| Agent | Node.js (CommonJS, .js 파일), Xiaowei WebSocket |
+| DB | Supabase (PostgreSQL), REST API, Realtime |
+| 디바이스 제어 | Xiaowei 클라이언트 → ADB shell + XML UI dump |
+| 배포 | Vercel (웹앱), Windows PC (Agent) |
+| 댓글 생성 | OpenAI API (gpt-4o-mini) |
+
+### 금지 (절대 도입 불가)
+| 기술 | 대체 |
+|------|------|
+| FastAPI (Python) | Vercel API Routes (JS/TS) |
+| Celery + Redis | Supabase Realtime + 로컬 Node.js Agent |
+| uiautomator2 (Python) | Xiaowei + ADB shell + XML dump |
+| Electron | 순수 Node.js CLI Agent |
+
+---
+
+## 4. 디렉토리 구조
+
 ```
-doai.me/
-├── app/                    # Next.js App Router
-│   ├── api/               # API Routes
-│   └── dashboard/         # 대시보드 UI
-├── lib/                   # 공유 라이브러리
-├── agent/                 # PC Agent (Node.js CommonJS)
-│   ├── agent.js          # 메인 엔트리
-│   ├── task-executor.js  # 태스크 실행 엔진
-│   ├── video-dispatcher.js
-│   ├── xiaowei-client.js # Xiaowei WebSocket
-│   └── supabase-sync.js
-├── docs/                  # 프로젝트 문서 (Cursor 참조용)
-│   ├── architecture.md
-│   ├── known-issues.md
-│   └── xiaowei-api.md
-└── tests/
+project-root/
+├── app/                     # Next.js App Router (웹 대시보드)
+│   ├── api/                 # API Routes (19개)
+│   └── dashboard/           # 대시보드 페이지
+├── components/              # React 컴포넌트 (shadcn/ui)
+├── hooks/                   # Zustand 스토어 + Realtime 훅
+├── lib/                     # 웹앱 공유 라이브러리
+│   ├── supabase/            # Supabase 클라이언트 + 타입
+│   └── db/                  # 서버사이드 쿼리
+│
+├── agent/                   # Node.js PC Agent
+│   ├── common/              # 공통 유틸 (config, logger, constants)
+│   ├── adb/                 # ADB + XML UI 자동화 코어
+│   ├── youtube/             # YouTube 자동화 (검색, 시청, 액션)
+│   ├── device/              # 디바이스 관리
+│   ├── account/             # 계정 관리
+│   ├── proxy/               # 프록시 관리
+│   ├── orchestrator/        # 태스크 오케스트레이션
+│   ├── dashboard/           # 브로드캐스트
+│   ├── agent.js             # 메인 엔트리포인트
+│   └── package.json
+│
+├── scripts/                 # 테스트/개발 스크립트
+├── tests/                   # Vitest 유닛 테스트
+├── supabase/                # 마이그레이션 + 스키마
+├── docs/                    # 프로젝트 문서
+├── _archive/                # 삭제 후보 임시 보관
+└── package.json             # 루트 (Next.js + workspaces)
 ```
 
-## ⚠️ 핵심 규칙
-1. DB 쿼리 시 반드시 `docs/supabase-schema.md` 또는 `.cursor/rules/supabase-schema.mdc` 참조
-2. Agent 코드는 CommonJS만 (.js, require/module.exports)
-3. videos.id = YouTube Video ID (UUID 아님!), channels.id = YouTube Channel ID
-4. job_assignments에 `updated_at` 컬럼 없음
-5. Agent는 Windows에서만 실행 (WSL 아님)
+---
+
+## 5. 코딩 컨벤션
+
+### 5.1 일반
+- Agent 코드는 **CommonJS** (.js, require/module.exports)
+- 웹앱 코드는 **TypeScript** (.ts/.tsx)
+- async/await 사용 (콜백 금지)
+- 환경변수는 `agent/common/config.js` 또는 `lib/` 에서만 읽음
+- 하드코딩된 IP, 포트, API키 금지 — `.env`로 관리
+
+### 5.2 모듈 규칙
+- 각 모듈 폴더에 `index.js`로 public API export
+- 모듈 간 require는 `index.js` export만 (내부 파일 직접 참조 금지)
+- 순환 require 금지
+- 전역 변수로 상태 공유 금지
+
+### 5.3 파일 패턴
+| 파일 | 역할 |
+|------|------|
+| `index.js` | public API export |
+| `service.js` | 비즈니스 로직 |
+| `selectors.js` | XML 노드 셀렉터 정의 |
+
+### 5.4 ADB + XML 자동화 규칙
+- 디바이스 조작은 **Xiaowei WebSocket** (`xiaowei.adbShell()`) 통해서만
+- XML 획득: `uiautomator dump` → XML 파싱
+- **요소 탐색 우선순위**: resource-id → content-desc → text → class
+- bounds `[x1,y1][x2,y2]` → 중심 좌표: `((x1+x2)/2, (y1+y2)/2)`
+- tap 시 ±3~5px 랜덤 오프셋 권장 (봇 감지 방지)
+- XML에서 못 찾을 때만 고정 좌표 폴백 허용 (SurfaceView 등)
+- 모든 셀렉터는 `agent/youtube/selectors.js`에 중앙 관리
+- 매 액션 사이 랜덤 딜레이 (800~2500ms)
+- 패턴: dump → find → action → delay → dump → verify
+
+### 5.5 DB 규칙
+- `videos.id` = YouTube Video ID (text PK, UUID 아님)
+- `channels.id` = YouTube Channel ID (text PK, UUID 아님)
+- `job_assignments`에 `updated_at` 컬럼 **없음**
+- `SUPABASE_SERVICE_ROLE_KEY`를 클라이언트 코드에 노출 금지
+
+---
+
+## 6. 기기 넘버링
+
+| 항목 | 형식 | 예시 |
+|------|------|------|
+| PC 번호 | `PC{00-04}` | PC00 (테스트), PC01~04 (운영) |
+| 기기 번호 | `{001-100}` | 001, 050, 100 |
+| 기기 코드 | `{PC번호}-{기기번호}` | PC01-001, PC03-077 (UNIQUE) |
+
+---
+
+## 7. Agent 실행 모델
+
+```
+[PC01 Windows]
+  └── node agent/agent.js
+        ├── Supabase 연결 (미션 수신 + 상태 보고)
+        ├── Xiaowei WebSocket (디바이스 제어)
+        ├── 하트비트 루프 (30초)
+        ├── VideoDispatcher (60초 — 영상→job 생성)
+        ├── TaskExecutor (태스크 실행)
+        └── StaleTaskCleaner (멈춘 태스크 정리)
+```
+
+---
+
+## 8. 금지 사항
+
+1. **FastAPI, Celery, Redis, uiautomator2** 도입 금지
+2. **Xiaowei 우회** — ADB 명령을 다른 경로(child_process 등)로 직접 호출 금지
+3. **모듈 순환 require** 금지
+4. **bare catch** — `catch(e) {}` 빈 catch 금지, 에러 로깅 필수
+5. **하드코딩 시크릿** — `.env`로 관리
+6. **클라이언트에 SERVICE_ROLE_KEY 노출** 금지
