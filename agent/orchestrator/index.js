@@ -3,6 +3,6 @@
  */
 const { MissionQueue } = require('./queue');
 const { DeviceScheduler, HOURLY_ACTIVITY } = require('./scheduler');
-const { HeartbeatManager } = require('./heartbeat');
+const { HeartbeatManager, DEAD_THRESHOLD_MS, LOW_BATTERY_PCT } = require('./heartbeat');
 
-module.exports = { MissionQueue, DeviceScheduler, HeartbeatManager, HOURLY_ACTIVITY };
+module.exports = { MissionQueue, DeviceScheduler, HeartbeatManager, HOURLY_ACTIVITY, DEAD_THRESHOLD_MS, LOW_BATTERY_PCT };
