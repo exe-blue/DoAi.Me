@@ -114,7 +114,7 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="mb-12 text-center">
             <h1 className="font-mono text-5xl font-bold text-white">DoAi.Me</h1>
-            <p className="mt-2 font-mono text-sm tracking-[0.3em] text-blue-500">
+            <p className="mt-2 font-mono text-sm tracking-[0.3em] text-green-500">
               COMMAND CENTER
             </p>
           </div>
@@ -123,7 +123,7 @@ export default function LoginPage() {
           <div className="text-center">
             <p className="font-sans text-[28px] font-light leading-relaxed text-slate-200">
               {typedText}
-              <span className="ml-0.5 inline-block h-7 w-[2px] animate-pulse bg-blue-500" />
+              <span className="ml-0.5 inline-block h-7 w-[2px] animate-pulse bg-green-500" />
             </p>
             <p
               className={`mt-4 text-base text-slate-500 transition-opacity duration-500 ${
@@ -141,8 +141,8 @@ export default function LoginPage() {
             }`}
           >
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-              <span className="text-green-400">{statusText}</span>
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+            <span className="text-green-400">{statusText}</span>
             </span>
             <span className="text-slate-700">|</span>
             <span className="text-slate-500">v2.1</span>
@@ -156,7 +156,7 @@ export default function LoginPage() {
         {/* Mobile logo */}
         <div className="mb-8 text-center md:hidden">
           <h1 className="font-mono text-3xl font-bold text-white">DoAi.Me</h1>
-          <p className="mt-1 font-mono text-[10px] tracking-[0.3em] text-blue-500">
+          <p className="mt-1 font-mono text-[10px] tracking-[0.3em] text-green-500">
             COMMAND CENTER
           </p>
         </div>
@@ -174,7 +174,7 @@ export default function LoginPage() {
                 placeholder="이메일"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-11 border-[#1e2130] bg-[#12141d] text-slate-200 placeholder:text-slate-600 focus:border-blue-500"
+                className="h-11 border-[#1e2130] bg-[#12141d] text-slate-200 placeholder:text-slate-600 focus:border-green-500"
                 required
               />
             </div>
@@ -184,7 +184,7 @@ export default function LoginPage() {
                 placeholder="비밀번호"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-11 border-[#1e2130] bg-[#12141d] text-slate-200 placeholder:text-slate-600 focus:border-blue-500"
+                className="h-11 border-[#1e2130] bg-[#12141d] text-slate-200 placeholder:text-slate-600 focus:border-green-500"
                 required
               />
             </div>
@@ -196,7 +196,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="h-11 w-full bg-blue-600 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              className="h-11 w-full bg-green-600 text-sm font-medium text-black hover:bg-green-500 disabled:opacity-50"
             >
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

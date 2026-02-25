@@ -22,11 +22,19 @@ export default function RootLayout({
   return (
     <html lang="ko" className="dark text-base" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/images/logo.png" />
+        <link rel="apple-touch-icon" href="/images/logo.png" />
+        {/* Pretendard - 본문 */}
         <link
           rel="stylesheet"
           as="style"
           crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+        />
+        {/* 나눔스퀘어 네오 - 제목 */}
+        <link
+          rel="stylesheet"
+          href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css"
         />
       </head>
       <body className="font-sans antialiased text-[1.125rem]">

@@ -51,7 +51,7 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
 				const x = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2;
 				const z = iy * SEPARATION - (AMOUNTY * SEPARATION) / 2;
 				positions.push(x, 0, z);
-				colors.push(0.3, 0.5, 1.0);
+				colors.push(0.0, 0.8, 0.2);
 			}
 		}
 

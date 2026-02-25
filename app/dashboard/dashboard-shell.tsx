@@ -91,7 +91,7 @@ const ROUTE_LABELS: Record<string,string> = {
 function BreadcrumbLabel() {
   const pathname = usePathname();
   const label = ROUTE_LABELS[pathname] || pathname.split("/").pop()?.toUpperCase() || "";
-  return <span className="text-[10px] font-mono font-bold tracking-wider text-amber-500">{label}</span>;
+  return <span className="text-[10px] font-mono font-bold tracking-wider text-green-500">{label}</span>;
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -127,14 +127,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <Sidebar className="border-r border-[#1e2130] bg-[#0f1117]">
         <SidebarHeader className="px-4 py-5">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-              <Wifi className="h-4 w-4 text-white" />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/logo.png" alt="DoAi.Me" className="h-8 w-8 rounded-lg" />
             <div>
               <span className="font-mono text-base font-bold text-white">
                 DoAi.Me
               </span>
-              <span className="ml-1.5 font-mono text-[9px] tracking-[0.2em] text-blue-400">
+              <span className="ml-1.5 font-mono text-[9px] tracking-[0.2em] text-green-400">
                 COMMAND CENTER
               </span>
             </div>
@@ -165,7 +164,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                           isActive={isActive}
                           className={
                             isActive
-                              ? "border-l-2 border-blue-500 bg-[#1a1d2e] text-white"
+                              ? "border-l-2 border-green-500 bg-[#0d1a0d] text-white"
                               : "text-slate-400 hover:text-slate-200"
                           }
                         >
