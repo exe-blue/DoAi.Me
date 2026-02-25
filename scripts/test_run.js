@@ -34,7 +34,8 @@ ws.on('open', () => {
 });
 
 ws.on('message', (data) => {
-  console.log('[test_run] 응답:', data.toString());
+  const safeData = data.toString().replace(/[\r\n]/g, '');
+  console.log('[test_run] 응답:', safeData);
   ws.close();
 });
 
