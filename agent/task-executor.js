@@ -3,9 +3,14 @@
  * Maps Supabase tasks to Xiaowei WebSocket commands
  */
 const path = require("path");
+const CommentGenerator = require("./comment-generator");
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Extract shell command output from Xiaowei adbShell response (code, msg, data, stdout). */
@@ -45,7 +50,45 @@ const YT = {
   PAUSE_ALT: { contentDesc: "일시중지" },
   PLAYER: { resourceId: "com.google.android.youtube:id/player_fragment_container" },
   VIDEO_TITLE: { resourceId: "com.google.android.youtube:id/video_title" },
+  LIKE_BUTTON: { resourceId: "com.google.android.youtube:id/like_button" },
+  SUBSCRIBE_BUTTON: { resourceId: "com.google.android.youtube:id/subscribe_button" },
+  SUBSCRIBE_TEXT: { textContains: "구독 중" },
+  COMMENT_INPUT: { resourceId: "com.google.android.youtube:id/comment_composer_input" },
+  COMMENT_INPUT_ALT: { contentDesc: "댓글 추가..." },
+  COMMENT_POST: { resourceId: "com.google.android.youtube:id/comment_post_button" },
+  COMMENT_POST_ALT: { contentDesc: "댓글" },
+  SAVE_PLAYLIST: { resourceId: "com.google.android.youtube:id/save_to_playlist_button" },
+  SAVE_PLAYLIST_ALT: { contentDesc: "재생목록에 저장" },
+  WATCH_LATER: { textContains: "나중에 볼 동영상" },
+  HOME_FEED: { resourceId: "com.google.android.youtube:id/results" },
+  RELATED_VIDEO: { resourceId: "com.google.android.youtube:id/thumbnail" },
+  AUTOPLAY_TOGGLE: { resourceId: "com.google.android.youtube:id/autonav_toggle" },
+  BOTTOM_NAV_HOME: { contentDesc: "홈" },
+  BOTTOM_NAV_SHORTS: { contentDesc: "Shorts" },
+  BOTTOM_NAV_SUBS: { contentDesc: "구독" },
 };
+
+// === Engagement 상수 (agent/docs/engagement-system-design.md) ===
+const PERSONALITY_TYPES = {
+  passive: { likeMult: 0.3, commentMult: 0.0, subscribeMult: 0.2, playlistMult: 0.1 },
+  casual: { likeMult: 0.7, commentMult: 0.3, subscribeMult: 0.5, playlistMult: 0.3 },
+  active: { likeMult: 1.5, commentMult: 1.0, subscribeMult: 1.2, playlistMult: 1.0 },
+  superfan: { likeMult: 2.0, commentMult: 2.0, subscribeMult: 2.0, playlistMult: 2.0 },
+};
+const PERSONALITY_DISTRIBUTION = [
+  { type: "passive", weight: 30 },
+  { type: "casual", weight: 40 },
+  { type: "active", weight: 20 },
+  { type: "superfan", weight: 10 },
+];
+const TIME_WEIGHT = {
+  0: 0.3, 1: 0.2, 2: 0.1, 3: 0.1, 4: 0.2, 5: 0.3,
+  6: 0.5, 7: 0.7, 8: 0.8,
+  9: 0.9, 10: 1.0, 11: 1.0, 12: 1.1, 13: 1.0, 14: 0.9, 15: 0.9, 16: 1.0,
+  17: 1.1, 18: 1.2, 19: 1.3, 20: 1.3, 21: 1.2,
+  22: 1.0, 23: 0.7,
+};
+const DEFAULT_PROBS = { like: 15, comment: 5, subscribe: 8, playlist: 3 };
 
 class TaskExecutor {
   /**
@@ -68,6 +111,22 @@ class TaskExecutor {
 
     // Execution stats for monitoring
     this.stats = { total: 0, succeeded: 0, failed: 0 };
+
+    // 디바이스별 성격 캐시 (serial → personality type)
+    this._devicePersonalities = new Map();
+
+    this.commentGenerator = null;
+    if (process.env.OPENAI_API_KEY) {
+      this.commentGenerator = new CommentGenerator(
+        process.env.OPENAI_API_KEY,
+        process.env.OPENAI_MODEL || "gpt-4o-mini"
+      );
+      console.log("[TaskExecutor] ✓ CommentGenerator initialized (OpenAI)");
+    } else {
+      console.log("[TaskExecutor] ⚠ OPENAI_API_KEY not set — comments disabled");
+    }
+
+    this._warmupTracker = new Map();
   }
 
   /**
@@ -88,6 +147,18 @@ class TaskExecutor {
       this._jobPollHandle = null;
       console.log("[TaskExecutor] Job assignment polling stopped");
     }
+  }
+
+  /**
+   * Run a single job assignment (used by DeviceOrchestrator).
+   * @param {object} assignment - { id, job_id, device_id, device_serial, ... }
+   */
+  async runAssignment(assignment) {
+    if (!assignment) {
+      console.error("[TaskExecutor] runAssignment: assignment is null/undefined");
+      return;
+    }
+    return this._executeJobAssignment(assignment);
   }
 
   async _pollJobAssignments() {
@@ -119,6 +190,10 @@ class TaskExecutor {
       if (error || !assignments || assignments.length === 0) return;
 
       for (const row of assignments) {
+        if (!row || row.id == null) {
+          console.warn("[TaskExecutor] Skipping job_assignment row with missing id");
+          continue;
+        }
         if (this._jobRunning.has(row.id)) continue;
         this._executeJobAssignment(row).catch((err) => {
           console.error(`[TaskExecutor] Job assignment ${row.id} error: ${err.message}`);
@@ -130,6 +205,14 @@ class TaskExecutor {
   }
 
   async _executeJobAssignment(assignment) {
+    if (!assignment) {
+      console.error("[TaskExecutor] _executeJobAssignment: assignment is null/undefined");
+      return;
+    }
+    if (assignment.id == null) {
+      console.error("[TaskExecutor] _executeJobAssignment: assignment.id is missing");
+      return;
+    }
     this._jobRunning.add(assignment.id);
     const serial = assignment.device_serial;
     if (!serial) {
@@ -139,9 +222,15 @@ class TaskExecutor {
     }
 
     try {
+      if (assignment.job_id == null) {
+        await this._updateJobAssignment(assignment.id, "failed", { error_log: "No job_id" });
+        this._jobRunning.delete(assignment.id);
+        console.error("[TaskExecutor] _executeJobAssignment: assignment.job_id is missing");
+        return;
+      }
       const { data: job, error: jobErr } = await this.supabaseSync.supabase
         .from("jobs")
-        .select("target_url, duration_sec, duration_min_pct, duration_max_pct, keyword, video_title, title")
+        .select("target_url, duration_sec, duration_min_pct, duration_max_pct, keyword, video_title, title, prob_like, prob_comment, prob_playlist")
         .eq("id", assignment.job_id)
         .single();
 
@@ -161,12 +250,28 @@ class TaskExecutor {
 
       const searchKeyword = job.keyword || null;
       const videoTitle = job.video_title || job.title || null;
+      let videoId = "";
+      try {
+        const u = new URL(job.target_url);
+        videoId = u.searchParams.get("v") || "";
+      } catch {}
+      const warmupSec = this._shouldWarmup(serial) ? _randInt(60, 180) : 0;
+      const engagementConfig = {
+        probLike: job.prob_like ?? DEFAULT_PROBS.like,
+        probComment: job.prob_comment ?? DEFAULT_PROBS.comment,
+        probSubscribe: DEFAULT_PROBS.subscribe,
+        probPlaylist: job.prob_playlist ?? DEFAULT_PROBS.playlist,
+        channelName: "",
+        videoId,
+        warmupSec,
+      };
       const result = await this._watchVideoOnDevice(
         serial,
         job.target_url,
         watchDurationSec,
         searchKeyword,
-        videoTitle
+        videoTitle,
+        engagementConfig
       );
 
       await this.supabaseSync.supabase
@@ -177,6 +282,9 @@ class TaskExecutor {
           completed_at: new Date().toISOString(),
           ...(result.actualDurationSec != null && { final_duration_sec: result.actualDurationSec }),
           ...(result.watchPercentage != null && { watch_percentage: result.watchPercentage }),
+          did_like: result.liked ?? false,
+          did_comment: result.commented ?? false,
+          did_playlist: result.playlisted ?? false,
         })
         .eq("id", assignment.id);
 
@@ -197,10 +305,49 @@ class TaskExecutor {
    * @param {number} durationSec - 시청 시간
    * @param {string} [searchKeyword] - 검색 키워드 (없으면 제목 사용)
    * @param {string} [videoTitle] - 영상 제목 (검색어로 사용)
-   * @returns {Promise<{actualDurationSec: number, watchPercentage: number}>}
+   * @param {{ probLike?: number, probComment?: number, probSubscribe?: number, probPlaylist?: number, channelName?: string, videoId?: string }} [engagementConfig] - null이면 engagement 비활성화
+   * @returns {Promise<{actualDurationSec: number, watchPercentage: number, liked?: boolean, subscribed?: boolean, commented?: boolean, playlisted?: boolean}>}
    */
-  async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle) {
+  async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig) {
     const startTime = Date.now();
+    const eng = engagementConfig || {};
+
+    if (eng.warmupSec && eng.warmupSec > 0) {
+      await this._doWarmup(serial, eng.warmupSec);
+    }
+
+    const personality = this._getPersonality(serial);
+
+    const willLike = Math.random() < this._calcProb(eng.probLike ?? DEFAULT_PROBS.like, personality.likeMult);
+    const willSubscribe = Math.random() < this._calcProb(eng.probSubscribe ?? DEFAULT_PROBS.subscribe, personality.subscribeMult);
+    const willComment =
+      this.commentGenerator &&
+      Math.random() < this._calcProb(eng.probComment ?? DEFAULT_PROBS.comment, personality.commentMult);
+    const willPlaylist =
+      Math.random() < this._calcProb(eng.probPlaylist ?? DEFAULT_PROBS.playlist, personality.playlistMult);
+    const likeAtSec = durationSec * (_randInt(20, 40) / 100);
+    const subscribeAtSec = durationSec * (_randInt(60, 80) / 100);
+    const commentAtSec = durationSec * (_randInt(40, 65) / 100);
+    const playlistAtSec = durationSec * (_randInt(85, 95) / 100);
+    const actions = { liked: false, subscribed: false, commented: false, playlisted: false };
+
+    let commentText = null;
+    if (willComment) {
+      commentText = await this.commentGenerator.generate(
+        videoTitle || "영상",
+        eng.channelName || "",
+        eng.videoId || ""
+      );
+      if (!commentText) {
+        console.warn(`[Engagement] ${serial.substring(0, 6)} comment generation failed, skip`);
+      }
+    }
+
+    if (willLike || willComment || willSubscribe || willPlaylist) {
+      console.log(
+        `[Engagement] ${serial.substring(0, 6)} [${personality.type}] plan: like=${willLike}@${Math.round(likeAtSec)}s comment=${!!(willComment && commentText)}@${Math.round(commentAtSec)}s sub=${willSubscribe}@${Math.round(subscribeAtSec)}s playlist=${willPlaylist}@${Math.round(playlistAtSec)}s`
+      );
+    }
 
     await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
     await _sleep(500);
@@ -237,12 +384,25 @@ class TaskExecutor {
       const waitMs = Math.min(TICK_MS, targetMs - elapsed);
       await _sleep(waitMs);
       elapsed += waitMs;
+      const elapsedSec = elapsed / 1000;
 
       if (elapsed % AD_CHECK_INTERVAL < TICK_MS) {
         await this._trySkipAd(serial);
       }
       if (elapsed % 30000 < TICK_MS) {
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+      }
+      if (willLike && !actions.liked && elapsedSec >= likeAtSec) {
+        actions.liked = await this._doLike(serial);
+      }
+      if (willSubscribe && !actions.subscribed && elapsedSec >= subscribeAtSec) {
+        actions.subscribed = await this._doSubscribe(serial);
+      }
+      if (willComment && commentText && !actions.commented && elapsedSec >= commentAtSec) {
+        actions.commented = await this._doComment(serial, commentText);
+      }
+      if (willPlaylist && !actions.playlisted && elapsedSec >= playlistAtSec) {
+        actions.playlisted = await this._doSavePlaylist(serial);
       }
     }
 
@@ -251,7 +411,15 @@ class TaskExecutor {
 
     const actualDurationSec = Math.round((Date.now() - startTime) / 1000);
     const watchPercentage = durationSec > 0 ? Math.min(100, Math.round((actualDurationSec / durationSec) * 100)) : 0;
-    return { actualDurationSec, watchPercentage };
+    return {
+      actualDurationSec,
+      watchPercentage,
+      liked: actions.liked,
+      subscribed: actions.subscribed,
+      commented: actions.commented,
+      playlisted: actions.playlisted,
+      commentText: actions.commented ? commentText : null,
+    };
   }
 
   /**
@@ -285,71 +453,94 @@ class TaskExecutor {
    * @param {number} [retries=2]
    * @returns {Promise<boolean>}
    */
+  async _getUiDumpXml(serial) {
+    await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
+    await _sleep(500);
+    const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
+    return _extractShellOutput(dumpRes);
+  }
+
+  _findBoundsInXml(xml, selector) {
+    if (!xml || !selector) return null;
+
+    const escapedResourceId = selector.resourceId ? _escapeRegex(selector.resourceId) : null;
+    const escapedContentDesc = selector.contentDesc ? _escapeRegex(selector.contentDesc) : null;
+    const escapedTextContains = selector.textContains ? _escapeRegex(selector.textContains) : null;
+
+    let pattern = null;
+    if (selector.resourceId) {
+      pattern = new RegExp(
+        `resource-id="${escapedResourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    } else if (selector.contentDesc) {
+      pattern = new RegExp(
+        `content-desc="${escapedContentDesc}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    } else if (selector.textContains) {
+      pattern = new RegExp(
+        `text="[^"]*${escapedTextContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+        "i"
+      );
+    }
+    if (!pattern) return null;
+
+    let match = xml.match(pattern);
+    if (!match) {
+      if (selector.resourceId) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${escapedResourceId}"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      } else if (selector.contentDesc) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="${escapedContentDesc}"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      } else if (selector.textContains) {
+        const altPattern = new RegExp(
+          `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${escapedTextContains}[^"]*"`,
+          "i"
+        );
+        match = xml.match(altPattern);
+      }
+    }
+    if (!match) return null;
+
+    return {
+      x1: parseInt(match[1], 10),
+      y1: parseInt(match[2], 10),
+      x2: parseInt(match[3], 10),
+      y2: parseInt(match[4], 10),
+    };
+  }
+
+  async _tapSelectorInXml(serial, xml, selector) {
+    const bounds = this._findBoundsInXml(xml, selector);
+    if (!bounds) return false;
+
+    const cx = Math.round((bounds.x1 + bounds.x2) / 2);
+    const cy = Math.round((bounds.y1 + bounds.y2) / 2);
+    await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+    return true;
+  }
+
   async _findAndTap(serial, selector, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
-        await _sleep(500);
-        const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
-        const xml = _extractShellOutput(dumpRes);
+        const xml = await this._getUiDumpXml(serial);
         if (!xml) continue;
-
-        let pattern = null;
-        if (selector.resourceId) {
-          pattern = new RegExp(
-            `resource-id="${selector.resourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        } else if (selector.contentDesc) {
-          pattern = new RegExp(
-            `content-desc="[^"]*${selector.contentDesc}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        } else if (selector.textContains) {
-          pattern = new RegExp(
-            `text="[^"]*${selector.textContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-            "i"
-          );
-        }
-        if (!pattern) return false;
-
-        let match = xml.match(pattern);
-        if (!match) {
-          if (selector.resourceId) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${selector.resourceId}"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          } else if (selector.contentDesc) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="[^"]*${selector.contentDesc}[^"]*"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          } else if (selector.textContains) {
-            const altPattern = new RegExp(
-              `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${selector.textContains}[^"]*"`,
-              "i"
-            );
-            match = xml.match(altPattern);
-          }
-        }
-        if (!match) {
+        const tapped = await this._tapSelectorInXml(serial, xml, selector);
+        if (!tapped) {
           if (attempt < retries) {
             await _sleep(1000);
             continue;
           }
           return false;
         }
-
-        const x1 = parseInt(match[1], 10);
-        const y1 = parseInt(match[2], 10);
-        const x2 = parseInt(match[3], 10);
-        const y2 = parseInt(match[4], 10);
-        const cx = Math.round((x1 + x2) / 2);
-        const cy = Math.round((y1 + y2) / 2);
-        await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
         return true;
       } catch (err) {
         if (attempt < retries) {
@@ -474,19 +665,24 @@ class TaskExecutor {
    */
   async _trySkipAd(serial) {
     try {
-      let skipped = await this._findAndTap(serial, YT.SKIP_AD, 0);
+      const xml = await this._getUiDumpXml(serial);
+      if (!xml) return;
+
+      let skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (resource-id)`);
         await _sleep(1500);
         return;
       }
-      skipped = await this._findAndTap(serial, YT.SKIP_AD_ALT, 0);
+
+      skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD_ALT);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (content-desc)`);
         await _sleep(1500);
         return;
       }
-      skipped = await this._findAndTap(serial, { contentDesc: "Skip" }, 0);
+
+      skipped = await this._tapSelectorInXml(serial, xml, { contentDesc: "Skip" });
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (Skip)`);
         await _sleep(1500);
@@ -537,6 +733,322 @@ class TaskExecutor {
       .update({ status, ...extra })
       .eq("id", assignmentId);
     if (error) console.error(`[TaskExecutor] Failed to update job_assignment ${assignmentId}: ${error.message}`);
+  }
+
+  /**
+   * 디바이스별 고정 성격 반환 (최초 결정 후 캐싱). engagement-system-design.md
+   * @param {string} serial
+   * @returns {{ likeMult: number, commentMult: number, subscribeMult: number, playlistMult: number, type: string }}
+   */
+  _getPersonality(serial) {
+    if (this._devicePersonalities.has(serial)) {
+      return this._devicePersonalities.get(serial);
+    }
+    let roll = Math.random() * 100;
+    let cumulative = 0;
+    let selectedType = "casual";
+    for (const entry of PERSONALITY_DISTRIBUTION) {
+      cumulative += entry.weight;
+      if (roll < cumulative) {
+        selectedType = entry.type;
+        break;
+      }
+    }
+    const personality = PERSONALITY_TYPES[selectedType];
+    const cached = { ...personality, type: selectedType };
+    this._devicePersonalities.set(serial, cached);
+    console.log(`[Engagement] ${serial.substring(0, 6)} personality: ${selectedType}`);
+    return cached;
+  }
+
+  /**
+   * 최종 확률 계산: baseProb × personalityMult × timeWeight → 0~1
+   */
+  _calcProb(baseProb, personalityMult) {
+    const timeWeight = TIME_WEIGHT[new Date().getHours()] ?? 1.0;
+    return Math.min(1.0, (baseProb / 100) * personalityMult * timeWeight);
+  }
+
+  /**
+   * 좋아요 실행. 스크롤 → LIKE_BUTTON 터치 → 스크롤 복귀.
+   * @param {string} serial
+   * @returns {Promise<boolean>}
+   */
+  async _doLike(serial) {
+    try {
+      const screen = await this._getScreenSize(serial);
+      const midX = Math.round(screen.width / 2);
+      const fromY = Math.round(screen.height * 0.6);
+      const toY = Math.round(screen.height * 0.4);
+      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
+      await _sleep(_randInt(800, 1500));
+
+      const tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
+      if (!tapped) {
+        console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} like button not found`);
+        return false;
+      }
+      await _sleep(_randInt(500, 1000));
+      console.log(`[Engagement] 👍 ${serial.substring(0, 6)} liked`);
+
+      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`);
+      await _sleep(_randInt(500, 1000));
+      return true;
+    } catch (err) {
+      console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} like failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 구독 실행. 이미 구독 중이면 스킵. SUBSCRIBE_BUTTON 또는 contentDesc "구독" 터치.
+   * @param {string} serial
+   * @returns {Promise<boolean>}
+   */
+  async _doSubscribe(serial) {
+    try {
+      const alreadySubscribed = await this._hasElement(serial, YT.SUBSCRIBE_TEXT);
+      if (alreadySubscribed) {
+        console.log(`[Engagement] 🔔 ${serial.substring(0, 6)} already subscribed, skip`);
+        return false;
+      }
+      let tapped = await this._findAndTap(serial, YT.SUBSCRIBE_BUTTON, 1);
+      if (!tapped) {
+        tapped = await this._findAndTap(serial, { contentDesc: "구독" }, 1);
+      }
+      if (!tapped) {
+        console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} subscribe button not found`);
+        return false;
+      }
+      await _sleep(_randInt(1000, 2000));
+      const subscribed = await this._hasElement(serial, YT.SUBSCRIBE_TEXT);
+      if (subscribed) {
+        console.log(`[Engagement] 🔔 ${serial.substring(0, 6)} subscribed!`);
+        return true;
+      }
+      console.log(`[Engagement] 🔔 ${serial.substring(0, 6)} subscribe tapped (unconfirmed)`);
+      return true;
+    } catch (err) {
+      console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} subscribe failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 댓글 작성 실행. 스크롤 → 입력창 터치 → _inputText → 등록 버튼 → 스크롤 복귀.
+   * @param {string} serial - 디바이스 시리얼
+   * @param {string} commentText - 작성할 댓글 텍스트
+   * @returns {Promise<boolean>} 성공 여부
+   */
+  async _doComment(serial, commentText) {
+    try {
+      const screen = await this._getScreenSize(serial);
+      const midX = Math.round(screen.width / 2);
+
+      for (let i = 0; i < 3; i++) {
+        await this.xiaowei.adbShell(
+          serial,
+          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
+        );
+        await _sleep(_randInt(600, 1000));
+      }
+      await _sleep(_randInt(1000, 1500));
+
+      let found = await this._findAndTap(serial, YT.COMMENT_INPUT, 2);
+      if (!found) found = await this._findAndTap(serial, YT.COMMENT_INPUT_ALT, 1);
+      if (!found) {
+        console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment input not found`);
+        await this._scrollBackToVideo(serial, screen);
+        return false;
+      }
+      await _sleep(_randInt(1000, 2000));
+
+      await this._inputText(serial, commentText);
+      await _sleep(_randInt(1000, 2500));
+
+      let posted = await this._findAndTap(serial, YT.COMMENT_POST, 2);
+      if (!posted) posted = await this._findAndTap(serial, YT.COMMENT_POST_ALT, 1);
+      if (!posted) {
+        console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment post button not found`);
+        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+        await _sleep(500);
+        await this._scrollBackToVideo(serial, screen);
+        return false;
+      }
+
+      await _sleep(_randInt(2000, 3000));
+      console.log(`[Engagement] 💬 ${serial.substring(0, 6)} commented: "${commentText.substring(0, 30)}..."`);
+
+      await this._scrollBackToVideo(serial, screen);
+      return true;
+    } catch (err) {
+      console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} comment failed: ${err.message}`);
+      try {
+        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+      } catch {}
+      return false;
+    }
+  }
+
+  /**
+   * 영상 플레이어 위치로 스크롤 복귀
+   */
+  async _scrollBackToVideo(serial, screen) {
+    const midX = Math.round(screen.width / 2);
+    for (let i = 0; i < 3; i++) {
+      await this.xiaowei.adbShell(
+        serial,
+        `input swipe ${midX} ${Math.round(screen.height * 0.3)} ${midX} ${Math.round(screen.height * 0.7)} ${_randInt(400, 700)}`
+      );
+      await _sleep(_randInt(400, 700));
+    }
+    await _sleep(_randInt(500, 1000));
+  }
+
+  /**
+   * 재생목록에 저장 실행. 저장 버튼 → "나중에 볼 동영상" 또는 첫 번째 항목 선택.
+   * @param {string} serial
+   * @returns {Promise<boolean>}
+   */
+  async _doSavePlaylist(serial) {
+    try {
+      let found = await this._findAndTap(serial, YT.SAVE_PLAYLIST, 1);
+      if (!found) found = await this._findAndTap(serial, YT.SAVE_PLAYLIST_ALT, 1);
+      if (!found) {
+        console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} playlist save button not found`);
+        return false;
+      }
+      await _sleep(_randInt(1500, 2500));
+
+      const selected = await this._findAndTap(serial, YT.WATCH_LATER, 1);
+      if (selected) {
+        await _sleep(_randInt(1000, 1500));
+        console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`);
+      } else {
+        const screen = await this._getScreenSize(serial);
+        await this.xiaowei.adbShell(
+          serial,
+          `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`
+        );
+        await _sleep(_randInt(1000, 1500));
+        console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to playlist (first option)`);
+      }
+      return true;
+    } catch (err) {
+      console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} playlist save failed: ${err.message}`);
+      try {
+        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+      } catch {}
+      return false;
+    }
+  }
+
+  /**
+   * 디바이스 워밍업 — 자연스러운 탐색 패턴 생성. 메인 시청 작업 전에 실행.
+   * @param {string} serial - 디바이스 시리얼
+   * @param {number} [durationSec=120] - 워밍업 총 시간 (초)
+   */
+  async _doWarmup(serial, durationSec = 120) {
+    try {
+      console.log(`[Warmup] 🔥 ${serial.substring(0, 6)} starting warmup (${durationSec}s)`);
+      const screen = await this._getScreenSize(serial);
+      const midX = Math.round(screen.width / 2);
+
+      await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+      await _sleep(1000);
+      await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
+      await _sleep(_randInt(3000, 5000));
+
+      await this._findAndTap(serial, YT.BOTTOM_NAV_HOME, 0);
+      await _sleep(_randInt(1500, 2500));
+
+      const scrollCount = _randInt(2, 4);
+      for (let i = 0; i < scrollCount; i++) {
+        await this.xiaowei.adbShell(
+          serial,
+          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
+        );
+        await _sleep(_randInt(1500, 3000));
+      }
+
+      const startTime = Date.now();
+      const targetMs = durationSec * 1000;
+      let videosWatched = 0;
+
+      while (Date.now() - startTime < targetMs && videosWatched < 3) {
+        const tapY = Math.round(screen.height * (_randInt(35, 65) / 100));
+        await this.xiaowei.adbShell(serial, `input tap ${midX} ${tapY}`);
+        await _sleep(_randInt(3000, 5000));
+
+        await this._trySkipAd(serial);
+        await _sleep(1000);
+        await this._ensurePlaying(serial);
+
+        const watchTime = _randInt(30, 90) * 1000;
+        const remaining = targetMs - (Date.now() - startTime);
+        const actualWatch = Math.min(watchTime, remaining);
+
+        if (actualWatch <= 0) break;
+
+        let watched = 0;
+        while (watched < actualWatch) {
+          await _sleep(5000);
+          watched += 5000;
+          if (watched % 15000 < 5000) await this._trySkipAd(serial);
+          if (watched % 30000 < 5000) await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+        }
+
+        videosWatched++;
+        console.log(
+          `[Warmup] ${serial.substring(0, 6)} watched video #${videosWatched} (${Math.round(actualWatch / 1000)}s)`
+        );
+
+        if (Math.random() < 0.5 && Date.now() - startTime < targetMs) {
+          await this.xiaowei.adbShell(
+            serial,
+            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
+          );
+          await _sleep(_randInt(1000, 2000));
+          await this._findAndTap(serial, YT.RELATED_VIDEO, 0);
+          await _sleep(_randInt(3000, 5000));
+        } else {
+          await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+          await _sleep(_randInt(1500, 2500));
+          await this.xiaowei.adbShell(
+            serial,
+            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
+          );
+          await _sleep(_randInt(1500, 2500));
+        }
+      }
+
+      await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+      await _sleep(500);
+      console.log(
+        `[Warmup] ✓ ${serial.substring(0, 6)} warmup done (${videosWatched} videos, ${Math.round((Date.now() - startTime) / 1000)}s)`
+      );
+    } catch (err) {
+      console.error(`[Warmup] ✗ ${serial.substring(0, 6)} warmup error: ${err.message}`);
+      try {
+        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+      } catch {}
+    }
+  }
+
+  /**
+   * 디바이스가 워밍업이 필요한지 판단. 최근 1시간 내 작업 이력이 없으면 true.
+   */
+  _shouldWarmup(serial) {
+    const key = `lastTask_${serial}`;
+    const lastTask = this._warmupTracker.get(key);
+    const now = Date.now();
+
+    this._warmupTracker.set(key, now);
+
+    if (!lastTask || now - lastTask > 3600000) {
+      return true;
+    }
+    return false;
   }
 
   /**

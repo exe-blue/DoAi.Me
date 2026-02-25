@@ -7,6 +7,18 @@
 const EventEmitter = require("events");
 require("dotenv").config();
 
+const requiredEnv = [
+  ["SUPABASE_URL", process.env.SUPABASE_URL],
+  ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
+  ["PC_NUMBER", process.env.PC_NUMBER],
+];
+for (const [name, val] of requiredEnv) {
+  if (val === undefined || val === "") {
+    console.error(`[Config] Missing required env: ${name}`);
+    process.exit(1);
+  }
+}
+
 // Mapping: DB setting key → config property name
 const SETTING_KEY_MAP = {
   heartbeat_interval: "heartbeatInterval",
@@ -49,6 +61,9 @@ class AgentConfig extends EventEmitter {
     this.maxRetryCount = 3;
     this.logRetentionDays = 7;
     this.commandLogRetentionDays = 30;
+
+    this.isPrimaryPc =
+      process.env.IS_PRIMARY_PC === "true" || process.env.IS_PRIMARY_PC === "1" || false;
 
     // Internal
     this._settings = {}; // raw DB values keyed by setting key

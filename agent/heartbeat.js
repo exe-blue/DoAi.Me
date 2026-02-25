@@ -60,9 +60,10 @@ function normalizeDevice(d) {
  * @param {import('./task-executor')|null} taskExecutor - optional, for stats reporting
  * @param {import('./dashboard-broadcaster')|null} broadcaster - optional, for real-time dashboard updates
  * @param {import('./adb-reconnect')|null} reconnectManager - optional, for updating registered devices
+ * @param {() => import('./device-orchestrator')|null} getDeviceOrchestrator - optional getter for device orchestrator (task_status sync)
  * @returns {NodeJS.Timeout} interval handle
  */
-function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager) {
+function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, getDeviceOrchestrator) {
   const pcId = supabaseSync.pcId;
   const interval = config.heartbeatInterval || 30000;
   const startedAt = new Date().toISOString();
@@ -89,19 +90,36 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
 
       await supabaseSync.updatePcStatus(pcId, "online");
 
-      // 4. Batch upsert all devices in a single query
+      // 3. Batch upsert all devices in a single query
       const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
       await supabaseSync.batchUpsertDevices(devices, pcId);
 
-      // 4a. Update reconnect manager with current device list
+      // 4. Sync device task states from orchestrator (task_status, watch_progress, etc.)
+      const orchestrator = typeof getDeviceOrchestrator === "function" ? getDeviceOrchestrator() : null;
+      if (orchestrator && typeof orchestrator.getDeviceStatesForSync === "function") {
+        const stateMap = orchestrator.getDeviceStatesForSync();
+        const states = Object.entries(stateMap).map(([serial, s]) => ({
+          serial,
+          status: s.task_status,
+          assignmentId: s.current_assignment_id,
+          videoTitle: s.current_video_title,
+          watchProgress: s.watch_progress,
+          errorCount: s.consecutive_errors,
+          dailyWatchCount: s.daily_watch_count,
+          dailyWatchSeconds: s.daily_watch_seconds,
+        }));
+        await supabaseSync.syncDeviceTaskStates(states);
+      }
+
+      // 5. Update reconnect manager with current device list
       if (reconnectManager) {
         reconnectManager.updateRegisteredDevices(devices);
       }
 
-      // 5. Mark disconnected devices as offline
+      // 6. Mark disconnected devices as offline
       await supabaseSync.markOfflineDevices(pcId, activeSerials);
 
-      // 6. Get aggregate counts for dashboard snapshot
+      // 7. Get aggregate counts for dashboard snapshot
       if (broadcaster) {
         try {
           const deviceCounts = await supabaseSync.getDeviceCounts(pcId);
@@ -132,7 +150,7 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
       }
 
       console.log(
-        `[Heartbeat] OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
+        `[Heartbeat] heartbeat OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
       );
     } catch (err) {
       console.error(`[Heartbeat] Error: ${err.message}`);
