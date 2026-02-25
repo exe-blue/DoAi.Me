@@ -21,7 +21,8 @@ const WATCH_SEC = parseInt(process.env.WATCH_SEC || '15', 10);
 
 let ws;
 let requestId = 0;
-const pending = new Map();
+// FIFO queue: Xiaowei doesn't echo request id, so resolve oldest pending
+const pendingQueue = [];
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -30,12 +31,13 @@ function sleep(ms) {
 function send(action, devices, data) {
   return new Promise((resolve, reject) => {
     const id = ++requestId;
-    const msg = JSON.stringify({ id, action, devices, data });
+    const msg = JSON.stringify({ action, devices, data });
     const timeout = setTimeout(() => {
-      pending.delete(id);
+      const idx = pendingQueue.findIndex(p => p.id === id);
+      if (idx !== -1) pendingQueue.splice(idx, 1);
       reject(new Error(`Timeout: ${action}`));
-    }, 10000);
-    pending.set(id, { resolve, reject, timeout });
+    }, 15000);
+    pendingQueue.push({ id, resolve, reject, timeout });
     ws.send(msg);
   });
 }
@@ -62,13 +64,13 @@ async function run() {
   ws.on('message', (raw) => {
     try {
       const resp = JSON.parse(raw.toString());
-      if (resp.id && pending.has(resp.id)) {
-        const { resolve, timeout } = pending.get(resp.id);
-        clearTimeout(timeout);
-        pending.delete(resp.id);
-        resolve(resp);
+      // FIFO: resolve oldest pending (Xiaowei doesn't return request id)
+      if (pendingQueue.length > 0) {
+        const entry = pendingQueue.shift();
+        clearTimeout(entry.timeout);
+        entry.resolve(resp);
       } else {
-        log('WS', `비요청 응답: ${raw.toString().substring(0, 200)}`);
+        log('WS', `응답(대기없음): ${raw.toString().substring(0, 200)}`);
       }
     } catch {
       log('WS', `파싱 불가: ${raw.toString().substring(0, 200)}`);
