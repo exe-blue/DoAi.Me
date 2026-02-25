@@ -11,6 +11,12 @@ import {
   Tv,
   Upload,
   ListOrdered,
+  CheckCircle,
+  Zap,
+  Terminal,
+  FileText,
+  AlertTriangle,
+  Settings,
   LogOut,
   Wifi,
 } from "lucide-react";
@@ -49,9 +55,25 @@ const navGroups = [
   {
     label: "",
     items: [
-      { href: "/dashboard/channels", label: "채널 관리", icon: Tv },
+      { href: "/dashboard/channels", label: "채널", icon: Tv },
       { href: "/dashboard/content", label: "콘텐츠", icon: Upload },
-      { href: "/dashboard/tasks", label: "작업", icon: ListOrdered },
+      { href: "/dashboard/tasks", label: "대기열", icon: ListOrdered },
+      { href: "/dashboard/completed", label: "완료", icon: CheckCircle },
+    ],
+  },
+  {
+    label: "",
+    items: [
+      { href: "/dashboard/presets", label: "명령 모듈", icon: Zap },
+      { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
+      { href: "/dashboard/logs", label: "작업로그", icon: FileText },
+      { href: "/dashboard/errors", label: "디바이스 에러", icon: AlertTriangle },
+    ],
+  },
+  {
+    label: "",
+    items: [
+      { href: "/dashboard/settings", label: "설정", icon: Settings },
     ],
   },
 ];
