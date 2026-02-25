@@ -1,609 +1,214 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useEffect, useState } from "react";
+import {
+  Tv, Plus, RefreshCw, ExternalLink, Eye, Video, Users,
+  Clock, ChevronDown, ChevronUp, Trash2, CheckCircle2,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Tv, Plus, Trash2, ExternalLink } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-type Category = "music" | "tech" | "gaming" | "entertainment" | "education" | "other";
 
 interface Channel {
-  id: string;
-  name: string;
-  profile_url?: string;
-  category?: Category;
-  video_count?: number;
-  thumbnail_url?: string;
-  is_monitored?: boolean;
+  id: string; name: string; handle?: string|null; thumbnail_url?: string|null;
+  subscriber_count?: string|null; video_count?: number; status?: string;
+  is_monitored?: boolean; auto_collect?: boolean;
+  last_collected_at?: string|null; created_at?: string;
 }
 
-interface Video {
-  id: string;
-  channel_id: string;
-  title: string;
-  priority?: string | number;
-  completed_views?: number;
-  duration?: string;
-  status?: string;
+interface ChannelVideo {
+  id: string; title: string; status?: string; duration_sec?: number; target_views?: number; completed_views?: number;
 }
 
-function extractVideoId(url: string): string | null {
-  const match = url.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
-  return match ? match[1] : null;
+function cn(...c:(string|false|undefined)[]){return c.filter(Boolean).join(" ")}
+function timeSince(d:string|null|undefined):string{
+  if(!d)return "—";const s=Math.round((Date.now()-new Date(d).getTime())/1000);
+  if(s<60)return`${s}초 전`;if(s<3600)return`${Math.floor(s/60)}분 전`;
+  if(s<86400)return`${Math.floor(s/3600)}시간 전`;return`${Math.floor(s/86400)}일 전`;
 }
-
-const categoryLabels: Record<Category, string> = {
-  music: "음악",
-  tech: "기술",
-  gaming: "게임",
-  entertainment: "엔터테인먼트",
-  education: "교육",
-  other: "기타"
-};
+function fmtSubs(s:string|null|undefined):string{
+  if(!s)return"—";const n=parseInt(s);if(isNaN(n))return s;
+  if(n>=10000)return(n/10000).toFixed(1)+"만";if(n>=1000)return(n/1000).toFixed(1)+"천";return String(n);
+}
 
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set());
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addUrl, setAddUrl] = useState("");
+  const [addLoading, setAddLoading] = useState(false);
+  const [expanded, setExpanded] = useState<string|null>(null);
+  const [videos, setVideos] = useState<Record<string,ChannelVideo[]>>({});
 
-  // Channel form state
-  const [channelDialogOpen, setChannelDialogOpen] = useState(false);
-  const [channelForm, setChannelForm] = useState({ name: "", youtube_url: "", category: "other" as Category, notes: "" });
+  const fetchChannels = () => {
+    setLoading(true);
+    fetch("/api/channels").then(r=>r.json())
+      .then(d=>setChannels(Array.isArray(d)?d:d.data||[]))
+      .catch(()=>{}).finally(()=>setLoading(false));
+  };
+  useEffect(()=>{fetchChannels();},[]);
 
-  // Video form state
-  const [videoDialogOpen, setVideoDialogOpen] = useState(false);
-  const [videoForm, setVideoForm] = useState({ title: "", youtube_url: "" });
+  const handleSync = async () => {
+    setSyncLoading(true);
+    await fetch("/api/youtube/sync").catch(()=>{});
+    setSyncLoading(false);
+    fetchChannels();
+  };
 
-  // Bulk video form state
-  const [bulkVideoDialogOpen, setBulkVideoDialogOpen] = useState(false);
-  const [bulkVideoUrls, setBulkVideoUrls] = useState("");
+  const handleAdd = async () => {
+    if(!addUrl.trim()) return;
+    setAddLoading(true);
+    await fetch("/api/youtube/channels",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:addUrl})}).catch(()=>{});
+    setAddOpen(false);setAddUrl("");setAddLoading(false);
+    fetchChannels();
+  };
 
-  // Delete confirmation state
-  const [deleteChannelId, setDeleteChannelId] = useState<string | null>(null);
-  const [deleteVideoIds, setDeleteVideoIds] = useState<string[]>([]);
+  const handleDelete = async (id:string) => {
+    await fetch(`/api/channels/${id}`,{method:"DELETE"}).catch(()=>{});
+    fetchChannels();
+  };
 
-  useEffect(() => {
-    loadChannels();
-  }, []);
-
-  useEffect(() => {
-    if (selectedChannelId) {
-      loadVideos(selectedChannelId);
+  const toggleExpand = async (channelId:string) => {
+    if(expanded===channelId){setExpanded(null);return;}
+    setExpanded(channelId);
+    if(!videos[channelId]){
+      const res = await fetch(`/api/channels/${channelId}/videos`).then(r=>r.json()).catch(()=>[]);
+      const list = Array.isArray(res)?res:res.data||[];
+      setVideos(prev=>({...prev,[channelId]:list}));
     }
-  }, [selectedChannelId]);
+  };
 
-  async function loadChannels() {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/channels");
-      const data = await res.json();
-      setChannels(data.channels || []);
-    } catch (error) {
-      console.error("Failed to load channels:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadVideos(channelId: string) {
-    try {
-      const res = await fetch(`/api/channels/${channelId}/videos`);
-      const data = await res.json();
-      setVideos(data.videos || []);
-    } catch (error) {
-      console.error("Failed to load videos:", error);
-    }
-  }
-
-  async function createChannel() {
-    try {
-      const res = await fetch("/api/channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(channelForm)
-      });
-      if (res.ok) {
-        setChannelDialogOpen(false);
-        setChannelForm({ name: "", youtube_url: "", category: "other", notes: "" });
-        loadChannels();
-      }
-    } catch (error) {
-      console.error("Failed to create channel:", error);
-    }
-  }
-
-  async function deleteChannel(id: string) {
-    try {
-      const res = await fetch(`/api/channels/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true })
-      });
-      if (res.ok) {
-        if (selectedChannelId === id) {
-          setSelectedChannelId(null);
-          setVideos([]);
-        }
-        loadChannels();
-      }
-    } catch (error) {
-      console.error("Failed to delete channel:", error);
-    } finally {
-      setDeleteChannelId(null);
-    }
-  }
-
-  async function createVideo() {
-    if (!selectedChannelId) return;
-
-    try {
-      const res = await fetch(`/api/channels/${selectedChannelId}/videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: videoForm.title,
-          youtube_url: videoForm.youtube_url
-        })
-      });
-      if (res.ok) {
-        setVideoDialogOpen(false);
-        setVideoForm({ title: "", youtube_url: "" });
-        loadVideos(selectedChannelId);
-      }
-    } catch (error) {
-      console.error("Failed to create video:", error);
-    }
-  }
-
-  async function createBulkVideos() {
-    if (!selectedChannelId) return;
-
-    const urls = bulkVideoUrls.split("\n").filter(url => url.trim());
-    const bulk = urls.map(url => ({
-      youtube_url: url.trim(),
-      title: url.trim() // placeholder; API extracts video id from URL
-    }));
-
-    try {
-      const res = await fetch(`/api/channels/${selectedChannelId}/videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bulk })
-      });
-      if (res.ok) {
-        setBulkVideoDialogOpen(false);
-        setBulkVideoUrls("");
-        loadVideos(selectedChannelId);
-      }
-    } catch (error) {
-      console.error("Failed to create bulk videos:", error);
-    }
-  }
-
-  async function updateVideoPriority(videoId: string, priority: string) {
-    if (!selectedChannelId) return;
-
-    try {
-      const res = await fetch(`/api/channels/${selectedChannelId}/videos/${videoId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priority })
-      });
-      if (res.ok) {
-        loadVideos(selectedChannelId);
-      }
-    } catch (error) {
-      console.error("Failed to update video priority:", error);
-    }
-  }
-
-  async function updateVideoActive(videoId: string, active: boolean) {
-    if (!selectedChannelId) return;
-
-    try {
-      const res = await fetch(`/api/channels/${selectedChannelId}/videos/${videoId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: active ? "active" : "paused" })
-      });
-      if (res.ok) {
-        loadVideos(selectedChannelId);
-      }
-    } catch (error) {
-      console.error("Failed to update video status:", error);
-    }
-  }
-
-  async function deleteSelectedVideos() {
-    if (!selectedChannelId || deleteVideoIds.length === 0) return;
-
-    try {
-      const res = await fetch(`/api/channels/${selectedChannelId}/videos`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: deleteVideoIds })
-      });
-      if (res.ok) {
-        setSelectedVideos(new Set());
-        loadVideos(selectedChannelId);
-      }
-    } catch (error) {
-      console.error("Failed to delete videos:", error);
-    } finally {
-      setDeleteVideoIds([]);
-    }
-  }
-
-  function toggleVideoSelection(videoId: string) {
-    const newSelected = new Set(selectedVideos);
-    if (newSelected.has(videoId)) {
-      newSelected.delete(videoId);
-    } else {
-      newSelected.add(videoId);
-    }
-    setSelectedVideos(newSelected);
-  }
-
-  function toggleAllVideos() {
-    if (selectedVideos.size === videos.length) {
-      setSelectedVideos(new Set());
-    } else {
-      setSelectedVideos(new Set(videos.map(v => v.id)));
-    }
-  }
-
-  const selectedChannel = channels.find(c => c.id === selectedChannelId);
+  const monitored = channels.filter(c=>c.is_monitored);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">채널</h1>
-        <p className="text-base text-muted-foreground">
-          YouTube 채널 및 컨텐츠를 관리합니다.
-        </p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">채널 관리</h1>
+          <p className="text-sm text-slate-500">{channels.length}개 등록 · {monitored.length}개 모니터링</p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={handleSync} variant="outline" size="sm" disabled={syncLoading}
+            className="border-[#1e2130] bg-[#12141d] text-slate-300 hover:bg-[#1a1d2e] hover:text-white">
+            {syncLoading?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<RefreshCw className="mr-1.5 h-3.5 w-3.5"/>}
+            전체 동기화
+          </Button>
+          <Button onClick={()=>setAddOpen(true)} size="sm" className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="mr-1.5 h-3.5 w-3.5"/> 채널 추가
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Left Panel - Channels */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Tv className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>채널 목록</CardTitle>
-              </div>
-              <Dialog open={channelDialogOpen} onOpenChange={setChannelDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    채널 추가
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>새 채널 추가</DialogTitle>
-                    <DialogDescription>YouTube 채널 정보를 입력하세요.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="channel-name">채널명 *</Label>
-                      <Input
-                        id="channel-name"
-                        value={channelForm.name}
-                        onChange={(e) => setChannelForm({ ...channelForm, name: e.target.value })}
-                        placeholder="채널 이름"
-                      />
+      {/* Channel List */}
+      {loading ? (
+        <div className="flex h-40 items-center justify-center"><RefreshCw className="h-5 w-5 animate-spin text-slate-500"/></div>
+      ) : channels.length===0 ? (
+        <div className="rounded-xl border border-[#1e2130] bg-[#12141d] p-12 text-center">
+          <Tv className="mx-auto h-8 w-8 text-slate-600"/>
+          <p className="mt-3 text-sm text-slate-500">등록된 채널이 없습니다</p>
+          <Button onClick={()=>setAddOpen(true)} size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700">
+            <Plus className="mr-1.5 h-3.5 w-3.5"/> 첫 채널 추가
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {channels.map(ch=>{
+            const isExpanded = expanded===ch.id;
+            const chVideos = videos[ch.id]||[];
+            return (
+              <div key={ch.id} className="rounded-xl border border-[#1e2130] bg-[#12141d] overflow-hidden hover:border-[#2a2d40] transition-colors">
+                {/* Channel Row */}
+                <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={()=>toggleExpand(ch.id)}>
+                  {/* Thumbnail */}
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1a1d2e] overflow-hidden">
+                    {ch.thumbnail_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={ch.thumbnail_url} alt="" className="h-12 w-12 rounded-full object-cover"/>
+                    ) : (
+                      <Tv className="h-5 w-5 text-slate-500"/>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white truncate">{ch.name}</span>
+                      {ch.is_monitored && <span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[8px] font-bold text-green-400">모니터링</span>}
+                      {ch.auto_collect && <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">자동수집</span>}
                     </div>
-                    <div>
-                      <Label htmlFor="channel-url">YouTube URL</Label>
-                      <Input
-                        id="channel-url"
-                        value={channelForm.youtube_url}
-                        onChange={(e) => setChannelForm({ ...channelForm, youtube_url: e.target.value })}
-                        placeholder="https://youtube.com/@channel"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="channel-category">카테고리</Label>
-                      <Select
-                        value={channelForm.category}
-                        onValueChange={(value: Category) => setChannelForm({ ...channelForm, category: value })}
-                      >
-                        <SelectTrigger id="channel-category">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(categoryLabels).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>{label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="channel-notes">메모</Label>
-                      <Textarea
-                        id="channel-notes"
-                        value={channelForm.notes}
-                        onChange={(e) => setChannelForm({ ...channelForm, notes: e.target.value })}
-                        placeholder="채널 관련 메모"
-                      />
+                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                      {ch.handle && <span>{ch.handle}</span>}
+                      <span className="flex items-center gap-0.5"><Users className="h-3 w-3"/>{fmtSubs(ch.subscriber_count)}</span>
+                      <span className="flex items-center gap-0.5"><Video className="h-3 w-3"/>{ch.video_count||0}개</span>
+                      <span className="flex items-center gap-0.5"><Clock className="h-3 w-3"/>동기화 {timeSince(ch.last_collected_at)}</span>
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setChannelDialogOpen(false)}>취소</Button>
-                    <Button onClick={createChannel} disabled={!channelForm.name}>확인</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[600px]">
-              <div className="space-y-2">
-                {loading ? (
-                  <p className="text-sm text-muted-foreground">로딩 중...</p>
-                ) : channels.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">등록된 채널이 없습니다.</p>
-                ) : (
-                  channels.map((channel) => (
-                    <Card
-                      key={channel.id}
-                      className={cn(
-                        "cursor-pointer transition-colors hover:bg-accent",
-                        selectedChannelId === channel.id && "border-primary bg-accent"
-                      )}
-                      onClick={() => setSelectedChannelId(channel.id)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-medium text-sm truncate">{channel.name}</h3>
-                              {channel.category && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {categoryLabels[channel.category]}
-                                </Badge>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2">
+                    <button onClick={(e)=>{e.stopPropagation();handleDelete(ch.id);}}
+                      className="rounded p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-900/10"><Trash2 className="h-3.5 w-3.5"/></button>
+                    {isExpanded?<ChevronUp className="h-4 w-4 text-slate-500"/>:<ChevronDown className="h-4 w-4 text-slate-500"/>}
+                  </div>
+                </div>
+
+                {/* Expanded: Videos */}
+                {isExpanded && (
+                  <div className="border-t border-[#1e2130] bg-[#0d1117] px-4 py-3">
+                    {chVideos.length===0 ? (
+                      <p className="py-4 text-center text-xs text-slate-600">영상 없음 — 동기화를 실행하세요</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                        {chVideos.map(v=>{
+                          const pct = (v.target_views&&v.target_views>0)?Math.min(100,Math.round(((v.completed_views||0)/v.target_views)*100)):0;
+                          return (
+                            <div key={v.id} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[#12141d]/50">
+                              <div className={cn("h-1.5 w-1.5 rounded-full",
+                                v.status==="active"?"bg-green-500":v.status==="completed"?"bg-blue-500":"bg-slate-600")}/>
+                              <span className="flex-1 text-xs text-slate-300 truncate">{v.title}</span>
+                              {v.duration_sec&&<span className="font-mono text-[10px] text-slate-500">{Math.round(v.duration_sec/60)}분</span>}
+                              {v.target_views&&v.target_views>0 && (
+                                <div className="flex items-center gap-1.5 w-20">
+                                  <div className="flex-1 h-1 rounded-full bg-[#1e2130]">
+                                    <div className="h-1 rounded-full bg-blue-600" style={{width:`${pct}%`}}/>
+                                  </div>
+                                  <span className="font-mono text-[9px] text-slate-500">{pct}%</span>
+                                </div>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              동영상 {channel.video_count || 0}개
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteChannelId(channel.id);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+            );
+          })}
+        </div>
+      )}
 
-        {/* Right Panel - Videos */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>
-                {selectedChannel ? `${selectedChannel.name} - 동영상` : "동영상 목록"}
-              </CardTitle>
-              <div className="flex gap-2">
-                {selectedVideos.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setDeleteVideoIds(Array.from(selectedVideos))}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    선택 삭제 ({selectedVideos.size})
-                  </Button>
-                )}
-                <Dialog open={bulkVideoDialogOpen} onOpenChange={setBulkVideoDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" disabled={!selectedChannelId}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      일괄 추가
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>동영상 일괄 추가</DialogTitle>
-                      <DialogDescription>YouTube URL을 한 줄에 하나씩 입력하세요.</DialogDescription>
-                    </DialogHeader>
-                    <Textarea
-                      value={bulkVideoUrls}
-                      onChange={(e) => setBulkVideoUrls(e.target.value)}
-                      placeholder="https://youtube.com/watch?v=..."
-                      rows={10}
-                    />
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setBulkVideoDialogOpen(false)}>취소</Button>
-                      <Button onClick={createBulkVideos} disabled={!bulkVideoUrls.trim()}>확인</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                <Dialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" disabled={!selectedChannelId}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      동영상 추가
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>새 동영상 추가</DialogTitle>
-                      <DialogDescription>YouTube 동영상 정보를 입력하세요.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="video-title">제목</Label>
-                        <Input
-                          id="video-title"
-                          value={videoForm.title}
-                          onChange={(e) => setVideoForm({ ...videoForm, title: e.target.value })}
-                          placeholder="동영상 제목"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="video-url">YouTube URL *</Label>
-                        <Input
-                          id="video-url"
-                          value={videoForm.youtube_url}
-                          onChange={(e) => setVideoForm({ ...videoForm, youtube_url: e.target.value })}
-                          placeholder="https://youtube.com/watch?v=..."
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setVideoDialogOpen(false)}>취소</Button>
-                      <Button onClick={createVideo} disabled={!videoForm.youtube_url}>확인</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[600px]">
-              {!selectedChannelId ? (
-                <p className="text-sm text-muted-foreground">채널을 선택하세요.</p>
-              ) : videos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">등록된 동영상이 없습니다.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedVideos.size === videos.length && videos.length > 0}
-                          onCheckedChange={toggleAllVideos}
-                        />
-                      </TableHead>
-                      <TableHead>제목</TableHead>
-                      <TableHead className="w-20">우선순위</TableHead>
-                      <TableHead className="w-20">재생수</TableHead>
-                      <TableHead className="w-20">활성</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {videos.map((video) => (
-                      <TableRow key={video.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedVideos.has(video.id)}
-                            onCheckedChange={() => toggleVideoSelection(video.id)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className="text-sm font-medium">{video.title}</span>
-                            <a
-                              href={`https://www.youtube.com/watch?v=${video.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              https://www.youtube.com/watch?v={video.id}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={String(video.priority ?? "normal")}
-                            onValueChange={(val) => updateVideoPriority(video.id, val)}
-                          >
-                            <SelectTrigger className="w-24 h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="low">low</SelectItem>
-                              <SelectItem value="normal">normal</SelectItem>
-                              <SelectItem value="high">high</SelectItem>
-                              <SelectItem value="urgent">urgent</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {video.completed_views ?? 0}
-                        </TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={video.status === "active"}
-                            onCheckedChange={(checked) => updateVideoActive(video.id, checked)}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Channel Delete Confirmation */}
-      <AlertDialog open={!!deleteChannelId} onOpenChange={(open) => !open && setDeleteChannelId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>채널 삭제</AlertDialogTitle>
-            <AlertDialogDescription>
-              이 채널을 삭제하시겠습니까?
-              {deleteChannelId && channels.find(c => c.id === deleteChannelId)?.video_count
-                ? ` ${channels.find(c => c.id === deleteChannelId)?.video_count}개의 동영상도 함께 삭제됩니다.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteChannelId && deleteChannel(deleteChannelId)}>
-              삭제
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Video Delete Confirmation */}
-      <AlertDialog open={deleteVideoIds.length > 0} onOpenChange={(open) => !open && setDeleteVideoIds([])}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>동영상 삭제</AlertDialogTitle>
-            <AlertDialogDescription>
-              선택한 {deleteVideoIds.length}개의 동영상을 삭제하시겠습니까?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={deleteSelectedVideos}>삭제</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Add Channel Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="border-[#1e2130] bg-[#0f1117] text-slate-200 sm:max-w-md">
+          <DialogHeader><DialogTitle className="text-white">채널 추가</DialogTitle></DialogHeader>
+          <p className="text-xs text-slate-500">YouTube 채널 URL 또는 핸들을 입력하세요</p>
+          <Input value={addUrl} onChange={e=>setAddUrl(e.target.value)}
+            placeholder="https://youtube.com/@channelname 또는 @handle"
+            className="border-[#1e2130] bg-[#12141d] text-sm text-slate-300"/>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setAddOpen(false)} className="border-[#1e2130] text-slate-400">취소</Button>
+            <Button onClick={handleAdd} disabled={addLoading} className="bg-blue-600 hover:bg-blue-700">
+              {addLoading?<RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin"/>:<Plus className="mr-1.5 h-3.5 w-3.5"/>}
+              추가
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
