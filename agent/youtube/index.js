@@ -20,4 +20,7 @@ module.exports = {
   likeVideo, subscribeChannel, writeComment, saveToPlaylist,
   // flows
   executeYouTubeMission: require('./flows').executeYouTubeMission,
+  // preflight
+  preflightCheck: require('./preflight').preflightCheck,
+  quickSelectorCheck: require('./preflight').quickSelectorCheck,
 };
