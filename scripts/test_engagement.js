@@ -103,27 +103,29 @@ async function findAllMatches(pattern) {
 async function trySkipAd() {
   const xml = await dumpUI();
   if (xml) {
-    const keywords = ['skip_ad_button', 'skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
-    for (const kw of keywords) {
+    const skipKeywords = ['skip_ad_button', 'skip_ad', '건너뛰기', '광고 건너뛰기', 'Skip ad', 'Skip Ad'];
+    for (const kw of skipKeywords) {
       if (!xml.includes(kw)) continue;
       const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const patterns = [
-        new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
-        new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
-      ];
-      for (const re of patterns) {
-        const m = xml.match(re);
-        if (m) {
-          const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
-          const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
-          log('광고', `"${kw}" XML에서 발견 → 탭 (${cx}, ${cy})`);
+      const nodeRe = new RegExp('<node[^>]*' + escaped + '[^>]*>', 'i');
+      const nodeMatch = xml.match(nodeRe);
+      if (nodeMatch) {
+        const boundsMatch = nodeMatch[0].match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+        if (boundsMatch) {
+          const cx = Math.round((parseInt(boundsMatch[1]) + parseInt(boundsMatch[3])) / 2);
+          const cy = Math.round((parseInt(boundsMatch[2]) + parseInt(boundsMatch[4])) / 2);
+          log('광고', `"${kw}" XML 노드에서 발견 → 탭 (${cx}, ${cy})`);
           await adb(`input tap ${cx} ${cy}`);
           return true;
         }
       }
     }
-    if (xml.includes('광고') || xml.includes('ad_badge') || xml.includes('Ad')) {
-      return await skipAdFixedCoord();
+    const adSignals = ['ad_badge', 'ad_progress_text', 'ad_info_button', 'ad_cta_button', '광고'];
+    for (const sig of adSignals) {
+      if (xml.includes(sig)) {
+        log('광고', `광고 신호 "${sig}" 감지 → 고정 좌표 탭`);
+        return await skipAdFixedCoord();
+      }
     }
   }
   return false;
@@ -188,30 +190,33 @@ async function run() {
   log('3-선택', `✓ 영상 탭: (${midX}, ${tapY})`);
   await sleep(5000);
 
-  // 프리롤 광고 건너뛰기 (6초 대기 → 탭)
-  log('4-광고', '광고 확인 중...');
-  for (let i = 0; i < 3; i++) {
-    const adXml = await dumpUI();
-    const hasAd = adXml && (adXml.includes('ad_badge') || adXml.includes('skip_ad') ||
-      adXml.includes('건너뛰기') || adXml.includes('광고'));
+  // 프리롤 광고 건너뛰기 — 항상 6초 대기 후 시도 (SurfaceView 대응)
+  log('4-광고', '6초 대기 (광고 건너뛰기 버튼 활성화 대기)...');
+  await sleep(6000);
 
-    if (!hasAd && i === 0) {
-      await sleep(6000);
-      const skipped = await trySkipAd();
-      if (skipped) { log('4-광고', '✓ 광고 건너뛰기 완료'); await sleep(2000); }
-      else { log('4-광고', '✓ 광고 없음'); }
+  for (let i = 0; i < 3; i++) {
+    const skipped = await trySkipAd();
+    if (skipped) {
+      log('4-광고', `✓ XML 기반 건너뛰기 (${i + 1}회)`);
+      await sleep(2000);
       break;
     }
 
-    if (hasAd) {
-      log('4-광고', `광고 감지 (${i + 1}회) — 6초 대기`);
-      await sleep(6000);
-      const skipped = await trySkipAd();
-      if (!skipped) await skipAdFixedCoord();
-      await sleep(2000);
-    } else {
-      log('4-광고', '✓ 광고 없음');
-      break;
+    log('4-광고', `고정 좌표 탭 시도 (${i + 1}회)`);
+    await skipAdFixedCoord();
+    await sleep(2000);
+
+    try {
+      const res = await adb('dumpsys media_session | grep "state="');
+      if (out(res).includes('state=3')) {
+        log('4-광고', '✓ 재생 시작됨');
+        break;
+      }
+    } catch {}
+
+    if (i < 2) {
+      log('4-광고', '아직 광고 중 — 5초 추가 대기');
+      await sleep(5000);
     }
   }
 
