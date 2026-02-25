@@ -1,76 +1,108 @@
 "use client";
 
-import { useEffect } from "react";
-import { useWorkersStore } from "@/hooks/use-workers-store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Server, Wifi, WifiOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useState } from "react";
+import { Server, RefreshCw, Smartphone, Wifi } from "lucide-react";
+
+interface Worker {
+  id: string;
+  hostname?: string;
+  pc_number?: string;
+  status: string;
+  device_count?: number;
+  online_count?: number;
+  last_heartbeat?: string;
+}
 
 export default function WorkersPage() {
-  const { nodes, fetch: fetchWorkers } = useWorkersStore();
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchWorkers();
-  }, [fetchWorkers]);
+    fetch("/api/workers")
+      .then((r) => r.json())
+      .then((d) => setWorkers(Array.isArray(d) ? d : d.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <RefreshCw className="h-5 w-5 animate-spin text-slate-500" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">워커</h1>
-        <p className="text-base text-muted-foreground">
-          연결된 워커 노드를 관리합니다.
+        <h1 className="text-2xl font-bold text-white">PC 관리</h1>
+        <p className="text-sm text-slate-500">
+          {workers.filter((w) => w.status === "online").length}/{workers.length} 온라인
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {nodes.map((node) => (
-          <Card key={node.id}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {node.name}
-              </CardTitle>
-              {node.status === "connected" ? (
-                <Wifi className="h-4 w-4 text-status-success" />
-              ) : (
-                <WifiOff className="h-4 w-4 text-status-error" />
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {node.ip}
-                  </span>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {workers.map((w) => {
+          const name = w.pc_number || w.hostname || w.id?.substring(0, 8);
+          const isOnline = w.status === "online";
+          const online = w.online_count || 0;
+          const total = w.device_count || 100;
+          const pct = total > 0 ? Math.round((online / total) * 100) : 0;
+
+          return (
+            <div
+              key={w.id}
+              className="rounded-xl border border-[#1e2130] bg-[#12141d] p-5 hover:border-[#2a2d40] transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isOnline ? "bg-green-900/30" : "bg-slate-800"}`}>
+                    <Server className={`h-5 w-5 ${isOnline ? "text-green-400" : "text-slate-500"}`} />
+                  </div>
+                  <div>
+                    <div className="font-mono text-lg font-bold text-white">{name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-green-500 animate-pulse" : "bg-slate-600"}`} />
+                      <span className={`text-xs ${isOnline ? "text-green-400" : "text-slate-500"}`}>
+                        {isOnline ? "온라인" : "오프라인"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {node.devices.length}대 연결
-                  </Badge>
-                  <Badge
-                    variant={
-                      node.status === "connected" ? "default" : "secondary"
-                    }
-                    className="text-xs"
-                  >
-                    {node.status === "connected" ? "온라인" : "오프라인"}
-                  </Badge>
+                <div className="text-right">
+                  <div className="font-mono text-2xl font-bold text-white">{online}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500">/ {total} devices</div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
-      {nodes.length === 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-sm text-muted-foreground">
-              연결된 워커가 없습니다.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+              <div className="mt-4">
+                <div className="h-2 rounded-full bg-[#1e2130]">
+                  <div
+                    className="h-2 rounded-full bg-green-600 transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+                  <span>{pct}% 가동</span>
+                  <span>
+                    {w.last_heartbeat
+                      ? `마지막 하트비트: ${new Date(w.last_heartbeat).toLocaleTimeString("ko-KR")}`
+                      : "하트비트 없음"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {workers.length === 0 && (
+          <div className="col-span-full rounded-xl border border-[#1e2130] bg-[#12141d] p-12 text-center">
+            <Wifi className="mx-auto h-8 w-8 text-slate-600" />
+            <p className="mt-3 text-sm text-slate-500">연결된 PC가 없습니다</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
