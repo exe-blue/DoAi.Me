@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   LayoutDashboard,
   Server,
@@ -11,12 +12,11 @@ import {
   Tv,
   Upload,
   ListOrdered,
-  CheckCircle,
   Zap,
   Terminal,
+  Settings,
   FileText,
   AlertTriangle,
-  Settings,
   LogOut,
   Wifi,
 } from "lucide-react";
@@ -43,56 +43,44 @@ import type { User } from "@supabase/supabase-js";
 
 const navGroups = [
   {
-    label: "",
+    label: "OVERVIEW",
     items: [
       { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
-      { href: "/dashboard/workers", label: "PC", icon: Server },
+    ],
+  },
+  {
+    label: "INFRASTRUCTURE",
+    items: [
+      { href: "/dashboard/workers", label: "PC 관리", icon: Server },
       { href: "/dashboard/devices", label: "디바이스", icon: Smartphone },
-      { href: "/dashboard/network", label: "네트워크", icon: Globe },
       { href: "/dashboard/proxies", label: "프록시", icon: Shield },
+      { href: "/dashboard/network", label: "네트워크", icon: Globe },
     ],
   },
   {
-    label: "",
+    label: "CONTENT",
     items: [
-      { href: "/dashboard/channels", label: "채널", icon: Tv },
-      { href: "/dashboard/content", label: "콘텐츠", icon: Upload },
-      { href: "/dashboard/tasks", label: "대기열", icon: ListOrdered },
-      { href: "/dashboard/completed", label: "완료", icon: CheckCircle },
+      { href: "/dashboard/channels", label: "채널 관리", icon: Tv },
+      { href: "/dashboard/content", label: "콘텐츠 등록", icon: Upload },
+      { href: "/dashboard/tasks", label: "작업 / 대기열", icon: ListOrdered },
     ],
   },
   {
-    label: "",
+    label: "AUTOMATION",
     items: [
-      { href: "/dashboard/tasks", label: "작업관리", icon: ListOrdered },
-      { href: "/dashboard/presets", label: "명령모듈", icon: Zap },
-      { href: "/dashboard/adb", label: "ADB콘솔", icon: Terminal },
+      { href: "/dashboard/presets", label: "프리셋", icon: Zap },
+      { href: "/dashboard/adb", label: "ADB 콘솔", icon: Terminal },
     ],
   },
   {
-    label: "",
+    label: "SYSTEM",
     items: [
+      { href: "/dashboard/settings", label: "설정", icon: Settings },
       { href: "/dashboard/logs", label: "로그", icon: FileText },
       { href: "/dashboard/errors", label: "에러", icon: AlertTriangle },
-      { href: "/dashboard/settings", label: "설정", icon: Settings },
     ],
   },
 ];
-
-const ROUTE_LABELS: Record<string,string> = {
-  "/dashboard":"OVERVIEW", "/dashboard/workers":"PC", "/dashboard/devices":"DEVICES",
-  "/dashboard/network":"NETWORK", "/dashboard/proxies":"PROXIES",
-  "/dashboard/channels":"CHANNELS", "/dashboard/content":"CONTENT",
-  "/dashboard/tasks":"QUEUE", "/dashboard/completed":"COMPLETED",
-  "/dashboard/presets":"PRESETS", "/dashboard/adb":"ADB CONSOLE",
-  "/dashboard/logs":"LOGS", "/dashboard/errors":"ERRORS", "/dashboard/settings":"SETTINGS",
-};
-
-function BreadcrumbLabel() {
-  const pathname = usePathname();
-  const label = ROUTE_LABELS[pathname] || pathname.split("/").pop()?.toUpperCase() || "";
-  return <span className="text-[10px] font-mono font-bold tracking-wider text-green-500">{label}</span>;
-}
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -124,16 +112,23 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <Sidebar className="border-r border-[#1e2130] bg-[#0f1117]">
+      <Sidebar className="border-r border-sidebar-border bg-sidebar">
         <SidebarHeader className="px-4 py-5">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/logo.png" alt="DoAi.Me" className="h-8 w-8 rounded-lg" />
+            <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary">
+              <Image
+                src="/images/logo.PNG"
+                alt="DoAi.Me"
+                width={32}
+                height={32}
+                className="object-contain"
+              />
+            </div>
             <div>
-              <span className="font-mono text-base font-bold text-white">
+              <span className="font-mono text-base font-bold text-sidebar-foreground">
                 DoAi.Me
               </span>
-              <span className="ml-1.5 font-mono text-[9px] tracking-[0.2em] text-green-400">
+              <span className="ml-1.5 font-mono text-[9px] tracking-[0.2em] text-primary">
                 COMMAND CENTER
               </span>
             </div>
@@ -141,15 +136,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
 
         <SidebarContent className="px-2">
-          {navGroups.map((group, gi) => (
-            <SidebarGroup key={gi}>
-              {group.label ? (
-                <SidebarGroupLabel className="px-3 text-[10px] font-medium tracking-[0.15em] text-slate-500">
-                  {group.label}
-                </SidebarGroupLabel>
-              ) : gi > 0 ? (
-                <SidebarSeparator className="my-2" />
-              ) : null}
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel className="px-3 text-[10px] font-medium tracking-[0.15em] text-muted-foreground">
+                {group.label}
+              </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.items.map((item) => {
@@ -164,8 +155,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                           isActive={isActive}
                           className={
                             isActive
-                              ? "border-l-2 border-green-500 bg-[#0d1a0d] text-white"
-                              : "text-slate-400 hover:text-slate-200"
+                              ? "border-l-2 border-sidebar-ring bg-sidebar-accent text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                           }
                         >
                           <Link href={item.href}>
@@ -182,12 +173,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           ))}
         </SidebarContent>
 
-        <SidebarFooter className="border-t border-[#1e2130] px-3 py-3">
+        <SidebarFooter className="border-t border-sidebar-border px-3 py-3">
           <div className="mb-2 flex items-center gap-1.5 px-1">
             <div
-              className={`h-1.5 w-1.5 rounded-full ${systemOk ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
+              className={`h-1.5 w-1.5 rounded-full ${systemOk ? "bg-status-success animate-pulse" : "bg-status-error"}`}
             />
-            <span className="font-mono text-[10px] text-slate-500">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {systemOk ? "System Nominal" : "Issues Detected"}
             </span>
           </div>
@@ -195,19 +186,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between pt-2">
             <div className="flex items-center gap-2">
               <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-[#1a1d2e] text-[10px] text-slate-300">
+                <AvatarFallback className="bg-sidebar-accent text-[10px] text-sidebar-accent-foreground">
                   {user?.email?.[0]?.toUpperCase() || "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <span className="text-[11px] text-slate-300 truncate max-w-[140px]">
+                <span className="text-[11px] text-sidebar-foreground truncate max-w-[140px]">
                   {user?.email || "User"}
                 </span>
               </div>
             </div>
             <button
+              type="button"
               onClick={handleLogout}
-              className="rounded p-1 text-slate-500 hover:bg-[#1a1d2e] hover:text-slate-300"
+              aria-label="로그아웃"
+              className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
@@ -215,14 +208,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="bg-[#0a0a0f]">
-        <header className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-[#1e2130] bg-[#0a0a0f]/90 px-4 backdrop-blur-sm">
-          <SidebarTrigger className="text-slate-400" />
-          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-600">TACTICAL COMMAND</span>
-          <span className="text-[10px] text-slate-700">/</span>
-          <BreadcrumbLabel />
+      <SidebarInset className="bg-background">
+        <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur-sm">
+          <SidebarTrigger className="text-foreground" />
         </header>
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

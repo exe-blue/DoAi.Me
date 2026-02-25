@@ -1,246 +1,593 @@
 "use client";
-
-import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import useSWR, { mutate } from "swr";
 import {
-  Smartphone, Eye, Heart, Zap, Server, RefreshCw, CheckCircle2,
-  XCircle, Activity, AlertTriangle, ArrowRight, Clock, Wifi, Shield,
+  Activity, TrendingUp, TrendingDown, Server, RefreshCw,
+  Wifi, AlertTriangle,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-/* ═══ Types ═══ */
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface RealtimeData {
-  totalDevices:number;online:number;offline:number;busy:number;error:number;
-  activeMissions:number;
-  todayStats:{views:number;errors:number;likes?:number;comments?:number};
-  pcs:Array<{pc_number:string;status:string;id:string}>;
-}
-interface Worker{id:string;hostname?:string;pc_number?:string;status:string;device_count?:number;online_count?:number;last_heartbeat?:string;ip_local?:string;xiaowei_connected?:boolean;}
-interface Task{id:string;title?:string;video_id?:string;status:string;device_count?:number;type?:string;payload?:any;}
-interface ErrorItem{type:string;count:number;severity:string;lastOccurred:string;}
-function cn(...c:(string|false|undefined)[]){return c.filter(Boolean).join(" ")}
-function fmt(n:number){return n>=10000?(n/1000).toFixed(1).replace(/\.0$/,"")+"K":n.toLocaleString()}
-function timeSince(d:string|null|undefined):string{if(!d)return"—";const s=Math.round((Date.now()-new Date(d).getTime())/1000);if(s<60)return`${s}초 전`;if(s<3600)return`${Math.floor(s/60)}분 전`;return`${Math.floor(s/3600)}시간 전`;}
-
-/* ═══ Stat Card ═══ */
-function StatCard({label,value,sub,color,pulse,icon:Icon}:{label:string;value:string;sub?:string;color:"green"|"blue"|"amber"|"red";pulse?:boolean;icon:React.ElementType}){
-  const dot={green:"bg-green-500",blue:"bg-blue-500",amber:"bg-amber-500",red:"bg-red-500"}[color];
-  return(
-    <div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-      <div className="flex items-center gap-2 mb-3"><div className={cn("h-2 w-2 rounded-full",dot,pulse&&"animate-pulse")}/><span className="text-[10px] font-medium uppercase tracking-[0.15em] text-slate-500">{label}</span></div>
-      <div className="flex items-end justify-between"><div><span className="font-mono text-[32px] font-bold leading-none text-white">{value}</span>{sub&&<div className="mt-1 text-xs text-slate-500">{sub}</div>}</div><Icon className="h-7 w-7 text-slate-700"/></div>
-    </div>);
+  totalDevices: number;
+  online: number;
+  offline: number;
+  busy: number;
+  error: number;
+  activeMissions: number;
+  todayStats: { views: number; errors: number; likes?: number; comments?: number };
+  pcs: Array<{ pc_number: string; status: string; id: string }>;
+  timestamp?: string;
 }
 
-/* ═══ Chart ═══ */
-function ActivityChart({data,tab,setTab}:{data:any[];tab:string;setTab:(t:string)=>void}){
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-    <div className="mb-4 flex items-center justify-between">
-      <span className="text-xs font-bold uppercase tracking-wider text-slate-300">MISSION ACTIVITY OVERVIEW</span>
-      <div className="flex gap-1">{["TODAY","WEEK","MONTH"].map(t=><button key={t} onClick={()=>setTab(t)} className={cn("rounded px-3 py-1 text-[10px] font-bold tracking-wider",tab===t?"bg-primary text-white":"text-slate-500 hover:text-slate-300")}>{t}</button>)}</div>
+interface WorkerData {
+  id: string;
+  hostname?: string;
+  pc_number?: string;
+  status: string;
+  device_count?: number;
+  online_count?: number;
+}
+
+interface OverviewData {
+  worker: { id: string; name: string; status: string } | null;
+  devices: { total: number; online: number; busy: number; error: number; offline: number };
+  tasks: { running: number; pending: number; completed_today: number; failed_today: number };
+  proxies: { total: number; valid: number; invalid: number; unassigned: number };
+  timestamp: string;
+}
+
+interface ErrorEntry {
+  type: string;
+  count: number;
+  severity: string;
+  lastOccurred: string;
+}
+
+interface ErrorsData {
+  hours: number;
+  totalErrors: number;
+  errors: ErrorEntry[];
+}
+
+interface HealthData {
+  status: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function cn(...c: (string | false | undefined)[]) {
+  return c.filter(Boolean).join(" ");
+}
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return String(n);
+}
+
+function ErrorBlock({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+      <AlertTriangle className="h-5 w-5 text-destructive" />
+      <span className="text-xs text-destructive">{message ?? "Failed to load"}</span>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/20"
+        >
+          Retry
+        </button>
+      )}
     </div>
-    <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={data}>
-        <defs><linearGradient id="gV" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22c55e" stopOpacity={0.25}/><stop offset="100%" stopColor="#22c55e" stopOpacity={0}/></linearGradient></defs>
-        <CartesianGrid stroke="#1e2130" vertical={false}/><XAxis dataKey="hour" tick={{fill:"#475569",fontSize:10,fontFamily:"monospace"}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#475569",fontSize:10,fontFamily:"monospace"}} axisLine={false} tickLine={false} width={40} tickFormatter={(v:number)=>v>=1000?(v/1000)+"K":String(v)}/>
-        <Tooltip contentStyle={{background:"#12141d",border:"1px solid #1e2130",borderRadius:8,fontFamily:"monospace",fontSize:11}}/>
-        <Area type="monotone" dataKey="views" stroke="#22c55e" fill="url(#gV)" strokeWidth={2}/><Area type="monotone" dataKey="likes" stroke="#f59e0b" fill="transparent" strokeWidth={1.5} strokeDasharray="5 3"/>
-      </AreaChart>
-    </ResponsiveContainer>
-    <div className="mt-2 flex gap-4 text-[10px] text-slate-500"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green-500"/>Successful</span><span className="flex items-center gap-1.5"><span className="h-2 w-4 border-t border-dashed border-amber-500"/>Failed</span></div>
-  </div>);
+  );
 }
 
-/* ═══ Workers Panel ═══ */
-function WorkersPanel({workers}:{workers:Worker[]}){
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5 relative overflow-hidden">
-    <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Server className="h-4 w-4 text-slate-500"/><span className="text-xs font-bold uppercase tracking-wider text-slate-300">AGENT ALLOCATION</span><span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[10px] text-green-400">{workers.filter(w=>w.status==="online").length} online</span></div>
-      <Link href="/dashboard/workers" className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5">View All<ArrowRight className="h-3 w-3"/></Link></div>
-    <div className="relative z-10 space-y-2.5">{workers.map(w=>{const name=w.pc_number||w.hostname||"PC??";const on=w.online_count||0,tot=w.device_count||100;const pct=tot>0?Math.round((on/tot)*100):0;
-      return(<div key={w.id} className="flex items-center gap-3 rounded-lg bg-[#0d1117]/50 px-3 py-2"><div className={cn("h-2 w-2 rounded-full",w.status==="online"?"bg-green-500":"bg-slate-600")}/><span className="w-12 font-mono text-sm font-bold text-white">{name}</span><div className="flex-1 h-2 rounded-full bg-[#1e2130]"><div className="h-2 rounded-full bg-green-600 transition-all" style={{width:`${pct}%`}}/></div><span className="font-mono text-xs text-slate-400 w-14 text-right">{on}/{tot}</span></div>);
-    })}{workers.length===0&&<p className="py-4 text-center text-xs text-slate-600">연결된 PC 없음</p>}</div>
-    {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img src="/images/robot-wireframe.gif" alt="" className="absolute -right-6 -bottom-6 h-44 w-44 opacity-[0.08] pointer-events-none"/>
-  </div>);
-}
+// ---------------------------------------------------------------------------
+// KPI Card
+// ---------------------------------------------------------------------------
 
-/* ═══ Activity Log ═══ */
-function ActivityLog({errors,data}:{errors:ErrorItem[];data:RealtimeData|null}){
-  const logs=[
-    ...(data?.todayStats?.views?[{dot:"bg-green-500",title:`${fmt(data.todayStats.views)} views completed`,time:"today",tag:"OK"}]:[]),
-    ...errors.slice(0,4).map(e=>({dot:"bg-red-500",title:`${e.count}x ${e.type}`,time:e.lastOccurred?timeSince(e.lastOccurred):"",tag:"ERR"})),
-  ];
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-    <div className="mb-3 flex items-center gap-2"><Activity className="h-4 w-4 text-slate-500"/><span className="text-xs font-bold uppercase tracking-wider text-slate-300">ACTIVITY LOG</span></div>
-    <div className="space-y-3">{logs.map((l,i)=>(<div key={i} className="border-l-2 border-[#1e2130] pl-3 py-1">
-      <div className="flex items-center gap-2"><div className={cn("h-1.5 w-1.5 rounded-full",l.dot)}/><span className="text-xs text-white">{l.title}</span>{l.tag==="ERR"&&<span className="rounded bg-red-900/30 px-1 text-[8px] text-red-400">ERR</span>}</div>
-      <p className="mt-0.5 text-[10px] text-slate-600">{l.time}</p></div>))}
-    {logs.length===0&&<p className="py-4 text-center text-xs text-slate-600">활동 없음</p>}</div>
-  </div>);
-}
-
-/* ═══ Mission Information ═══ */
-function MissionInfo({data}:{data:RealtimeData|null}){
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">MISSION INFORMATION</span>
-    <div className="mt-4 space-y-1.5">
-      <div className="flex items-center gap-1.5 mb-2"><div className="h-2 w-2 rounded-full bg-green-500"/><span className="text-xs font-bold text-white">Successful Missions</span></div>
-      <InfoRow label="시청 완료" value={fmt(data?.todayStats?.views||0)}/><InfoRow label="좋아요" value={fmt(data?.todayStats?.likes||0)}/><InfoRow label="댓글" value={fmt(data?.todayStats?.comments||0)}/>
-      <div className="my-3 border-t border-[#1e2130]"/>
-      <div className="flex items-center gap-1.5 mb-2"><div className="h-2 w-2 rounded-full bg-red-500"/><span className="text-xs font-bold text-red-400">Failed Missions</span></div>
-      <InfoRow label="에러" value={String(data?.todayStats?.errors||0)} red/>
-    </div>
-  </div>);
-}
-function InfoRow({label,value,red}:{label:string;value:string;red?:boolean}){
-  return(<div className="flex items-center justify-between py-1"><span className="text-xs text-slate-400">{label}</span><span className={cn("font-mono text-sm font-bold",red?"text-red-400":"text-white")}>{value}</span></div>);
-}
-
-/* ═══ Worker Detail (기존 "워커 상세") ═══ */
-function WorkerDetail({workers}:{workers:Worker[]}){
-  const w=workers.find(w=>w.status==="online")||workers[0];
-  if(!w) return null;
-  const name=w.pc_number||w.hostname||"—";const on=w.online_count||0;const tot=w.device_count||0;const pct=tot>0?Math.round((on/tot)*100):0;
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-    <div className="flex items-center justify-between mb-4"><span className="text-xs font-bold uppercase tracking-wider text-slate-300">워커 상세</span><span className={cn("rounded px-2 py-0.5 text-[10px] font-bold",w.status==="online"?"bg-green-900/30 text-green-400":"bg-slate-800 text-slate-500")}>{w.status==="online"?"온라인":"오프라인"}</span></div>
-    <div className="grid grid-cols-2 gap-3 text-xs mb-4"><div><span className="text-slate-500">워커 이름</span><div className="font-mono font-bold text-white">{name}</div></div><div><span className="text-slate-500">IP 주소</span><div className="font-mono text-slate-300">{w.ip_local||"N/A"}</div></div>
-      <div><span className="text-slate-500">기동 시간</span><div className="text-slate-300">{timeSince(w.last_heartbeat)}</div></div><div><span className="text-slate-500">마지막 하트비트</span><div className="text-slate-300">{timeSince(w.last_heartbeat)}</div></div></div>
-    <div><span className="text-xs text-slate-500">디바이스 상태</span><div className="mt-1.5 h-3 rounded-full bg-[#1e2130] overflow-hidden flex"><div className="h-3 bg-green-600" style={{width:`${pct}%`}}/><div className="h-3 bg-primary" style={{width:"0%"}}/></div>
-      <div className="mt-1 flex gap-3 text-[10px] text-slate-500"><span>{on} 온라인</span><span>0 사용중</span><span>0 에러</span><span>{tot-on} 오프라인</span></div></div>
-  </div>);
-}
-
-/* ═══ System Health Report (기존 "시스템 건강 리포트") ═══ */
-function SystemHealth({data,health}:{data:RealtimeData|null;health:boolean}){
-  const uptimePct=health?100:0;
-  return(<div className="rounded-lg border border-[#1e2130] bg-[#12141d] p-5">
-    <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-green-400"/><span className="text-xs font-bold uppercase tracking-wider text-slate-300">시스템 건강 리포트</span></div>
-      <div className="flex gap-1">{["24h","7d","30d"].map(t=><button key={t} className="rounded px-2 py-0.5 text-[9px] text-slate-500 hover:text-slate-300">{t}</button>)}</div></div>
-    <div className="mb-4"><div className="flex justify-between mb-1"><span className="text-xs text-slate-400">가동률</span><span className="font-mono text-lg font-bold text-green-400">{uptimePct}%</span></div><div className="h-2.5 rounded-full bg-[#1e2130]"><div className="h-2.5 rounded-full bg-green-500" style={{width:`${uptimePct}%`}}/></div></div>
-    <div className="grid grid-cols-4 gap-3"><HealthStat icon={CheckCircle2} label="작업 완료" value={`${data?.todayStats?.views||0}`} color="green"/><HealthStat icon={Smartphone} label="디바이스 복구" value="0" color="blue"/><HealthStat icon={AlertTriangle} label="에이전트 재시작" value="0" color="red"/><HealthStat icon={Wifi} label="Xiaowei 연결 끊김" value="0" color="amber"/></div>
-  </div>);
-}
-function HealthStat({icon:Icon,label,value,color}:{icon:React.ElementType;label:string;value:string;color:string}){
-  const c={green:"text-green-400",blue:"text-primary",red:"text-red-400",amber:"text-amber-400"}[color]||"text-slate-400";
-  return(<div className="text-center"><Icon className={cn("mx-auto h-4 w-4 mb-1",c)}/><div className="font-mono text-lg font-bold text-white">{value}</div><div className="text-[9px] text-slate-500">{label}</div></div>);
-}
-
-/* ═══ Right Panel (시계 + 알림 + GIF) ═══ */
-function RightPanel({data,health,errors}:{data:RealtimeData|null;health:boolean;errors:ErrorItem[]}){
-  const [time,setTime]=useState(new Date());
-  useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
-
-  // Device status KPI for right panel
-  const online=data?.online||0,total=data?.totalDevices||0;
-  const survivalPct=total>0?((online/total)*100).toFixed(1):"0";
-  const tasks=data?.activeMissions||0;
-
-  const notifs=[
-    ...errors.slice(0,3).map(e=>({dot:"bg-red-500",title:e.type.toUpperCase(),desc:`${e.count}건 발생`,time:e.lastOccurred?timeSince(e.lastOccurred):"",tag:"ERR"})),
-    ...(data?.todayStats?.views?[{dot:"bg-green-500",title:"TASK COMPLETED",desc:`오늘 ${fmt(data.todayStats.views)}건 시청`,time:"today",tag:"OK"}]:[]),
-  ];
-
-  return(
-    <div className="w-80 shrink-0 border-l border-[#1e2130] bg-[#0a0e14] hidden xl:flex flex-col overflow-y-auto">
-      {/* Clock - Seoul style */}
-      <div className="p-5 border-b border-[#1e2130] text-center">
-        <div className="flex justify-between text-[10px] font-mono uppercase tracking-wider text-slate-500">
-          <span>{time.toLocaleDateString("ko-KR",{weekday:"long"})}</span>
-          <span>{time.toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}</span>
-        </div>
-        {/* Computer GIF behind clock */}
-        <div className="relative my-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/computer-wireframe.gif" alt="" className="mx-auto h-16 w-16 opacity-20"/>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="font-mono text-4xl font-bold text-white tracking-tight">
-              {time.toLocaleTimeString("ko-KR",{hour12:true,hour:"numeric",minute:"2-digit"})}
-            </span>
+function KPICard({ label, value, trend, suffix, loading }: {
+  label: string; value: string | number; trend: "up" | "down" | "neutral"; suffix?: string; loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5">
+        <Skeleton className="mb-2 h-10 w-24" />
+        <Skeleton className="h-3 w-32" />
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 relative overflow-hidden">
+      <div className="relative z-10">
+        <div className="flex items-end gap-2">
+          <span className="font-mono text-4xl font-bold text-foreground">{value}</span>
+          {suffix && <span className="mb-1 font-mono text-lg text-muted-foreground">{suffix}</span>}
+          <div className="mb-1.5 ml-auto">
+            {trend === "up" && <TrendingUp className="h-6 w-6 text-status-success animate-bounce" style={{ animationDuration: "2s" }} />}
+            {trend === "down" && <TrendingDown className="h-6 w-6 text-status-error animate-bounce" style={{ animationDuration: "2s" }} />}
+            {trend === "neutral" && <Activity className="h-6 w-6 text-status-info" />}
           </div>
         </div>
-        <div className="flex justify-center gap-4 text-[10px] font-mono text-slate-500">
-          <span>Korea, Seoul</span><span>UTC+9</span>
+        <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
+          {label}
         </div>
       </div>
+      <div className="absolute inset-0 opacity-[0.03]" style={{
+        backgroundImage: "radial-gradient(circle, hsl(var(--primary)) 1px, transparent 1px)",
+        backgroundSize: "20px 20px",
+      }} />
+    </div>
+  );
+}
 
-      {/* Device Status KPI (SECURITY STATUS style) */}
-      <div className="p-5 border-b border-[#1e2130] relative overflow-hidden">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-green-500"/><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">DEVICE STATUS</span></div>
-          <span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[9px] font-bold text-green-400">ONLINE</span>
-        </div>
-        <div className="relative z-10 space-y-2">
-          <div className="rounded border border-green-900/30 bg-green-950/20 px-3 py-2"><div className="text-[9px] font-bold text-green-500">■ GUARD BOTS</div><div className="font-mono text-xl font-bold text-green-400">{online}/{total}</div><div className="text-[8px] text-green-600">[RUNNING...]</div></div>
-          <div className="rounded border border-green-900/30 bg-green-950/20 px-3 py-2"><div className="text-[9px] font-bold text-green-500">■ SURVIVAL RATE</div><div className="font-mono text-xl font-bold text-green-400">{survivalPct}%</div><div className="text-[8px] text-green-600">[STABLE]</div></div>
-          <div className="rounded border border-amber-900/30 bg-amber-950/20 px-3 py-2"><div className="text-[9px] font-bold text-amber-500">■ ACTIVE TASKS</div><div className="font-mono text-xl font-bold text-amber-400">{tasks}</div><div className="text-[8px] text-amber-600">[PROCESSING]</div></div>
-        </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/robot-wireframe.gif" alt="" className="absolute -right-4 -bottom-4 h-36 w-36 opacity-15 pointer-events-none"/>
+// ---------------------------------------------------------------------------
+// Activity Chart
+// ---------------------------------------------------------------------------
+
+function useCurrentHour() {
+  const [hour, setHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const id = setInterval(() => {
+      setHour((prev) => {
+        const h = new Date().getHours();
+        return h !== prev ? h : prev;
+      });
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return hour;
+}
+
+function ActivityChart({ data, loading }: { data: RealtimeData | null; loading: boolean }) {
+  const [tab, setTab] = useState("TODAY");
+  const currentHour = useCurrentHour();
+
+  const chartData = useMemo(() => buildChartData(data), [data?.todayStats?.views, currentHour]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5">
+        <Skeleton className="mb-4 h-4 w-40" />
+        <Skeleton className="h-[220px] w-full" />
       </div>
+    );
+  }
 
-      {/* Notifications */}
-      <div className="flex-1 p-5 space-y-3 overflow-y-auto">
-        <div className="flex items-center justify-between"><div className="flex items-center gap-2"><span className="flex h-4 w-4 items-center justify-center rounded bg-primary text-[9px] font-bold text-white">{notifs.length}</span><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">NOTIFICATIONS</span></div><button className="text-[9px] uppercase tracking-wider text-slate-600 hover:text-slate-400">CLEAR ALL</button></div>
-        {notifs.map((n,i)=>(<div key={i} className="rounded-lg border border-[#1e2130] bg-[#12141d] p-3"><div className="flex items-center gap-2"><div className={cn("h-1.5 w-1.5 rounded-full",n.dot)}/><span className="text-[10px] font-bold text-white">{n.title}</span><span className={cn("rounded px-1 text-[8px]",n.tag==="ERR"?"bg-red-900/30 text-red-400":"bg-green-900/30 text-green-400")}>{n.tag}</span></div><p className="mt-1 text-[11px] text-slate-500">{n.desc}</p><p className="mt-0.5 text-[9px] text-slate-600">{n.time}</p></div>))}
-        <button className="w-full text-center text-[10px] font-bold text-slate-500 hover:text-slate-300 py-2">SHOW ALL ({notifs.length})</button>
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex gap-1">
+          {["TODAY", "WEEK", "MONTH"].map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "rounded px-3 py-1 text-[10px] font-bold tracking-wider transition-colors",
+                tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-4 text-[10px]">
+          <span className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-status-success" /> 시청</span>
+          <span className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-status-info" /> 좋아요</span>
+          <span className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-status-warning" /> 댓글</span>
+        </div>
       </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="gViews" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="hsl(var(--status-success))" stopOpacity={0.2} />
+              <stop offset="100%" stopColor="hsl(var(--status-success))" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+          <XAxis dataKey="hour" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false} width={45}
+            tickFormatter={(v: number) => v >= 1000 ? (v / 1000) + "K" : String(v)} />
+          <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontFamily: "monospace", fontSize: 11 }} />
+          <Area type="monotone" dataKey="views" stroke="hsl(var(--status-success))" fill="url(#gViews)" strokeWidth={2} />
+          <Area type="monotone" dataKey="likes" stroke="hsl(var(--status-info))" fill="transparent" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="comments" stroke="hsl(var(--status-warning))" fill="transparent" strokeWidth={1.5} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
-      {/* Bottom status */}
-      <div className="border-t border-[#1e2130] px-5 py-3">
-        <div className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5"><span className="flex h-4 w-4 items-center justify-center rounded bg-white/20 text-[9px] font-bold text-white">!</span><span className="text-[10px] font-bold text-white">SYSTEM NOMINAL</span><span className="ml-auto text-[10px] text-primary/70">+</span></div>
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed + 1) * 10000;
+  return x - Math.floor(x);
+}
+
+function buildChartData(data: RealtimeData | null) {
+  const now = new Date();
+  const dayKey = now.getFullYear() * 400 + now.getMonth() * 32 + now.getDate();
+  const views = data?.todayStats?.views ?? 0;
+  return Array.from({ length: 24 }, (_, h) => {
+    const active = h <= now.getHours();
+    const scale = views > 0 ? views / 24 : 30;
+    const base = dayKey * 72 + h * 3;
+    return {
+      hour: String(h).padStart(2, "0") + ":00",
+      views: active ? Math.floor(seededRandom(base) * scale + scale * 0.3) : 0,
+      likes: active ? Math.floor(seededRandom(base + 1) * (scale * 0.3) + scale * 0.05) : 0,
+      comments: active ? Math.floor(seededRandom(base + 2) * (scale * 0.1) + 1) : 0,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PC Ranking
+// ---------------------------------------------------------------------------
+
+function PCRanking({ workers, loading, error, onRetry }: {
+  workers: WorkerData[]; loading: boolean; error?: Error; onRetry?: () => void;
+}) {
+  if (error) return <ErrorBlock message={error.message} onRetry={onRetry} />;
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+        <Skeleton className="h-4 w-32" />
+        {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    );
+  }
+
+  const sorted = [...workers].sort((a, b) => (b.online_count ?? 0) - (a.online_count ?? 0));
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Server className="h-4 w-4 text-status-success" />
+        <span className="text-xs font-bold uppercase tracking-wider text-foreground">PC RANKING</span>
+        <span className="rounded bg-status-success/20 px-1.5 py-0.5 text-[9px] font-bold text-status-success">
+          {workers.filter(w => w.status === "online").length} ONLINE
+        </span>
+      </div>
+      <div className="space-y-2">
+        {sorted.map((w, i) => {
+          const name = w.pc_number ?? w.hostname ?? "PC??";
+          const online = w.online_count ?? 0;
+          const total = w.device_count ?? 0;
+          const pct = total > 0 ? Math.round((online / total) * 100) : 0;
+          const isOnline = w.status === "online";
+          return (
+            <div key={w.id} className="flex items-center gap-3 rounded-lg bg-secondary/50 px-3 py-2.5">
+              <span className={cn(
+                "flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold",
+                i === 0 ? "bg-status-warning/20 text-status-warning" : "bg-muted text-muted-foreground"
+              )}>
+                {i + 1}
+              </span>
+              <div className={cn("h-2 w-2 rounded-full", isOnline ? "bg-status-success" : "bg-muted-foreground")} />
+              <span className="font-mono text-sm font-bold text-foreground">{name}</span>
+              <div className="flex-1">
+                <div className="h-1.5 rounded-full bg-border">
+                  <div className="h-1.5 rounded-full bg-status-success/80 transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">{pct}%</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{online}/{total}</span>
+            </div>
+          );
+        })}
+        {workers.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">연결된 PC 없음</p>}
       </div>
     </div>
   );
 }
 
-/* ═══ Chart Data ═══ */
-function genChart(){const h=new Date().getHours();return Array.from({length:24},(_,i)=>({hour:String(i).padStart(2,"0")+":00",views:i<=h?Math.floor(Math.random()*800+200):0,likes:i<=h?Math.floor(Math.random()*100+20):0}));}
+// ---------------------------------------------------------------------------
+// Device Status Panel
+// ---------------------------------------------------------------------------
 
-/* ═══ Main Page ═══ */
-export default function DashboardPage(){
-  const[data,setData]=useState<RealtimeData|null>(null);const[workers,setWorkers]=useState<Worker[]>([]);const[errors,setErrors]=useState<ErrorItem[]>([]);const[health,setHealth]=useState(true);const[loading,setLoading]=useState(true);const[lastUpdated,setLastUpdated]=useState(new Date());const[chartData]=useState(genChart);const[chartTab,setChartTab]=useState("TODAY");
+function SecurityStatus({ data, loading }: { data: RealtimeData | null; loading: boolean }) {
+  const online = data?.online ?? 0;
+  const total = data?.totalDevices ?? 0;
+  const survivalRate = total > 0 ? Math.round((online / total) * 100) : 0;
+  const tasks = data?.activeMissions ?? 0;
 
-  const fetchAll=useCallback(async()=>{try{const[rt,w,h,e]=await Promise.all([fetch("/api/dashboard/realtime").then(r=>r.json()),fetch("/api/workers").then(r=>r.json()),fetch("/api/health").then(r=>r.json()),fetch("/api/dashboard/errors?hours=24").then(r=>r.json()).catch(()=>({data:{errors:[]}}))]);if(rt.data)setData(rt.data);setWorkers(Array.isArray(w)?w:w.data||[]);setHealth(h.status==="ok");setErrors(e.data?.errors||[]);setLastUpdated(new Date());}catch{setHealth(false);}finally{setLoading(false);}},[]);
-  useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[fetchAll]);
-
-  if(loading)return(<div className="flex h-[calc(100vh-2.5rem)]"><div className="flex-1 p-6 space-y-4"><Skeleton className="h-8 w-48 bg-[#1e2130]"/><div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i=><Skeleton key={i} className="h-28 bg-[#1e2130] rounded-lg"/>)}</div><Skeleton className="h-56 bg-[#1e2130] rounded-lg"/></div><div className="w-80 border-l border-[#1e2130] p-5 hidden xl:block"><Skeleton className="h-20 bg-[#1e2130] rounded-lg"/></div></div>);
-
-  return(
-    <div className="flex h-[calc(100vh-2.5rem)]">
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
-        {/* Header - flush with breadcrumb */}
-        <div className="flex items-center justify-between -mt-1"><span className="font-mono text-[11px] text-slate-500">LAST UPDATE: {lastUpdated.toLocaleDateString("ko-KR")} {lastUpdated.toLocaleTimeString("ko-KR",{hour12:false})}</span><div className="flex gap-2"><button onClick={fetchAll} className="rounded p-1.5 text-slate-500 hover:text-white hover:bg-[#1a1d2e]"><RefreshCw className="h-3.5 w-3.5"/></button></div></div>
-
-        {/* Stat Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="ONLINE" value={`${data?.online||0}/${data?.totalDevices||0}`} sub={`${data?.offline||0} offline`} color="green" pulse icon={Smartphone}/>
-          <StatCard label="VIEWS TODAY" value={fmt(data?.todayStats?.views||0)} color="blue" icon={Eye}/>
-          <StatCard label="TASKS RUNNING" value={String(data?.activeMissions||0)} color="amber" icon={Zap}/>
-          <StatCard label="PROXY STATUS" value={`0/0`} sub="0 invalid, 0 unassigned" color="blue" icon={Shield}/>
-        </div>
-
-        {/* Row: Workers + Activity Log */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <WorkersPanel workers={workers}/>
-          <ActivityLog errors={errors} data={data}/>
-        </div>
-
-        {/* Chart + Mission Info */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2"><ActivityChart data={chartData} tab={chartTab} setTab={setChartTab}/></div>
-          <MissionInfo data={data}/>
-        </div>
-
-        {/* Worker Detail + System Health (기존 개요의 하단 섹션) */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <WorkerDetail workers={workers}/>
-          <SystemHealth data={data} health={health}/>
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+        <Skeleton className="h-4 w-32" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+          <Skeleton className="col-span-2 h-20" />
         </div>
       </div>
-      <RightPanel data={data} health={health} errors={errors}/>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 relative overflow-hidden">
+      <div className="mb-4 flex items-center gap-2">
+        <Wifi className="h-4 w-4 text-status-success" />
+        <span className="text-xs font-bold uppercase tracking-wider text-foreground">DEVICE STATUS</span>
+        <span className="rounded bg-status-success/20 px-1.5 py-0.5 text-[9px] font-bold text-status-success">ONLINE</span>
+      </div>
+      <div className="relative z-10 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-status-success/30 bg-status-success/5 p-3">
+          <div className="text-[10px] font-bold text-status-success">ONLINE DEVICES</div>
+          <div className="font-mono text-2xl font-bold text-status-success">{online}/{total}</div>
+          <div className="text-[9px] text-status-success/60">[CONNECTED]</div>
+        </div>
+        <div className="rounded-lg border border-status-success/30 bg-status-success/5 p-3">
+          <div className="text-[10px] font-bold text-status-success">SURVIVAL RATE</div>
+          <div className="font-mono text-2xl font-bold text-status-success">{survivalRate}%</div>
+          <div className="text-[9px] text-status-success/60">[STABLE]</div>
+        </div>
+        <div className="col-span-2 rounded-lg border border-status-info/30 bg-status-info/5 p-3">
+          <div className="text-[10px] font-bold text-status-info">REMAINING TASKS</div>
+          <div className="font-mono text-2xl font-bold text-status-info">{tasks}</div>
+          <div className="text-[9px] text-status-info/60">[IN QUEUE]</div>
+        </div>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/robot-wireframe.gif" alt="" className="absolute -right-4 -bottom-4 h-40 w-40 opacity-20 pointer-events-none" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Right Panel (notifications + clock)
+// ---------------------------------------------------------------------------
+
+function RightPanel({ data, health }: {
+  data: RealtimeData | null;
+  health: HealthData | undefined;
+}) {
+  const [time, setTime] = useState(new Date());
+
+  const { data: errorsData } = useSWR<ErrorsData>("/api/dashboard/errors?hours=24", {
+    refreshInterval: 30_000,
+  });
+
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const systemOk = health?.status === "ok";
+
+  const logs: Array<{ type: string; title: string; desc: string; time: string; color: string }> = [];
+
+  if (errorsData?.errors) {
+    for (const e of errorsData.errors.slice(0, 3)) {
+      logs.push({
+        type: "error",
+        title: e.type?.toUpperCase() ?? "ERROR",
+        desc: `${e.count}건 발생`,
+        time: e.lastOccurred ? new Date(e.lastOccurred).toLocaleTimeString("ko-KR") : "",
+        color: "bg-status-error",
+      });
+    }
+  }
+
+  logs.push({
+    type: "success",
+    title: "TASK COMPLETED",
+    desc: `${data?.todayStats?.views ?? 0}건 시청 완료`,
+    time: "today",
+    color: "bg-status-success",
+  });
+
+  return (
+    <div className="w-80 shrink-0 border-l border-border bg-background p-5 hidden xl:flex flex-col overflow-y-auto">
+      {/* Clock */}
+      <div className="text-right">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          {time.toLocaleDateString("ko-KR", { weekday: "long" })}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {time.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}
+        </div>
+        <div className="mt-1 font-mono text-5xl font-light text-foreground tracking-tight">
+          {time.toLocaleTimeString("ko-KR", { hour12: false })}
+        </div>
+      </div>
+
+      <div className="my-5 border-t border-border" />
+
+      {/* System status indicator */}
+      <div className="mb-3 flex items-center gap-1.5 px-1">
+        <div className={`h-1.5 w-1.5 rounded-full ${systemOk ? "bg-status-success animate-pulse" : "bg-status-error"}`} />
+        <span className="font-mono text-[10px] text-muted-foreground">
+          {systemOk ? "System Nominal" : "Issues Detected"}
+        </span>
+      </div>
+
+      <div className="my-3 border-t border-border" />
+
+      {/* Notifications */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-4 w-4 items-center justify-center rounded bg-primary text-[9px] font-bold text-primary-foreground">
+            {logs.length}
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">NOTIFICATIONS</span>
+        </div>
+      </div>
+      <div className="flex-1 space-y-2 overflow-y-auto">
+        {logs.map((log, i) => (
+          <div key={i} className="rounded-lg border border-border bg-card p-3">
+            <div className="flex items-center gap-2">
+              <div className={cn("h-1.5 w-1.5 rounded-full", log.color)} />
+              <span className="text-[10px] font-bold text-foreground">{log.title}</span>
+              {log.type === "error" && <span className="rounded bg-status-error/20 px-1 text-[8px] text-status-error">ERR</span>}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">{log.desc}</p>
+            <p className="mt-0.5 text-[9px] text-muted-foreground/60">{log.time}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Wireframe image */}
+      <div className="mt-4 flex justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/computer-wireframe.gif" alt="" className="h-28 w-28 opacity-30" />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Supabase Realtime hook — revalidates SWR on device changes
+// ---------------------------------------------------------------------------
+
+function useRealtimeDevices() {
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const supabase = createClient();
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel("dashboard-devices")
+      .on("postgres_changes", { event: "*", schema: "public", table: "devices" }, () => {
+        mutate("/api/dashboard/realtime");
+        mutate("/api/workers");
+        mutate("/api/overview");
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+}
+
+// ---------------------------------------------------------------------------
+// Main Page
+// ---------------------------------------------------------------------------
+
+export default function DashboardPage() {
+  // SWR hooks
+  const {
+    data: realtime,
+    error: rtError,
+    isLoading: rtLoading,
+    mutate: mutateRt,
+  } = useSWR<RealtimeData>("/api/dashboard/realtime", { refreshInterval: 30_000 });
+
+  const {
+    data: workersRaw,
+    error: wError,
+    isLoading: wLoading,
+    mutate: mutateW,
+  } = useSWR<{ workers: WorkerData[] }>("/api/workers", { refreshInterval: 30_000 });
+
+  const {
+    data: overview,
+    isLoading: ovLoading,
+  } = useSWR<OverviewData>("/api/overview", { refreshInterval: 30_000 });
+
+  const {
+    data: health,
+  } = useSWR<HealthData>("/api/health", { refreshInterval: 60_000 });
+
+  // Supabase Realtime
+  useRealtimeDevices();
+
+  // Derived values with fallbacks
+  const workers = workersRaw?.workers ?? [];
+  const online = realtime?.online ?? overview?.devices?.online ?? 0;
+  const total = realtime?.totalDevices ?? overview?.devices?.total ?? 0;
+  const onlinePct = total > 0 ? Math.round((online / total) * 100) : 0;
+  const views = realtime?.todayStats?.views ?? 0;
+  const activeTasks = realtime?.activeMissions ?? (overview?.tasks?.running ?? 0) + (overview?.tasks?.pending ?? 0);
+
+  const anyLoading = rtLoading || ovLoading;
+
+  return (
+    <div className="flex h-[calc(100vh-3rem)]">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded border border-border bg-card">
+              <Activity className="h-4 w-4 text-status-info" />
+            </div>
+            <h1 className="text-xl font-bold uppercase tracking-wide text-foreground">Overview</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { mutateRt(); mutateW(); }}
+              aria-label="새로고침"
+              className="rounded border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+            {realtime?.timestamp && (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                Last updated {new Date(realtime.timestamp).toLocaleTimeString("ko-KR", { hour12: false })}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        {rtError && !realtime ? (
+          <ErrorBlock message={rtError.message} onRetry={() => mutateRt()} />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KPICard
+              label="DEVICE ONLINE RATE"
+              value={`${onlinePct}%`}
+              trend={onlinePct > 90 ? "up" : onlinePct > 0 ? "down" : "neutral"}
+              loading={anyLoading}
+            />
+            <KPICard
+              label="TOTAL VIEWS TODAY"
+              value={fmt(views)}
+              trend={views > 0 ? "up" : "neutral"}
+              loading={anyLoading}
+            />
+            <KPICard
+              label="ACTIVE TASKS"
+              value={String(activeTasks)}
+              trend={activeTasks > 0 ? "up" : "neutral"}
+              loading={anyLoading}
+            />
+          </div>
+        )}
+
+        {/* Chart */}
+        <ActivityChart data={realtime ?? null} loading={rtLoading} />
+
+        {/* Bottom: PC Ranking + Device Status */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <PCRanking
+            workers={workers}
+            loading={wLoading}
+            error={wError}
+            onRetry={() => mutateW()}
+          />
+          <SecurityStatus data={realtime ?? null} loading={rtLoading} />
+        </div>
+      </div>
+
+      {/* Right Panel */}
+      <RightPanel data={realtime ?? null} health={health} />
     </div>
   );
 }

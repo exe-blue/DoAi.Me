@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const supabase = createServerClient();
 
-    const statuses = ["available", "in_use", "banned", "cooldown"];
+    const statuses = ["available", "in_use", "banned", "cooldown"] as const;
     const counts: Record<string, number> = {};
 
     for (const s of statuses) {
