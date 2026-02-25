@@ -26,7 +26,7 @@ The dashboard requires Supabase credentials in `.env.local` (see `.env.example`)
 See `package.json` scripts. Summary:
 
 - **Lint:** `npm run lint`
-- **Unit tests:** `npm test` (Vitest, 24 tests in `tests/`)
+- **Unit tests:** `npm test` (Vitest, 25 tests in `tests/`)
 - **Agent build:** `cd agent && npm run build` (TypeScript compilation)
 - **Dev server:** `npm run dev`
 
