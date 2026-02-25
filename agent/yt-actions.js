@@ -101,31 +101,30 @@ class YTActions {
   async doLike(serial) {
     console.log(`[YTActions] ${serial} 좋아요 시도`);
     try {
-      // 좋아요 버튼 영역 노출 (살짝 스크롤)
       const scr = await this.player.getScreen(serial);
-      await this.player.adb(serial,
-        `input swipe ${Math.round(scr.w / 2)} ${Math.round(scr.h * 0.55)} ${Math.round(scr.w / 2)} ${Math.round(scr.h * 0.40)} 300`);
-      await _sleep(1000);
 
-      // resource-id 우선 → content-desc 폴백
+      // resource-id 우선
       let ok = await this.player.findAndTap(serial, {
         resourceId: 'com.google.android.youtube:id/like_button',
       });
+      if (!ok) ok = await this.player.findAndTap(serial, { contentDesc: '좋아요' });
+
+      // 폴백: 고정 좌표 (x48% y52%)
       if (!ok) {
-        ok = await this.player.findAndTap(serial, { contentDesc: '좋아요' });
+        const lx = Math.round(scr.w * 0.48);
+        const ly = Math.round(scr.h * 0.52);
+        console.log(`[YTActions] ${serial} 좋아요 고정 좌표 (${lx}, ${ly})`);
+        await this.player.adb(serial, `input tap ${lx} ${ly}`);
+        ok = true;
       }
 
       if (ok) {
         await _sleep(1000);
         const liked = await this.player.hasElement(serial, { contentDesc: '좋아요 취소' })
           || await this.player.hasElement(serial, { contentDesc: '좋아요 표시함' });
-        console.log(`[YTActions] ${serial} 좋아요 ${liked ? '✓ 완료' : '⚠ 상태 불명 (이미 눌렸을 수 있음)'}`);
-        // 스크롤 복귀
-        await this.player.adb(serial,
-          `input swipe ${Math.round(scr.w / 2)} ${Math.round(scr.h * 0.40)} ${Math.round(scr.w / 2)} ${Math.round(scr.h * 0.55)} 300`);
+        console.log(`[YTActions] ${serial} 좋아요 ${liked ? '✓ 완료' : '⚠ 상태 불명'}`);
         return true;
       }
-      console.log(`[YTActions] ${serial} 좋아요 버튼 못 찾음`);
       return false;
     } catch (err) {
       console.error(`[YTActions] ${serial} 좋아요 에러: ${err.message}`);
@@ -151,8 +150,16 @@ class YTActions {
       let ok = await this.player.findAndTap(serial, {
         resourceId: 'com.google.android.youtube:id/subscribe_button',
       });
+      if (!ok) ok = await this.player.findAndTap(serial, { contentDesc: '구독' });
+
+      // 폴백: 고정 좌표 (x23% y52%)
       if (!ok) {
-        ok = await this.player.findAndTap(serial, { contentDesc: '구독' });
+        const scr = await this.player.getScreen(serial);
+        const sx = Math.round(scr.w * 0.23);
+        const sy = Math.round(scr.h * 0.52);
+        console.log(`[YTActions] ${serial} 구독 고정 좌표 (${sx}, ${sy})`);
+        await this.player.adb(serial, `input tap ${sx} ${sy}`);
+        ok = true;
       }
 
       if (ok) {
@@ -160,7 +167,6 @@ class YTActions {
         console.log(`[YTActions] ${serial} 구독 ✓`);
         return true;
       }
-      console.log(`[YTActions] ${serial} 구독 버튼 못 찾음`);
       return false;
     } catch (err) {
       console.error(`[YTActions] ${serial} 구독 에러: ${err.message}`);
@@ -270,31 +276,51 @@ class YTActions {
    * 재생목록에 저장
    * @returns {Promise<boolean>}
    */
+  /**
+   * 재생목록에 저장 (담기)
+   * 버튼 행(y52%)에서 좌로 스크롤 → "저장" 버튼 노출 → 탭
+   */
   async doSavePlaylist(serial) {
-    console.log(`[YTActions] ${serial} 재생목록 저장 시도`);
+    console.log(`[YTActions] ${serial} 담기(저장) 시도`);
     try {
+      const scr = await this.player.getScreen(serial);
+      const btnY = Math.round(scr.h * 0.52);
+
+      // 버튼 행(y52%)에서 좌로 스크롤하여 저장 버튼 노출
+      // 좌측 스크롤: x80% → x20% at y52%
+      console.log(`[YTActions] ${serial} 버튼 행 좌로 스크롤 (y=${btnY})`);
+      await this.player.adb(serial,
+        `input swipe ${Math.round(scr.w * 0.80)} ${btnY} ${Math.round(scr.w * 0.20)} ${btnY} 400`);
+      await _sleep(1500);
+
+      // 저장 버튼 찾기 (스크롤 후 노출됨)
       let ok = await this.player.findAndTap(serial, {
         resourceId: 'com.google.android.youtube:id/save_to_playlist_button',
       });
-      if (!ok) {
-        ok = await this.player.findAndTap(serial, { contentDesc: '재생목록에 저장' });
-      }
-      if (!ok) {
-        ok = await this.player.findAndTap(serial, { contentDesc: '저장' });
-      }
+      if (!ok) ok = await this.player.findAndTap(serial, { contentDesc: '저장' });
+      if (!ok) ok = await this.player.findAndTap(serial, { contentDesc: '재생목록에 저장' });
+      if (!ok) ok = await this.player.findAndTap(serial, { textContains: '저장' });
 
       if (ok) {
         await _sleep(1500);
         // "나중에 볼 동영상" 선택
         await this.player.findAndTap(serial, { textContains: '나중에 볼 동영상' });
         await _sleep(1000);
-        console.log(`[YTActions] ${serial} 재생목록 저장 ✓`);
+        console.log(`[YTActions] ${serial} 담기(저장) ✓`);
+
+        // 버튼 행 원위치 (우로 스크롤 복귀)
+        await this.player.adb(serial,
+          `input swipe ${Math.round(scr.w * 0.20)} ${btnY} ${Math.round(scr.w * 0.80)} ${btnY} 400`);
         return true;
       }
+
       console.log(`[YTActions] ${serial} 저장 버튼 못 찾음`);
+      // 스크롤 복귀
+      await this.player.adb(serial,
+        `input swipe ${Math.round(scr.w * 0.20)} ${btnY} ${Math.round(scr.w * 0.80)} ${btnY} 400`);
       return false;
     } catch (err) {
-      console.error(`[YTActions] ${serial} 저장 에러: ${err.message}`);
+      console.error(`[YTActions] ${serial} 담기 에러: ${err.message}`);
       return false;
     }
   }
