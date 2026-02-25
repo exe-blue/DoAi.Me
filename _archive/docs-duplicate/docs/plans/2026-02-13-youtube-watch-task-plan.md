@@ -56,6 +56,10 @@ git commit -m "feat(script): implement basic youtube_watch.js for video viewing"
 const CHUNK_SIZE = 5;
 const APP_LAUNCH_DELAY = 3000;
 
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 interface YouTubePayload {
   videoUrl?: string;
   scriptPath?: string;

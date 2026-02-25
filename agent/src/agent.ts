@@ -107,7 +107,7 @@ async function heartbeat(): Promise<void> {
     for (const serial of prevSerials) {
       if (!currentSerials.has(serial)) {
         if (xiaowei.connected) {
-          const count = (errorCountMap.get(serial) || 0) + 1;
+          const count = Math.min((errorCountMap.get(serial) || 0) + 1, ERROR_THRESHOLD);
           errorCountMap.set(serial, count);
           if (count < ERROR_THRESHOLD) errorSerials.push(serial);
         }
@@ -117,11 +117,6 @@ async function heartbeat(): Promise<void> {
     // Clear error counts for returned devices
     for (const serial of currentSerials) {
       errorCountMap.delete(serial);
-    }
-
-    // Cleanup exceeded thresholds
-    for (const [serial, count] of errorCountMap) {
-      if (count >= ERROR_THRESHOLD) errorCountMap.delete(serial);
     }
 
     prevSerials = currentSerials;

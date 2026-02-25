@@ -42,10 +42,10 @@ class VideoDispatcher {
   }
 
   async _processNewVideos() {
-    // 1. Get active videos (id = YouTube Video ID, duration_sec)
+    // 1. Get active videos where completed_views < target_views (id = YouTube Video ID)
     const { data: videos, error: vErr } = await this.supabase
       .from("videos")
-      .select("id, title, status, duration_sec")
+      .select("id, title, status, duration_sec, target_views, completed_views")
       .eq("status", "active");
 
     if (vErr) {
@@ -53,6 +53,9 @@ class VideoDispatcher {
       return;
     }
     if (!videos || videos.length === 0) return;
+
+    const targetViewsDefault = 100;
+    const poolBatchSize = 30; // max new pending assignments per video per tick
 
     // 2. Get existing active jobs (match by target_url containing video id)
     const { data: existingJobs } = await this.supabase
@@ -66,26 +69,28 @@ class VideoDispatcher {
       if (vid) jobMap.set(vid, job);
     }
 
-    // 3. Get this PC's online devices
+    // 3. This PC's devices (any status) — for placeholder device_id when DB requires it; null allowed after migration
     const { data: devices } = await this.supabase
       .from("devices")
       .select("id, serial_number")
-      .eq("pc_id", this.pcId)
-      .in("status", ["online", "busy"]);
+      .eq("pc_id", this.pcId);
+    const placeholderDeviceId = devices && devices.length > 0 ? devices[0].id : null;
+    if (!placeholderDeviceId && (videos?.length || 0) > 0) {
+      console.warn("[VideoDispatcher] No devices for this PC; assignment insert may fail unless device_id is nullable (run migration 20260225110000)");
+    }
 
-    if (!devices || devices.length === 0) return;
-
-    const targetViewsDefault = 100;
     let created = 0;
 
     for (const video of videos) {
+      const targetViews = video.target_views != null ? video.target_views : targetViewsDefault;
+      const completedViews = video.completed_views != null ? video.completed_views : 0;
+      if (completedViews >= targetViews) continue;
+
       const youtubeUrl = `https://www.youtube.com/watch?v=${video.id}`;
 
       const existingJob = jobMap.get(video.id) || null;
 
       if (existingJob) {
-        const targetViews = targetViewsDefault;
-
         const { count: completedCount } = await this.supabase
           .from("job_assignments")
           .select("id", { count: "exact", head: true })
@@ -100,38 +105,33 @@ class VideoDispatcher {
           .eq("job_id", existingJob.id)
           .in("status", ["pending", "running"]);
 
-        if ((activeCount || 0) >= devices.length) continue;
+        const needed = targetViews - (completedCount || 0) - (activeCount || 0);
+        if (needed <= 0) continue;
 
-        const { data: assignedRows } = await this.supabase
+        const toCreate = Math.min(needed, poolBatchSize);
+        const newAssignments = Array.from({ length: toCreate }, () => ({
+          job_id: existingJob.id,
+          device_id: placeholderDeviceId,
+          device_serial: null,
+          pc_id: this.pcId,
+          video_id: video.id,
+          status: "pending",
+          progress_pct: 0,
+        }));
+
+        const { error: assignErr } = await this.supabase
           .from("job_assignments")
-          .select("device_id")
-          .eq("job_id", existingJob.id)
-          .in("status", ["pending", "running"]);
+          .insert(newAssignments);
 
-        const assignedIds = new Set((assignedRows || []).map((a) => a.device_id));
-        const unassigned = devices.filter((d) => !assignedIds.has(d.id));
-
-        if (unassigned.length > 0) {
-          const newAssignments = unassigned.map((d) => ({
-            job_id: existingJob.id,
-            device_id: d.id,
-            device_serial: d.serial_number,
-            status: "pending",
-            progress_pct: 0,
-          }));
-
-          const { error: assignErr } = await this.supabase
-            .from("job_assignments")
-            .insert(newAssignments);
-
-          if (!assignErr) {
-            console.log(`[VideoDispatcher] +${unassigned.length} assignments for "${video.title}"`);
-          }
+        if (assignErr) {
+          console.warn(`[VideoDispatcher] Assignments for "${video.title}": ${assignErr.message}`);
+          continue;
         }
+        console.log(`[VideoDispatcher] +${toCreate} assignments for "${video.title}" (pool)`);
         continue;
       }
 
-      // No job — create job + assignments
+      // No job — create job + pool of assignments
       const durationSec = video.duration_sec || 60;
 
       const { data: job, error: jobErr } = await this.supabase
@@ -148,7 +148,7 @@ class VideoDispatcher {
           prob_comment: 0,
           prob_playlist: 0,
           is_active: true,
-          total_assignments: devices.length,
+          total_assignments: 0,
         })
         .select("id")
         .single();
@@ -158,10 +158,14 @@ class VideoDispatcher {
         continue;
       }
 
-      const assignments = devices.map((d) => ({
+      const needed = targetViews - completedViews;
+      const toCreate = Math.min(needed, poolBatchSize);
+      const assignments = Array.from({ length: toCreate }, () => ({
         job_id: job.id,
-        device_id: d.id,
-        device_serial: d.serial_number,
+        device_id: placeholderDeviceId,
+        device_serial: null,
+        pc_id: this.pcId,
+        video_id: video.id,
         status: "pending",
         progress_pct: 0,
       }));
@@ -176,14 +180,14 @@ class VideoDispatcher {
       }
 
       created++;
-      console.log(`[VideoDispatcher] Created job + ${devices.length} assignments for "${video.title}"`);
+      console.log(`[VideoDispatcher] Created job + ${toCreate} assignments for "${video.title}" (pool)`);
 
       if (this.broadcaster && typeof this.broadcaster.publishSystemEvent === "function") {
         try {
           await this.broadcaster.publishSystemEvent(
             "video_job_created",
-            `New job created for "${video.title}" with ${devices.length} device(s)`,
-            { video_id: video.id, job_id: job.id, device_count: devices.length }
+            `New job created for "${video.title}" with ${toCreate} assignment(s)`,
+            { video_id: video.id, job_id: job.id, device_count: toCreate }
           );
         } catch (e) {
           // ignore broadcast errors
