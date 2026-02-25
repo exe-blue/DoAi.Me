@@ -182,11 +182,11 @@ function SecurityStatus({ data }: { data: RealtimeData | null }) {
         </div>
       </div>
       {/* Wireframe robot image background */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/images/robot-wireframe.png"
+        src="/images/robot-wireframe.gif"
         alt=""
         className="absolute -right-4 -bottom-4 h-40 w-40 opacity-20 pointer-events-none"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
       />
     </div>
   );
@@ -262,11 +262,11 @@ function RightPanel({ data, health }: { data: RealtimeData | null; health: boole
 
       {/* Wireframe computer image */}
       <div className="mt-4 flex justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/images/computer-wireframe.png"
+          src="/images/computer-wireframe.gif"
           alt=""
           className="h-28 w-28 opacity-30"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
       </div>
     </div>
