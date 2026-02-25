@@ -181,6 +181,40 @@ const accountModels = {
       .update({ task_count: (acct.task_count || 0) + 1 })
       .eq('id', accountId);
   },
+
+  /**
+   * 계정 등록 (이메일 + 비밀번호)
+   * 비밀번호는 password_encrypted 컬럼에 저장 (Vault 전환 전 임시).
+   */
+  async create(email, password, fields = {}) {
+    const { data, error } = await _db()
+      .from('accounts')
+      .insert({
+        email,
+        password_encrypted: password ? Buffer.from(password).toString('base64') : null,
+        status: 'available',
+        ...fields,
+      })
+      .select('id')
+      .single();
+    if (error) { log.error('create_failed', { email, error: error.message }); return null; }
+    log.info('account_created', { id: data.id, email });
+    return data.id;
+  },
+
+  /** 비밀번호 조회 (비상 시 수동 로그인용) */
+  async getPassword(accountId) {
+    const { data, error } = await _db()
+      .from('accounts')
+      .select('email, password_encrypted')
+      .eq('id', accountId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      email: data.email,
+      password: data.password_encrypted ? Buffer.from(data.password_encrypted, 'base64').toString('utf8') : null,
+    };
+  },
 };
 
 module.exports = { accountModels };

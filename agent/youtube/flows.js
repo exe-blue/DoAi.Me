@@ -197,8 +197,19 @@ async function executeYouTubeMission(dev, mission, services = {}) {
     result.watchPct = watchResult.watchPercentage;
     errors.push(...watchResult.errors);
 
-    // ══════════ 10. 종료 ══════════
-    log.info('step_10_finish', { serial });
+    // ══════════ 10. 시청 후 스크린샷 ══════════
+    try {
+      const screenshotPath = await _saveScreenshot(dev, result.videoInfo.videoId || 'unknown');
+      if (screenshotPath) {
+        result.screenshotPath = screenshotPath;
+        log.info('step_10_screenshot', { serial, path: screenshotPath });
+      }
+    } catch (err) {
+      log.warn('screenshot_failed', { serial, error: err.message });
+    }
+
+    // ══════════ 11. 종료 ══════════
+    log.info('step_11_finish', { serial });
     await dev.goHome();
 
     result.success = true;
@@ -307,6 +318,48 @@ async function _handleBotDetection(type, services, serial) {
       await services.accountService.setCooldown(services.accountId, 30); // 30분
       break;
   }
+}
+
+/**
+ * 스크린샷 저장 (PC 로컬 + DB 경로 기록)
+ * 경로: agent/screenshots/YYYY-MM-DD/{serial}_{timestamp}_{videoId}.png
+ */
+async function _saveScreenshot(dev, videoId) {
+  const fs = require('fs');
+  const path = require('path');
+
+  const date = new Date();
+  const dateStr = date.toISOString().slice(0, 10);
+  const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const shortSerial = dev.serial.substring(0, 12);
+
+  const dir = path.resolve(__dirname, '..', 'screenshots', dateStr);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const filename = `${shortSerial}_${timestamp}_${videoId}.png`;
+  const localPath = path.join(dir, filename);
+  const remotePath = '/sdcard/screenshot_temp.png';
+
+  // 디바이스에서 스크린샷 촬영
+  await dev.shell(`screencap -p ${remotePath}`);
+  await new Promise(r => setTimeout(r, 500));
+
+  // Xiaowei pullFile로 PC에 저장
+  try {
+    await dev.xiaowei.send({
+      action: 'pullFile',
+      devices: dev.serial,
+      data: { remotePath, localPath },
+    });
+  } catch {
+    // pullFile 미지원 시 adb pull 대체
+    await dev.adb(`pull ${remotePath} "${localPath}"`);
+  }
+
+  // 디바이스 임시 파일 삭제
+  await dev.shell(`rm ${remotePath}`).catch(() => {});
+
+  return localPath;
 }
 
 module.exports = { executeYouTubeMission };
