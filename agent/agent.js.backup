@@ -3,7 +3,7 @@
  * Supabase Realtime <-> Xiaowei WebSocket bridge
  * Runs 24/7 on Windows Node PCs
  */
-const config = require("./common/config");
+const config = require("./config");
 const XiaoweiClient = require("./xiaowei-client");
 const SupabaseSync = require("./supabase-sync");
 const { startHeartbeat } = require("./heartbeat");
