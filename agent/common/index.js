@@ -3,6 +3,8 @@
  */
 const config = require('./config');
 const { getLogger, setSupabase, flush: flushLogs } = require('./logger');
+const errors = require('./errors');
+const { retry, withRetry } = require('./retry');
 
 module.exports = {
   config,
@@ -10,4 +12,7 @@ module.exports = {
   getLogger,
   setSupabase,
   flushLogs,
+  errors,
+  retry,
+  withRetry,
 };
