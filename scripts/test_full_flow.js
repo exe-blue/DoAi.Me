@@ -18,6 +18,9 @@
  *   PROB_PLAYLIST   저장 확률 (기본: 0)
  *   COMMENT         댓글 내용 (기본: 좋은 영상이네요)
  */
+// agent/.env 로드 (OPENAI_API_KEY, YOUTUBE_API_KEY)
+try { require('dotenv').config({ path: require('path').join(__dirname, '..', 'agent', '.env') }); } catch {}
+
 const WebSocket = require('ws');
 const YTPlayer = require('../agent/yt-player');
 const YTActions = require('../agent/yt-actions');
@@ -99,8 +102,9 @@ async function main() {
 
   // 2. 영상 검증 결과
   console.log('── 2. 영상 검증 ──');
-  console.log(`   제목: "${videoInfo.title || '(추출 실패)'}"`);
+  console.log(`   제목: "${videoInfo.title || '(추출 실패)'}" [소스: ${videoInfo.source || 'none'}]`);
   console.log(`   채널: "${videoInfo.channel || '(추출 실패)'}"`);
+  if (videoInfo.videoId) console.log(`   ID:   ${videoInfo.videoId}`);
   if (videoInfo.description) console.log(`   설명: "${videoInfo.description.substring(0, 50)}..."`);
   console.log(`   매칭: ${verification.matched ? '✓' : '✗'} ${verification.score}% (${verification.details})\n`);
 

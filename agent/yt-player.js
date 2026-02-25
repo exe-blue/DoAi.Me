@@ -261,44 +261,164 @@ class YTPlayer {
     const playing = await this.ensurePlaying(serial);
     const screen = await this.getScreen(serial);
 
-    // 영상 정보 수집 + 검색어 매칭 검증
-    const videoInfo = await this.getVideoInfo(serial);
+    // 영상 정보 수집 (다단계 폴백) + 검색어 매칭 검증
+    const videoInfo = await this.getVideoInfo(serial, searchKeyword);
     const verification = this.verifyVideoMatch(searchKeyword, videoInfo);
 
     return { playing, adsSkipped, screen, videoInfo, verification };
   }
 
   /**
-   * 현재 재생 중인 영상 정보 수집 (제목, 채널명, 설명)
-   * resource-id 1순위, content-desc 폴백.
-   * @returns {Promise<{title: string, channel: string, description: string}>}
+   * 현재 재생 중인 영상 정보 수집 (다단계 폴백)
+   *
+   * video_id: dumpsys activity URL → 클립보드(공유) → 검색 키워드에서 추출
+   * 제목:     여러 resource-id → 긴 TextView 탐색 → YouTube Data API
+   * 채널:     resource-id → TextView
+   *
+   * @param {string} serial
+   * @param {string} [searchKeyword] - 검색에 사용한 키워드 (폴백용)
+   * @returns {Promise<{videoId: string, title: string, channel: string, description: string, source: string}>}
    */
-  async getVideoInfo(serial) {
+  async getVideoInfo(serial, searchKeyword) {
+    const info = { videoId: '', title: '', channel: '', description: '', source: '' };
+    const tag = '[YTPlayer] [VideoInfo]';
+
+    // ── 1단계: video_id 추출 (URL 기반) ──
+    info.videoId = await this._extractVideoId(serial);
+    if (info.videoId) {
+      console.log(`${tag} video_id: ${info.videoId}`);
+    }
+
+    // ── 2단계: XML에서 제목/채널/설명 추출 ──
+    const xml = await this.dumpUI(serial);
+    if (xml) {
+      // 제목: 여러 resource-id 시도
+      const titleIds = [
+        'com.google.android.youtube:id/title',
+        'com.google.android.youtube:id/video_title',
+        'com.google.android.youtube:id/watch_video_title',
+      ];
+      for (const resId of titleIds) {
+        info.title = this._extractTextByResId(xml, resId) || this._extractContentDesc(xml, resId) || '';
+        if (info.title) { info.source = `xml:${resId.split('/').pop()}`; break; }
+      }
+
+      // 제목 폴백: 긴 텍스트를 가진 TextView 중 제목 후보 탐색
+      if (!info.title) {
+        info.title = this._findLongTextCandidate(xml) || '';
+        if (info.title) info.source = 'xml:textview_scan';
+      }
+
+      // 채널명
+      const channelIds = [
+        'com.google.android.youtube:id/channel_name',
+        'com.google.android.youtube:id/owner_text',
+      ];
+      for (const resId of channelIds) {
+        info.channel = this._extractTextByResId(xml, resId) || this._extractContentDesc(xml, resId) || '';
+        if (info.channel) break;
+      }
+
+      // 설명
+      info.description = (this._extractTextByResId(xml, 'com.google.android.youtube:id/video_description') || '').substring(0, 500);
+    }
+
+    // ── 3단계: YouTube Data API 폴백 (제목 없고 video_id 있을 때) ──
+    if (!info.title && info.videoId) {
+      const apiKey = process.env.YOUTUBE_API_KEY;
+      if (apiKey) {
+        console.log(`${tag} XML 추출 실패 → YouTube Data API 호출`);
+        const apiInfo = await this._fetchFromYouTubeAPI(info.videoId, apiKey);
+        if (apiInfo.title) { info.title = apiInfo.title; info.source = 'youtube_api'; }
+        if (apiInfo.channel && !info.channel) info.channel = apiInfo.channel;
+        if (apiInfo.description && !info.description) info.description = apiInfo.description.substring(0, 500);
+      }
+    }
+
+    // ── 4단계: 최종 폴백 (검색 키워드를 제목 대용으로) ──
+    if (!info.title && searchKeyword) {
+      info.title = searchKeyword;
+      info.source = 'search_keyword_fallback';
+    }
+
+    // 로깅
+    console.log(`${tag} 제목: "${info.title || '(없음)'}" [${info.source || 'none'}]`);
+    console.log(`${tag} 채널: "${info.channel || '(없음)'}"`);
+    if (info.videoId) console.log(`${tag} ID: ${info.videoId}`);
+
+    return info;
+  }
+
+  /**
+   * video_id 추출: dumpsys activity에서 현재 URL 파싱
+   * @private
+   */
+  async _extractVideoId(serial) {
+    // 방법 A: dumpsys activity에서 intent URL 추출
+    try {
+      const res = await this.adb(serial, 'dumpsys activity activities | grep -E "youtube.com/watch|youtu.be"');
+      const out = _extractShellOutput(res);
+      const vMatch = out.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+      if (vMatch) return vMatch[1];
+      const shortMatch = out.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+      if (shortMatch) return shortMatch[1];
+    } catch {}
+
+    // 방법 B: 현재 포커스된 activity의 intent data
+    try {
+      const res = await this.adb(serial, 'dumpsys activity top | grep -E "intent.*youtube"');
+      const out = _extractShellOutput(res);
+      const vMatch = out.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+      if (vMatch) return vMatch[1];
+    } catch {}
+
+    return '';
+  }
+
+  /**
+   * XML에서 긴 텍스트를 가진 TextView 후보 탐색 (제목 추출 폴백)
+   * 10자 이상, UI 버튼 텍스트 제외
+   * @private
+   */
+  _findLongTextCandidate(xml) {
+    const excludeWords = ['구독', '좋아요', '댓글', '공유', '저장', '검색', '홈', 'Shorts', '설정'];
+    const re = /class="android\.widget\.TextView"[^>]*text="([^"]{10,})"/gi;
+    let m;
+    const candidates = [];
+    while ((m = re.exec(xml)) !== null) {
+      const text = m[1];
+      if (excludeWords.some(w => text.includes(w))) continue;
+      if (text.length > 200) continue; // 설명문 제외
+      candidates.push(text);
+    }
+    // 가장 긴 후보 = 제목일 가능성 높음
+    candidates.sort((a, b) => b.length - a.length);
+    return candidates[0] || null;
+  }
+
+  /**
+   * YouTube Data API v3로 영상 정보 조회
+   * @private
+   */
+  async _fetchFromYouTubeAPI(videoId, apiKey) {
     const info = { title: '', channel: '', description: '' };
     try {
-      const xml = await this.dumpUI(serial);
-      if (!xml) return info;
-
-      // 제목: resource-id="...title" → text 속성
-      info.title = this._extractTextByResId(xml, 'com.google.android.youtube:id/title')
-        || this._extractTextByResId(xml, 'com.google.android.youtube:id/video_title')
-        || this._extractContentDesc(xml, 'com.google.android.youtube:id/title')
-        || '';
-
-      // 채널명: resource-id="...channel_name" → text 속성
-      info.channel = this._extractTextByResId(xml, 'com.google.android.youtube:id/channel_name')
-        || this._extractContentDesc(xml, 'com.google.android.youtube:id/channel_name')
-        || '';
-
-      // 설명: resource-id="...video_description" → text 속성 (최대 500자)
-      const desc = this._extractTextByResId(xml, 'com.google.android.youtube:id/video_description') || '';
-      info.description = desc.substring(0, 500);
-
-      console.log(`[YTPlayer] [VideoInfo] 제목: "${info.title || '(없음)'}"`);
-      console.log(`[YTPlayer] [VideoInfo] 채널: "${info.channel || '(없음)'}"`);
-      if (info.description) console.log(`[YTPlayer] [VideoInfo] 설명: "${info.description.substring(0, 60)}..."`);
+      const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(`[YTPlayer] YouTube API ${response.status}`);
+        return info;
+      }
+      const data = await response.json();
+      const snippet = data.items?.[0]?.snippet;
+      if (snippet) {
+        info.title = snippet.title || '';
+        info.channel = snippet.channelTitle || '';
+        info.description = snippet.description || '';
+        console.log(`[YTPlayer] YouTube API ✓ "${info.title}" / ${info.channel}`);
+      }
     } catch (err) {
-      console.warn(`[YTPlayer] [VideoInfo] 추출 실패: ${err.message}`);
+      console.warn(`[YTPlayer] YouTube API 에러: ${err.message}`);
     }
     return info;
   }
