@@ -79,6 +79,21 @@ const navGroups = [
   },
 ];
 
+const ROUTE_LABELS: Record<string,string> = {
+  "/dashboard":"OVERVIEW", "/dashboard/workers":"PC", "/dashboard/devices":"DEVICES",
+  "/dashboard/network":"NETWORK", "/dashboard/proxies":"PROXIES",
+  "/dashboard/channels":"CHANNELS", "/dashboard/content":"CONTENT",
+  "/dashboard/tasks":"QUEUE", "/dashboard/completed":"COMPLETED",
+  "/dashboard/presets":"PRESETS", "/dashboard/adb":"ADB CONSOLE",
+  "/dashboard/logs":"LOGS", "/dashboard/errors":"ERRORS", "/dashboard/settings":"SETTINGS",
+};
+
+function BreadcrumbLabel() {
+  const pathname = usePathname();
+  const label = ROUTE_LABELS[pathname] || pathname.split("/").pop()?.toUpperCase() || "";
+  return <span className="text-[10px] font-mono font-bold tracking-wider text-amber-500">{label}</span>;
+}
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -202,10 +217,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </Sidebar>
 
       <SidebarInset className="bg-[#0a0a0f]">
-        <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b border-[#1e2130] bg-[#0a0a0f]/80 px-4 backdrop-blur-sm">
+        <header className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-[#1e2130] bg-[#0a0a0f]/90 px-4 backdrop-blur-sm">
           <SidebarTrigger className="text-slate-400" />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-600">TACTICAL COMMAND</span>
+          <span className="text-[10px] text-slate-700">/</span>
+          <BreadcrumbLabel />
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );
