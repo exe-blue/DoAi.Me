@@ -193,7 +193,31 @@ async function flush() {
   await _flushToSupabase();
 }
 
-module.exports = { getLogger, setSupabase, flush };
+/**
+ * 7일 이상 오래된 로그 파일 삭제 (디스크 풀 방지)
+ * 시작 시 1회 호출 권장.
+ */
+function cleanOldLogs(retentionDays = 7) {
+  try {
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const files = fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.log'));
+    let deleted = 0;
+    for (const f of files) {
+      const filePath = path.join(LOG_DIR, f);
+      const stat = fs.statSync(filePath);
+      if (stat.mtimeMs < cutoff) {
+        fs.unlinkSync(filePath);
+        deleted++;
+      }
+    }
+    if (deleted > 0) {
+      const logger = getLogger('common.logger');
+      logger.info('old_logs_cleaned', { deleted, retentionDays });
+    }
+  } catch {}
+}
+
+module.exports = { getLogger, setSupabase, flush, cleanOldLogs };
 
 // 단독 실행: node agent/common/logger.js
 if (require.main === module) {
