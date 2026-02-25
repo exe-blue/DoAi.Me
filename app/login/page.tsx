@@ -6,6 +6,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { DottedSurface } from "@/components/ui/dotted-surface";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -105,16 +106,9 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0f]">
+      <DottedSurface />
       {/* ═══ Left Panel (60%) ═══ */}
       <div className="relative hidden w-[60%] flex-col items-center justify-center md:flex">
-        {/* Dot grid background */}
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "radial-gradient(circle, rgba(59,130,246,0.08) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
 
         <div className="relative z-10 flex flex-col items-center px-12 animate-in fade-in duration-500">
           {/* Logo */}

@@ -1,6 +1,7 @@
 import { createAuthServerClient } from "@/lib/supabase/auth-server";
 import { Smartphone } from "lucide-react";
 import Link from "next/link";
+import { LandingBackground } from "@/components/landing-bg";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,8 @@ export default async function LandingPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#0a0a0f] px-4 relative">
+      <LandingBackground />
       <div className="mx-auto flex max-w-lg flex-col items-center gap-8 text-center">
         <div className="flex items-center gap-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
