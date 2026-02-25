@@ -250,8 +250,8 @@ class YTPlayer {
   }
 
   /**
-   * 전체 재생 플로우: 검색 → 선택 → 광고 건너뛰기 → 재생 확인
-   * @returns {Promise<{playing: boolean, adsSkipped: number, screen: object}>}
+   * 전체 재생 플로우: 검색 → 선택 → 광고 건너뛰기 → 영상 검증 → 재생 확인
+   * @returns {Promise<{playing, adsSkipped, screen, videoInfo, verification}>}
    */
   async startVideo(serial, searchKeyword) {
     await this.wakeAndPortrait(serial);
@@ -260,48 +260,120 @@ class YTPlayer {
     const adsSkipped = await this.handlePrerollAds(serial);
     const playing = await this.ensurePlaying(serial);
     const screen = await this.getScreen(serial);
-    return { playing, adsSkipped, screen };
+
+    // 영상 정보 수집 + 검색어 매칭 검증
+    const videoInfo = await this.getVideoInfo(serial);
+    const verification = this.verifyVideoMatch(searchKeyword, videoInfo);
+
+    return { playing, adsSkipped, screen, videoInfo, verification };
   }
 
   /**
-   * 현재 재생 중인 영상의 제목/채널명 추출 (댓글 생성용)
-   * @returns {Promise<{title: string, channel: string}>}
+   * 현재 재생 중인 영상 정보 수집 (제목, 채널명, 설명)
+   * resource-id 1순위, content-desc 폴백.
+   * @returns {Promise<{title: string, channel: string, description: string}>}
    */
   async getVideoInfo(serial) {
-    const info = { title: '', channel: '' };
+    const info = { title: '', channel: '', description: '' };
     try {
       const xml = await this.dumpUI(serial);
       if (!xml) return info;
 
-      // 영상 제목: resource-id="com.google.android.youtube:id/title"
-      const titleNode = xml.match(
-        /resource-id="com\.google\.android\.youtube:id\/title"[^>]*text="([^"]*)"/i
-      ) || xml.match(
-        /text="([^"]*)"[^>]*resource-id="com\.google\.android\.youtube:id\/title"/i
-      );
-      if (titleNode) info.title = titleNode[1];
+      // 제목: resource-id="...title" → text 속성
+      info.title = this._extractTextByResId(xml, 'com.google.android.youtube:id/title')
+        || this._extractTextByResId(xml, 'com.google.android.youtube:id/video_title')
+        || this._extractContentDesc(xml, 'com.google.android.youtube:id/title')
+        || '';
 
-      // 채널명: resource-id="com.google.android.youtube:id/channel_name"
-      const channelNode = xml.match(
-        /resource-id="com\.google\.android\.youtube:id\/channel_name"[^>]*text="([^"]*)"/i
-      ) || xml.match(
-        /text="([^"]*)"[^>]*resource-id="com\.google\.android\.youtube:id\/channel_name"/i
-      );
-      if (channelNode) info.channel = channelNode[1];
+      // 채널명: resource-id="...channel_name" → text 속성
+      info.channel = this._extractTextByResId(xml, 'com.google.android.youtube:id/channel_name')
+        || this._extractContentDesc(xml, 'com.google.android.youtube:id/channel_name')
+        || '';
 
-      // 폴백: content-desc에서 제목 추출 시도
-      if (!info.title) {
-        const descMatch = xml.match(/content-desc="([^"]{10,})"[^>]*resource-id="[^"]*video_title/i);
-        if (descMatch) info.title = descMatch[1];
-      }
+      // 설명: resource-id="...video_description" → text 속성 (최대 500자)
+      const desc = this._extractTextByResId(xml, 'com.google.android.youtube:id/video_description') || '';
+      info.description = desc.substring(0, 500);
 
-      if (info.title || info.channel) {
-        console.log(`[YTPlayer] 영상 정보: "${info.title}" / ${info.channel}`);
-      }
+      console.log(`[YTPlayer] [VideoInfo] 제목: "${info.title || '(없음)'}"`);
+      console.log(`[YTPlayer] [VideoInfo] 채널: "${info.channel || '(없음)'}"`);
+      if (info.description) console.log(`[YTPlayer] [VideoInfo] 설명: "${info.description.substring(0, 60)}..."`);
     } catch (err) {
-      console.warn(`[YTPlayer] 영상 정보 추출 실패: ${err.message}`);
+      console.warn(`[YTPlayer] [VideoInfo] 추출 실패: ${err.message}`);
     }
     return info;
+  }
+
+  /**
+   * 검색 키워드와 실제 영상 제목의 일치 여부 검증
+   * @param {string} searchKeyword - 검색에 사용한 키워드
+   * @param {object} videoInfo - getVideoInfo 결과
+   * @returns {{matched: boolean, score: number, details: string}}
+   */
+  verifyVideoMatch(searchKeyword, videoInfo) {
+    if (!videoInfo.title) {
+      console.log('[YTPlayer] [Verify] ⚠ 제목 추출 실패 — 검증 불가');
+      return { matched: false, score: 0, details: 'title_not_found' };
+    }
+
+    const titleLower = videoInfo.title.toLowerCase();
+    const keywords = searchKeyword
+      .replace(/[[\](){}|/\\.,!?~'"]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2);
+
+    let matchCount = 0;
+    const matchedWords = [];
+    const missedWords = [];
+
+    for (const kw of keywords) {
+      if (titleLower.includes(kw.toLowerCase())) {
+        matchCount++;
+        matchedWords.push(kw);
+      } else {
+        missedWords.push(kw);
+      }
+    }
+
+    const score = keywords.length > 0 ? Math.round((matchCount / keywords.length) * 100) : 0;
+    const matched = score >= 30; // 키워드 30% 이상 일치면 매칭으로 판정
+
+    if (matched) {
+      console.log(`[YTPlayer] [Verify] ✓ 매칭 ${score}% (${matchCount}/${keywords.length}) — 일치: [${matchedWords.join(', ')}]`);
+    } else {
+      console.log(`[YTPlayer] [Verify] ✗ 불일치 ${score}% (${matchCount}/${keywords.length}) — 미스: [${missedWords.join(', ')}]`);
+      console.log(`[YTPlayer] [Verify]   검색어: "${searchKeyword}"`);
+      console.log(`[YTPlayer] [Verify]   실제:   "${videoInfo.title}"`);
+    }
+
+    return { matched, score, details: `${matchCount}/${keywords.length} keywords`, matchedWords, missedWords };
+  }
+
+  /** XML에서 resource-id 노드의 text 속성 추출 */
+  _extractTextByResId(xml, resId) {
+    const escaped = resId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`resource-id="${escaped}"[^>]*text="([^"]*)"`, 'i'),
+      new RegExp(`text="([^"]*)"[^>]*resource-id="${escaped}"`, 'i'),
+    ];
+    for (const re of patterns) {
+      const m = xml.match(re);
+      if (m && m[1]) return m[1];
+    }
+    return null;
+  }
+
+  /** XML에서 resource-id 노드의 content-desc 속성 추출 */
+  _extractContentDesc(xml, resId) {
+    const escaped = resId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`resource-id="${escaped}"[^>]*content-desc="([^"]*)"`, 'i'),
+      new RegExp(`content-desc="([^"]*)"[^>]*resource-id="${escaped}"`, 'i'),
+    ];
+    for (const re of patterns) {
+      const m = xml.match(re);
+      if (m && m[1]) return m[1];
+    }
+    return null;
   }
 
   /** 홈으로 이동 */

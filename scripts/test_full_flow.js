@@ -92,16 +92,17 @@ async function main() {
   const player = new YTPlayer(xiaowei);
   const actions = new YTActions(player);
 
-  // 1. 영상 시작
+  // 1. 영상 시작 (검색 → 선택 → 광고 → 영상 검증)
   console.log('── 1. 영상 시작 ──');
-  const { playing, adsSkipped } = await player.startVideo(SERIAL, SEARCH_KEYWORD);
-  console.log(`   재생: ${playing ? '✓' : '⚠'} | 광고: ${adsSkipped}개 건너뜀\n`);
+  const { playing, adsSkipped, videoInfo, verification } = await player.startVideo(SERIAL, SEARCH_KEYWORD);
+  console.log(`   재생: ${playing ? '✓' : '⚠'} | 광고: ${adsSkipped}개 건너뜀`);
 
-  // 2. 영상 정보 수집 (댓글 생성용)
-  console.log('── 2. 영상 정보 수집 ──');
-  const videoInfo = await player.getVideoInfo(SERIAL);
+  // 2. 영상 검증 결과
+  console.log('── 2. 영상 검증 ──');
   console.log(`   제목: "${videoInfo.title || '(추출 실패)'}"`);
-  console.log(`   채널: "${videoInfo.channel || '(추출 실패)'}"\n`);
+  console.log(`   채널: "${videoInfo.channel || '(추출 실패)'}"`);
+  if (videoInfo.description) console.log(`   설명: "${videoInfo.description.substring(0, 50)}..."`);
+  console.log(`   매칭: ${verification.matched ? '✓' : '✗'} ${verification.score}% (${verification.details})\n`);
 
   // 3. 액션 계획 (테스트 모드: 4개 전부 강제 실행)
   console.log('── 3. 액션 계획 (전체 강제 실행) ──');
