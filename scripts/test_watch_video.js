@@ -118,18 +118,39 @@ async function inputText(text) {
 }
 
 /** 광고 건너뛰기 시도 */
+/** 광고 건너뛰기: 1회 dump에서 바로 좌표 추출 + 탭 */
 async function trySkipAd() {
   const xml = await dumpUI();
-  if (xml.includes('skip_ad') || xml.includes('건너뛰기') || xml.includes('Skip') || xml.includes('skip')) {
-    const pos = await findElement('skip_ad|건너뛰기|Skip');
-    if (pos) {
-      await adb(`input tap ${pos.x} ${pos.y}`);
-    } else {
-      const scr = await getScreen();
-      const sx = scr.landscape ? Math.round(scr.w * 0.88) : Math.round(scr.w * 0.89);
-      const sy = scr.landscape ? Math.round(scr.h * 0.85) : Math.round(scr.h * 0.3);
-      await adb(`input tap ${sx} ${sy}`);
+  if (!xml) return false;
+
+  const keywords = ['skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
+  for (const kw of keywords) {
+    if (!xml.includes(kw)) continue;
+
+    // 해당 키워드 포함 노드에서 bounds 직접 추출 (같은 XML에서)
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
+      new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
+    ];
+
+    for (const re of patterns) {
+      const m = xml.match(re);
+      if (m) {
+        const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
+        const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
+        log('광고', `"${kw}" 발견 → 탭 (${cx}, ${cy})`);
+        await adb(`input tap ${cx} ${cy}`);
+        return true;
+      }
     }
+
+    // bounds 못 찾았지만 키워드는 있음 → 폴백 좌표
+    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭`);
+    const scr = await getScreen();
+    const sx = scr.landscape ? Math.round(scr.w * 0.88) : Math.round(scr.w * 0.89);
+    const sy = scr.landscape ? Math.round(scr.h * 0.85) : Math.round(scr.h * 0.3);
+    await adb(`input tap ${sx} ${sy}`);
     return true;
   }
   return false;

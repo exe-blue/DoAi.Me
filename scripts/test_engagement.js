@@ -99,6 +99,40 @@ async function findAllMatches(pattern) {
   return results;
 }
 
+/** 광고 건너뛰기: 1회 dump에서 바로 좌표 추출 + 탭 */
+async function trySkipAd() {
+  const xml = await dumpUI();
+  if (!xml) return false;
+
+  const keywords = ['skip_ad', '건너뛰기', 'Skip ad', 'Skip'];
+  for (const kw of keywords) {
+    if (!xml.includes(kw)) continue;
+
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(escaped + '[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"', 'i'),
+      new RegExp('bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*' + escaped, 'i'),
+    ];
+
+    for (const re of patterns) {
+      const m = xml.match(re);
+      if (m) {
+        const cx = Math.round((parseInt(m[1]) + parseInt(m[3])) / 2);
+        const cy = Math.round((parseInt(m[2]) + parseInt(m[4])) / 2);
+        log('광고', `"${kw}" 발견 → 탭 (${cx}, ${cy})`);
+        await adb(`input tap ${cx} ${cy}`);
+        return true;
+      }
+    }
+
+    log('광고', `"${kw}" 발견 but bounds 없음 → 폴백 탭`);
+    const scr = await getScreen();
+    await adb(`input tap ${Math.round(scr.w * 0.89)} ${Math.round(scr.h * 0.3)}`);
+    return true;
+  }
+  return false;
+}
+
 async function run() {
   log('INIT', `Device: ${SERIAL}`);
   log('INIT', `Search: "${SEARCH_KEYWORD}"`);
@@ -149,22 +183,41 @@ async function run() {
   log('3-선택', `✓ 영상 탭: (${midX}, ${tapY})`);
   await sleep(5000);
 
+  // 프리롤 광고 건너뛰기 (최대 3회, 5초 간격)
+  for (let i = 0; i < 3; i++) {
+    const skipped = await trySkipAd();
+    if (skipped) {
+      log('4-광고', `건너뛰기 성공 (${i + 1}회)`);
+      await sleep(2000);
+    } else {
+      // 광고 카운트다운 중일 수 있음 (아직 건너뛰기 버튼 안 나옴)
+      const adXml = await dumpUI();
+      if (adXml.includes('광고') || adXml.includes('Ad ')) {
+        log('4-광고', `광고 재생 중 — 5초 대기 (${i + 1}회)`);
+        await sleep(5000);
+      } else {
+        log('4-광고', '✓ 광고 없음');
+        break;
+      }
+    }
+  }
+
   // Ensure playing
   await adb(`input tap ${midX} ${Math.round(scr.h * 0.18)}`);
   await sleep(800);
   await adb(`input tap ${midX} ${Math.round(scr.h * 0.18)}`);
   await sleep(1000);
   await adb('input keyevent KEYCODE_MEDIA_PLAY');
-  log('4-재생', '재생 시도');
+  log('5-재생', '재생 시도');
   await sleep(3000);
 
   try {
     const res = await adb('dumpsys media_session | grep "state="');
-    log('4-재생', out(res).includes('state=3') ? '✓ 재생 중' : '⚠ 재생 상태 불명');
+    log('5-재생', out(res).includes('state=3') ? '✓ 재생 중' : '⚠ 재생 상태 불명');
   } catch {}
 
   // Watch 10 seconds before engagement
-  log('5-시청', '10초 시청 후 engagement 시작...');
+  log('6-시청', '10초 시청 후 engagement 시작...');
   await sleep(10000);
 
   // ═══════════════════════════════════════════════════════
@@ -172,7 +225,7 @@ async function run() {
   // ═══════════════════════════════════════════════════════
   if (DO_LIKE) {
     console.log('─'.repeat(60));
-    log('6-좋아요', '좋아요 시도...');
+    log('7-좋아요', '좋아요 시도...');
 
     scr = await getScreen();
 
@@ -187,17 +240,17 @@ async function run() {
     if (!likeBtn) likeBtn = await findElement('resource-id="com.google.android.youtube:id/like_button"');
 
     if (likeBtn) {
-      log('6-좋아요', `✓ 버튼 발견: (${likeBtn.x}, ${likeBtn.y})`);
+      log('7-좋아요', `✓ 버튼 발견: (${likeBtn.x}, ${likeBtn.y})`);
       await adb(`input tap ${likeBtn.x} ${likeBtn.y}`);
       await sleep(1500);
 
       // 좋아요 눌렸는지 확인
       const afterXml = await dumpUI();
       const liked = afterXml.includes('좋아요 취소') || afterXml.includes('unlike') || afterXml.includes('Remove like');
-      log('6-좋아요', liked ? '✓ 좋아요 완료!' : '⚠ 좋아요 상태 확인 불가 (이미 눌렸을 수 있음)');
+      log('7-좋아요', liked ? '✓ 좋아요 완료!' : '⚠ 좋아요 상태 확인 불가 (이미 눌렸을 수 있음)');
     } else {
       // 폴백: YouTube 좋아요 버튼 일반적 위치
-      log('6-좋아요', '⚠ 버튼 못 찾음 — UI dump에서 검색 시도');
+      log('7-좋아요', '⚠ 버튼 못 찾음 — UI dump에서 검색 시도');
       const fullXml = await dumpUI();
 
       // bounds 가진 모든 노드에서 "좋아요" 포함 여부 검사
@@ -207,11 +260,11 @@ async function run() {
       if (likeMatch) {
         const lx = Math.round((parseInt(likeMatch[1]) + parseInt(likeMatch[3])) / 2);
         const ly = Math.round((parseInt(likeMatch[2]) + parseInt(likeMatch[4])) / 2);
-        log('6-좋아요', `✓ 두 번째 검색 성공: (${lx}, ${ly})`);
+        log('7-좋아요', `✓ 두 번째 검색 성공: (${lx}, ${ly})`);
         await adb(`input tap ${lx} ${ly}`);
         await sleep(1500);
       } else {
-        log('6-좋아요', '✗ 좋아요 버튼을 찾을 수 없음');
+        log('7-좋아요', '✗ 좋아요 버튼을 찾을 수 없음');
       }
     }
   }
@@ -221,7 +274,7 @@ async function run() {
   // ═══════════════════════════════════════════════════════
   if (DO_COMMENT) {
     console.log('─'.repeat(60));
-    log('7-댓글', '댓글 시도...');
+    log('8-댓글', '댓글 시도...');
 
     scr = await getScreen();
 
@@ -237,14 +290,14 @@ async function run() {
         || await findElement('resource-id="com.google.android.youtube:id/comment_entry_point');
 
       if (commentField) {
-        log('7-댓글', `✓ 댓글 입력 필드 발견: (${commentField.x}, ${commentField.y})`);
+        log('8-댓글', `✓ 댓글 입력 필드 발견: (${commentField.x}, ${commentField.y})`);
         await adb(`input tap ${commentField.x} ${commentField.y}`);
         await sleep(2000);
         break;
       }
 
       if (s === 2) {
-        log('7-댓글', '⚠ 댓글 필드 못 찾음 — 추정 위치 탭');
+        log('8-댓글', '⚠ 댓글 필드 못 찾음 — 추정 위치 탭');
         // 댓글 섹션 상단 추정 위치
         await adb(`input tap ${midX} ${Math.round(scr.h * 0.85)}`);
         await sleep(2000);
@@ -252,14 +305,14 @@ async function run() {
     }
 
     // 댓글 입력 (클립보드 방식: echo → 붙여넣기)
-    log('7-댓글', `입력: "${COMMENT_TEXT}"`);
+    log('8-댓글', `입력: "${COMMENT_TEXT}"`);
 
     // 방법 1: ADBKeyboard broadcast
     const b64 = Buffer.from(COMMENT_TEXT, 'utf-8').toString('base64');
     let inputOk = false;
     try {
       const res = await adb(`am broadcast -a ADB_INPUT_B64 --es msg '${b64}' 2>/dev/null`);
-      if (out(res).includes('result=0')) { inputOk = true; log('7-댓글', '✓ ADBKeyboard로 입력'); }
+      if (out(res).includes('result=0')) { inputOk = true; log('8-댓글', '✓ ADBKeyboard로 입력'); }
     } catch {}
 
     // 방법 2: 클립보드에 저장 후 붙여넣기
@@ -280,14 +333,14 @@ async function run() {
         const afterXml = await dumpUI();
         if (afterXml.includes(safe.substring(0, 5))) {
           inputOk = true;
-          log('7-댓글', '✓ 클립보드로 입력');
+          log('8-댓글', '✓ 클립보드로 입력');
         }
       } catch {}
     }
 
     // 방법 3: ASCII만 가능한 경우 이모지 댓글
     if (!inputOk) {
-      log('7-댓글', '⚠ 한글 입력 불가 — 이모지 댓글로 대체');
+      log('8-댓글', '⚠ 한글 입력 불가 — 이모지 댓글로 대체');
       try {
         await adb("input text 'good%svideo'");
         inputOk = true;
@@ -302,18 +355,18 @@ async function run() {
         || await findElement('resource-id="com.google.android.youtube:id/send_button"');
 
       if (sendBtn) {
-        log('7-댓글', `게시 버튼: (${sendBtn.x}, ${sendBtn.y})`);
+        log('8-댓글', `게시 버튼: (${sendBtn.x}, ${sendBtn.y})`);
         // 실제 게시는 하지 않음 (테스트 모드)
-        log('7-댓글', '⚠ 테스트 모드: 게시하지 않음 (SEND=true 로 실제 게시)');
+        log('8-댓글', '⚠ 테스트 모드: 게시하지 않음 (SEND=true 로 실제 게시)');
         if (process.env.SEND === 'true') {
           await adb(`input tap ${sendBtn.x} ${sendBtn.y}`);
-          log('7-댓글', '✓ 댓글 게시!');
+          log('8-댓글', '✓ 댓글 게시!');
         }
       } else {
-        log('7-댓글', '⚠ 게시 버튼 못 찾음');
+        log('8-댓글', '⚠ 게시 버튼 못 찾음');
       }
     } else {
-      log('7-댓글', '✗ 댓글 입력 실패');
+      log('8-댓글', '✗ 댓글 입력 실패');
     }
   }
 
