@@ -108,11 +108,14 @@ async function run() {
     return;
   }
 
-  // Step 4: Force portrait
+  // Step 4: Force portrait (강화)
   try {
     await adbShell('settings put system accelerometer_rotation 0');
     await adbShell('settings put system user_rotation 0');
-    log('4-세로모드', '✓ 세로 모드 강제');
+    // content:// provider 방식 (일부 기기에서 settings put 무시 시)
+    await adbShell('content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:0');
+    await adbShell('content insert --uri content://settings/system --bind name:s:user_rotation --bind value:i:0');
+    log('4-세로모드', '✓ 세로 모드 강제 (settings + content provider)');
   } catch (e) {
     log('4-세로모드', `⚠ ${e.message}`);
   }
@@ -167,20 +170,40 @@ async function run() {
   }
   await sleep(5000);
 
-  // Step 10: Check if playing
+  // Step 10: Ensure playing — 플레이어 탭 + 재생 키 + 재확인
   try {
-    const res = await adbShell('dumpsys media_session | grep -E "state=|PlaybackState"');
+    // 10a. 플레이어 영역 탭 (컨트롤 표시)
+    await adbShell('input tap 540 350');
+    await sleep(1000);
+    // 10b. 재생 버튼 영역 탭 (재생/일시정지 토글)
+    await adbShell('input tap 540 350');
+    await sleep(1000);
+
+    const res = await adbShell('dumpsys media_session | grep -E "state="');
     const output = extractOutput(res);
     const isPlaying = output.includes('state=3');
     const isPaused = output.includes('state=2');
+
     if (isPlaying) {
       log('10-재생상태', '✓ 재생 중 (state=3)');
     } else if (isPaused) {
-      log('10-재생상태', '⚠ 일시정지 (state=2) — 재생 시도');
+      log('10-재생상태', '⚠ 일시정지 — MEDIA_PLAY 키 전송');
       await adbShell('input keyevent KEYCODE_MEDIA_PLAY');
       await sleep(1000);
+      // 한번 더 탭
+      await adbShell('input tap 540 350');
+      await sleep(500);
+      await adbShell('input tap 540 350');
+      await sleep(1000);
+      // 재확인
+      const res2 = await adbShell('dumpsys media_session | grep -E "state="');
+      const out2 = extractOutput(res2);
+      log('10-재생상태', out2.includes('state=3') ? '✓ 재생 시작됨' : `⚠ 여전히 멈춤: ${out2.trim().substring(0, 80)}`);
     } else {
-      log('10-재생상태', `⚠ 알 수 없음: ${output.trim().substring(0, 100)}`);
+      log('10-재생상태', `⚠ 상태 불명: ${output.trim().substring(0, 80)}`);
+      // 강제 재생 시도
+      await adbShell('input keyevent KEYCODE_MEDIA_PLAY');
+      await adbShell('input tap 540 350');
     }
   } catch (e) {
     log('10-재생상태', `⚠ 확인 불가: ${e.message}`);
@@ -214,13 +237,22 @@ async function run() {
       await adbShell('input keyevent KEYCODE_WAKEUP').catch(() => {});
     }
 
-    // Check still playing
+    // Check still playing + try resume if paused
     if (i % 10 === 0) {
       try {
         const res = await adbShell('dumpsys media_session | grep "state="');
         const output = extractOutput(res);
         const playing = output.includes('state=3');
-        log('12-시청', `${i + remaining}/${WATCH_SEC}s ${playing ? '▶ 재생 중' : '⏸ 멈춤'}`);
+        if (playing) {
+          log('12-시청', `${i + remaining}/${WATCH_SEC}s ▶ 재생 중`);
+        } else {
+          log('12-시청', `${i + remaining}/${WATCH_SEC}s ⏸ 멈춤 → 재생 시도`);
+          await adbShell('input tap 540 350');
+          await sleep(500);
+          await adbShell('input tap 540 350');
+          await sleep(500);
+          await adbShell('input keyevent KEYCODE_MEDIA_PLAY');
+        }
       } catch {
         log('12-시청', `${i + remaining}/${WATCH_SEC}s (상태 확인 불가)`);
       }
@@ -246,6 +278,12 @@ async function run() {
 function extractOutput(res) {
   if (!res) return '';
   if (typeof res === 'string') return res;
+  // Xiaowei format: {code, message, data: {"serial": "output"}}
+  if (res.data != null && typeof res.data === 'object' && !Array.isArray(res.data)) {
+    const vals = Object.values(res.data);
+    if (vals.length > 0 && typeof vals[0] === 'string') return vals[0];
+    if (vals.length > 0) return JSON.stringify(vals[0]);
+  }
   if (res.data != null) {
     if (Array.isArray(res.data)) return res.data[0] != null ? String(res.data[0]) : '';
     return String(res.data);
