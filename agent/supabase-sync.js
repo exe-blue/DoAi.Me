@@ -46,10 +46,7 @@ class SupabaseSync {
    * @returns {Promise<boolean>}
    */
   async verifyConnection() {
-    const { error } = await this.supabase
-      .from("pcs")
-      .select("id")
-      .limit(1);
+    const { error } = await this.supabase.from("pcs").select("id").limit(1);
 
     if (error) {
       throw new Error(error.message);
@@ -127,22 +124,22 @@ class SupabaseSync {
    * @param {number|null} battery
    */
   async upsertDevice(serial, pcId, status, model, battery) {
-    const { error } = await this.supabase
-      .from("devices")
-      .upsert(
-        {
-          serial,
-          pc_id: pcId,
-          status,
-          model: model || null,
-          battery_level: battery || null,
-          last_seen_at: new Date().toISOString(),
-        },
-        { onConflict: "serial" }
-      );
+    const { error } = await this.supabase.from("devices").upsert(
+      {
+        serial,
+        pc_id: pcId,
+        status,
+        model: model || null,
+        battery_level: battery || null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: "serial" },
+    );
 
     if (error) {
-      console.error(`[Supabase] Failed to upsert device ${serial}: ${error.message}`);
+      console.error(
+        `[Supabase] Failed to upsert device ${serial}: ${error.message}`,
+      );
     }
   }
 
@@ -161,23 +158,28 @@ class SupabaseSync {
     }
 
     const now = new Date().toISOString();
-    const rows = devices.map(d => {
+    const rows = devices.map((d) => {
       const row = {
         serial: d.serial,
         pc_id: pcId,
-        status: d.status || 'online',
+        status: d.status || "online",
         model: d.model || null,
         battery_level: d.battery ?? null,
         last_seen_at: now,
       };
       if (d.ipIntranet != null) row.ip_intranet = d.ipIntranet;
       if (d.task_status != null) row.task_status = d.task_status;
-      if (d.current_assignment_id != null) row.current_assignment_id = d.current_assignment_id;
-      if (d.current_video_title != null) row.current_video_title = d.current_video_title;
+      if (d.current_assignment_id != null)
+        row.current_assignment_id = d.current_assignment_id;
+      if (d.current_video_title != null)
+        row.current_video_title = d.current_video_title;
       if (d.watch_progress != null) row.watch_progress = d.watch_progress;
-      if (d.consecutive_errors != null) row.consecutive_errors = d.consecutive_errors;
-      if (d.daily_watch_count != null) row.daily_watch_count = d.daily_watch_count;
-      if (d.daily_watch_seconds != null) row.daily_watch_seconds = d.daily_watch_seconds;
+      if (d.consecutive_errors != null)
+        row.consecutive_errors = d.consecutive_errors;
+      if (d.daily_watch_count != null)
+        row.daily_watch_count = d.daily_watch_count;
+      if (d.daily_watch_seconds != null)
+        row.daily_watch_seconds = d.daily_watch_seconds;
       if (d.device_code != null) row.device_code = d.device_code;
       if (d.proxy_id != null) row.proxy_id = d.proxy_id;
       if (d.account_id != null) row.account_id = d.account_id;
@@ -187,8 +189,8 @@ class SupabaseSync {
     });
 
     const { error } = await this.supabase
-      .from('devices')
-      .upsert(rows, { onConflict: 'serial' });
+      .from("devices")
+      .upsert(rows, { onConflict: "serial" });
 
     if (error) {
       console.error(`[Supabase] Batch upsert failed: ${error.message}`);
@@ -217,9 +219,14 @@ class SupabaseSync {
             daily_watch_seconds: state.dailyWatchSeconds ?? 0,
           })
           .eq("serial", state.serial);
-        if (error) console.warn(`[Supabase] syncDeviceTaskStates failed for ${state.serial}: ${error.message}`);
+        if (error)
+          console.warn(
+            `[Supabase] syncDeviceTaskStates failed for ${state.serial}: ${error.message}`,
+          );
       } catch (err) {
-        console.warn(`[SupabaseSync] syncDeviceTaskStates error: ${err.message}`);
+        console.warn(
+          `[SupabaseSync] syncDeviceTaskStates error: ${err.message}`,
+        );
       }
     }
   }
@@ -236,33 +243,33 @@ class SupabaseSync {
 
     // Running tasks
     const { count: running } = await this.supabase
-      .from('tasks')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'running');
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "running");
 
     // Pending tasks
     const { count: pending } = await this.supabase
-      .from('tasks')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'pending');
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "pending");
 
     // Completed today
     const { count: completed_today } = await this.supabase
-      .from('tasks')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'completed')
-      .gte('completed_at', todayIso);
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "completed")
+      .gte("completed_at", todayIso);
 
     // Failed today
     const { count: failed_today } = await this.supabase
-      .from('tasks')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'failed')
-      .gte('updated_at', todayIso);
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "failed")
+      .gte("updated_at", todayIso);
 
     return {
       running: running || 0,
@@ -279,27 +286,27 @@ class SupabaseSync {
    */
   async getProxyCounts(pcId) {
     const { count: total } = await this.supabase
-      .from('proxies')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId);
+      .from("proxies")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId);
 
     const { count: valid } = await this.supabase
-      .from('proxies')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'valid');
+      .from("proxies")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "valid");
 
     const { count: invalid } = await this.supabase
-      .from('proxies')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'invalid');
+      .from("proxies")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "invalid");
 
     const { count: unassigned } = await this.supabase
-      .from('proxies')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .is('device_serial', null);
+      .from("proxies")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .is("device_serial", null);
 
     return {
       total: total || 0,
@@ -316,33 +323,33 @@ class SupabaseSync {
    */
   async getDeviceCounts(pcId) {
     const { count: total } = await this.supabase
-      .from('devices')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId);
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId);
 
     const { count: online } = await this.supabase
-      .from('devices')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'online');
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "online");
 
     const { count: busy } = await this.supabase
-      .from('devices')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'busy');
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "busy");
 
     const { count: error } = await this.supabase
-      .from('devices')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'error');
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "error");
 
     const { count: offline } = await this.supabase
-      .from('devices')
-      .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
-      .eq('status', 'offline');
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId)
+      .eq("status", "offline");
 
     return {
       total: total || 0,
@@ -366,7 +373,9 @@ class SupabaseSync {
         .eq("pc_id", pcId);
 
       if (error) {
-        console.error(`[Supabase] Failed to mark devices offline: ${error.message}`);
+        console.error(
+          `[Supabase] Failed to mark devices offline: ${error.message}`,
+        );
       }
       return;
     }
@@ -378,7 +387,9 @@ class SupabaseSync {
       .not("serial", "in", `(${activeSerials.join(",")})`);
 
     if (error) {
-      console.error(`[Supabase] Failed to mark offline devices: ${error.message}`);
+      console.error(
+        `[Supabase] Failed to mark offline devices: ${error.message}`,
+      );
     }
   }
 
@@ -400,14 +411,171 @@ class SupabaseSync {
     }
     const { data, error } = await query;
     if (error) {
-      console.error(`[Supabase] getDeviceTargetsForExecution failed: ${error.message}`);
+      console.error(
+        `[Supabase] getDeviceTargetsForExecution failed: ${error.message}`,
+      );
       return [];
     }
     return (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
   }
 
   /**
+   * Get single device_target (connection_id ?? serial) for a task_device row.
+   * @param {object} taskDevice - { device_serial, pc_id }
+   * @returns {Promise<string|null>}
+   */
+  async getDeviceTargetForTaskDevice(taskDevice) {
+    if (!taskDevice?.pc_id || !taskDevice?.device_serial) return null;
+    const { data, error } = await this.supabase
+      .from("devices")
+      .select("serial, connection_id")
+      .eq("pc_id", taskDevice.pc_id)
+      .eq("serial", taskDevice.device_serial)
+      .maybeSingle();
+    if (error || !data) return taskDevice.device_serial;
+    return data.connection_id || data.serial || taskDevice.device_serial;
+  }
+
+  /**
+   * Claim up to `limit` queued task_devices for this PC (atomic RPC).
+   * @param {string} pcId
+   * @param {number} [limit=10]
+   * @returns {Promise<Array>} Claimed task_device rows
+   */
+  async claimNextTaskDevices(pcId, limit = 10) {
+    const { data, error } = await this.supabase.rpc("claim_next_task_devices", {
+      p_pc_id: pcId,
+      p_limit: Math.min(limit, 10),
+    });
+    if (error) {
+      console.error(
+        `[Supabase] claim_next_task_devices failed: ${error.message}`,
+      );
+      return [];
+    }
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Extend lease for a running task_device (heartbeat).
+   * @param {string} taskDeviceId
+   * @param {string} pcId
+   * @param {number} [leaseMinutes=5]
+   */
+  async heartbeatTaskDevice(taskDeviceId, pcId, leaseMinutes = 5) {
+    const leaseUntil = new Date(Date.now() + leaseMinutes * 60 * 1000).toISOString();
+    const { error } = await this.supabase
+      .from("task_devices")
+      .update({
+        lease_expires_at: leaseUntil,
+      })
+      .eq("id", taskDeviceId)
+      .eq("claimed_by_pc_id", pcId)
+      .eq("status", "running");
+    if (error) {
+      console.error(
+        `[Supabase] heartbeatTaskDevice failed: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Mark task_device completed.
+   * @param {string} taskDeviceId
+   * @param {string} pcId
+   * @param {object} [result]
+   * @param {number} [progress=100]
+   */
+  async completeTaskDevice(taskDeviceId, pcId, result, progress = 100) {
+    const now = new Date().toISOString();
+    const update = {
+      status: "completed",
+      completed_at: now,
+      lease_expires_at: null,
+      claimed_by_pc_id: null,
+      progress: progress ?? 100,
+    };
+    if (result != null) update.result = result;
+    const { error } = await this.supabase
+      .from("task_devices")
+      .update(update)
+      .eq("id", taskDeviceId)
+      .eq("claimed_by_pc_id", pcId);
+    if (error) {
+      console.error(
+        `[Supabase] completeTaskDevice failed: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Mark task_device failed or requeue for retry (retry_count < 3).
+   * @param {string} taskDeviceId
+   * @param {string} pcId
+   * @param {string} errorMessage
+   * @param {boolean} [retryable=true]
+   */
+  async failOrRetryTaskDevice(taskDeviceId, pcId, errorMessage, retryable = true) {
+    const now = new Date().toISOString();
+    const { data: row, error: readErr } = await this.supabase
+      .from("task_devices")
+      .select("retry_count")
+      .eq("id", taskDeviceId)
+      .eq("claimed_by_pc_id", pcId)
+      .maybeSingle();
+
+    if (readErr || !row) {
+      console.error(
+        `[Supabase] failOrRetryTaskDevice read failed: ${readErr?.message || "not found"}`,
+      );
+      return;
+    }
+
+    const currentRetry = row.retry_count ?? 0;
+    const doRetry = retryable && currentRetry < 2; // 0->1, 1->2, 2->3 then fail
+
+    if (doRetry) {
+      const { error } = await this.supabase
+        .from("task_devices")
+        .update({
+          status: "queued",
+          error: errorMessage,
+          last_error_at: now,
+          retry_count: currentRetry + 1,
+          lease_expires_at: null,
+          claimed_by_pc_id: null,
+        })
+        .eq("id", taskDeviceId)
+        .eq("claimed_by_pc_id", pcId);
+      if (error) {
+        console.error(
+          `[Supabase] failOrRetryTaskDevice (retry) failed: ${error.message}`,
+        );
+      }
+    } else {
+      const { error } = await this.supabase
+        .from("task_devices")
+        .update({
+          status: "failed",
+          completed_at: now,
+          error: errorMessage,
+          last_error_at: now,
+          lease_expires_at: null,
+          claimed_by_pc_id: null,
+        })
+        .eq("id", taskDeviceId)
+        .eq("claimed_by_pc_id", pcId);
+      if (error) {
+        console.error(
+          `[Supabase] failOrRetryTaskDevice (failed) failed: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  /**
    * Get pending tasks assigned to this PC or unassigned (pc_id=null).
+   */
    * Unassigned tasks are auto-claimed by setting pc_id.
    * @param {string} pcId
    * @returns {Promise<Array>}
@@ -421,7 +589,9 @@ class SupabaseSync {
       .order("created_at", { ascending: true });
 
     if (assignedErr) {
-      console.error(`[Supabase] Failed to get assigned tasks: ${assignedErr.message}`);
+      console.error(
+        `[Supabase] Failed to get assigned tasks: ${assignedErr.message}`,
+      );
     }
 
     const { data: unassigned, error: unassignedErr } = await this.supabase
@@ -432,11 +602,13 @@ class SupabaseSync {
       .order("created_at", { ascending: true });
 
     if (unassignedErr) {
-      console.error(`[Supabase] Failed to get unassigned tasks: ${unassignedErr.message}`);
+      console.error(
+        `[Supabase] Failed to get unassigned tasks: ${unassignedErr.message}`,
+      );
     }
 
     const claimed = [];
-    for (const task of (unassigned || [])) {
+    for (const task of unassigned || []) {
       const { data: claimData, error: claimErr } = await this.supabase
         .from("tasks")
         .update({ pc_id: pcId })
@@ -444,7 +616,10 @@ class SupabaseSync {
         .is("pc_id", null)
         .select();
 
-      if (claimErr) console.error(`[Supabase] Failed to claim task ${task.id}: ${claimErr.message}`);
+      if (claimErr)
+        console.error(
+          `[Supabase] Failed to claim task ${task.id}: ${claimErr.message}`,
+        );
       if (!claimErr && claimData && claimData.length > 0) {
         task.pc_id = pcId;
         claimed.push(task);
@@ -484,7 +659,9 @@ class SupabaseSync {
       .eq("id", taskId);
 
     if (updateErr) {
-      console.error(`[Supabase] Failed to update task ${taskId}: ${updateErr.message}`);
+      console.error(
+        `[Supabase] Failed to update task ${taskId}: ${updateErr.message}`,
+      );
     }
   }
 
@@ -531,7 +708,10 @@ class SupabaseSync {
         results: [{ error: message, ...details }],
         completed_at: new Date().toISOString(),
       });
-      if (error) console.error(`[Supabase] insertAgentErrorLog failed: ${error.message}`);
+      if (error)
+        console.error(
+          `[Supabase] insertAgentErrorLog failed: ${error.message}`,
+        );
     } catch (err) {
       console.error(`[Supabase] insertAgentErrorLog: ${err.message}`);
     }
@@ -549,11 +729,29 @@ class SupabaseSync {
    * @param {string} message
    * @returns {{ok: boolean, logId: string|null}}
    */
-  insertExecutionLog(executionId, deviceId, action, data, details, statusLabel, message) {
-    const levelMap = { success: "info", error: "error", warning: "warn", info: "info" };
+  insertExecutionLog(
+    executionId,
+    deviceId,
+    action,
+    data,
+    details,
+    statusLabel,
+    message,
+  ) {
+    const levelMap = {
+      success: "info",
+      error: "error",
+      warning: "warn",
+      info: "info",
+    };
     const level = levelMap[statusLabel] || "info";
     // execution_logs.status check: only pending, running, completed, failed, skipped
-    const statusMap = { success: "completed", error: "failed", warning: "failed", info: "completed" };
+    const statusMap = {
+      success: "completed",
+      error: "failed",
+      warning: "failed",
+      info: "completed",
+    };
     const status = statusMap[statusLabel] || "completed";
 
     const entry = {
@@ -568,8 +766,13 @@ class SupabaseSync {
 
     // Drop oldest entries if buffer exceeds hard cap
     if (this._logBuffer.length >= this._LOG_MAX_BUFFER) {
-      const dropped = this._logBuffer.splice(0, this._logBuffer.length - this._LOG_MAX_BUFFER + 1);
-      console.warn(`[Supabase] Log buffer overflow — dropped ${dropped.length} oldest entries`);
+      const dropped = this._logBuffer.splice(
+        0,
+        this._logBuffer.length - this._LOG_MAX_BUFFER + 1,
+      );
+      console.warn(
+        `[Supabase] Log buffer overflow — dropped ${dropped.length} oldest entries`,
+      );
     }
 
     this._logBuffer.push(entry);
@@ -603,7 +806,9 @@ class SupabaseSync {
         // Put entries back for retry
         this._logBuffer.unshift(...entries);
         this.logStats.failed += entries.length;
-        console.error(`[Supabase] Batch log insert failed (${entries.length} entries): ${error.message}`);
+        console.error(
+          `[Supabase] Batch log insert failed (${entries.length} entries): ${error.message}`,
+        );
         this._flushing = false;
         return;
       }
@@ -637,9 +842,13 @@ class SupabaseSync {
         if (!fs.existsSync(logDir)) {
           fs.mkdirSync(logDir, { recursive: true });
         }
-        const lines = entries.map(e =>
-          `${new Date().toISOString()} [${e.level}] exec=${e.execution_id} device=${e.device_id || "-"} status=${e.status} ${e.message || ""}`
-        ).join("\n") + "\n";
+        const lines =
+          entries
+            .map(
+              (e) =>
+                `${new Date().toISOString()} [${e.level}] exec=${e.execution_id} device=${e.device_id || "-"} status=${e.status} ${e.message || ""}`,
+            )
+            .join("\n") + "\n";
         fs.appendFile(logFile, lines, () => {});
       } catch (_) {
         // Local file logging is best-effort
@@ -680,7 +889,9 @@ class SupabaseSync {
   async flushAndClose() {
     this._stopFlushTimer();
     if (this._logBuffer.length > 0) {
-      console.log(`[Supabase] Flushing ${this._logBuffer.length} remaining log entries...`);
+      console.log(
+        `[Supabase] Flushing ${this._logBuffer.length} remaining log entries...`,
+      );
       await this._flushLogBuffer();
     }
   }
@@ -702,11 +913,16 @@ class SupabaseSync {
    * @returns {Promise<{status: string, channel: object}>}
    */
   subscribeToBroadcast(pcId, callback, timeoutMs = 10000) {
-    console.log(`[Supabase] Subscribing to Broadcast room:tasks for PC ${pcId}`);
+    console.log(
+      `[Supabase] Subscribing to Broadcast room:tasks for PC ${pcId}`,
+    );
 
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        resolve({ status: this.broadcastStatus || "TIMEOUT", channel: this.broadcastSubscription });
+        resolve({
+          status: this.broadcastStatus || "TIMEOUT",
+          channel: this.broadcastSubscription,
+        });
       }, timeoutMs);
 
       this.broadcastSubscription = this.supabase
@@ -734,14 +950,20 @@ class SupabaseSync {
             this.broadcastReceivedCount++;
             this.lastTaskReceivedAt = Date.now();
             this.lastTaskReceivedVia = "broadcast";
-            console.log(`[Supabase] [Broadcast] 태스크 재배정 수신: ${task.id}`);
+            console.log(
+              `[Supabase] [Broadcast] 태스크 재배정 수신: ${task.id}`,
+            );
             callback(task);
           }
         })
         .subscribe((status) => {
           this.broadcastStatus = status;
           console.log(`[Supabase] Broadcast room:tasks status: ${status}`);
-          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          if (
+            status === "SUBSCRIBED" ||
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT"
+          ) {
             clearTimeout(timeout);
             resolve({ status, channel: this.broadcastSubscription });
           }
@@ -764,7 +986,9 @@ class SupabaseSync {
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error(`[Supabase] getPendingTaskQueueItems failed: ${error.message}`);
+      console.error(
+        `[Supabase] getPendingTaskQueueItems failed: ${error.message}`,
+      );
       return [];
     }
     return data || [];
@@ -784,13 +1008,14 @@ class SupabaseSync {
       type: taskConfig.type || "youtube",
       task_type: taskConfig.taskType || taskConfig.task_type || "view_farm",
       device_count: taskConfig.deviceCount || taskConfig.device_count || 20,
-      payload: taskConfig.variables || taskConfig.payload || {
-        watchPercent: 80,
-        commentProb: 10,
-        likeProb: 40,
-        saveProb: 5,
-        subscribeToggle: false,
-      },
+      payload: taskConfig.variables ||
+        taskConfig.payload || {
+          watchPercent: 80,
+          commentProb: 10,
+          likeProb: 40,
+          saveProb: 5,
+          subscribeToggle: false,
+        },
       status: "pending",
       pc_id: pcId,
     };
@@ -802,7 +1027,9 @@ class SupabaseSync {
       .single();
 
     if (taskErr) {
-      console.error(`[Supabase] createTaskFromQueueItem insert failed: ${taskErr.message}`);
+      console.error(
+        `[Supabase] createTaskFromQueueItem insert failed: ${taskErr.message}`,
+      );
       return null;
     }
 
@@ -816,7 +1043,9 @@ class SupabaseSync {
       .eq("id", item.id);
 
     if (updateErr) {
-      console.error(`[Supabase] createTaskFromQueueItem queue update failed: ${updateErr.message}`);
+      console.error(
+        `[Supabase] createTaskFromQueueItem queue update failed: ${updateErr.message}`,
+      );
     }
     return task;
   }
@@ -829,11 +1058,16 @@ class SupabaseSync {
    * @returns {Promise<{status: string, channel: object}>}
    */
   subscribeToTaskQueueAndCommands(pcNumber, callbacks, timeoutMs = 10000) {
-    console.log(`[Supabase] Subscribing to task_queue + commands for ${pcNumber}`);
+    console.log(
+      `[Supabase] Subscribing to task_queue + commands for ${pcNumber}`,
+    );
 
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        resolve({ status: this._workerChannelStatus || "TIMED_OUT", channel: this._workerChannel });
+        resolve({
+          status: this._workerChannelStatus || "TIMED_OUT",
+          channel: this._workerChannel,
+        });
       }, timeoutMs);
 
       this._workerChannel = this.supabase
@@ -851,7 +1085,7 @@ class SupabaseSync {
               console.log(`[Supabase] [task_queue] 수신: ${payload.new.id}`);
               callbacks.onTaskQueue(payload.new);
             }
-          }
+          },
         )
         .on(
           "postgres_changes",
@@ -866,12 +1100,16 @@ class SupabaseSync {
               console.log(`[Supabase] [commands] 수신: ${payload.new.id}`);
               callbacks.onCommand(payload.new);
             }
-          }
+          },
         )
         .subscribe((status) => {
           this._workerChannelStatus = status;
           console.log(`[Supabase] worker-${pcNumber} status: ${status}`);
-          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          if (
+            status === "SUBSCRIBED" ||
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT"
+          ) {
             clearTimeout(timeout);
             resolve({ status, channel: this._workerChannel });
           }
@@ -892,7 +1130,10 @@ class SupabaseSync {
 
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        resolve({ status: this.pgChangesStatus || "TIMEOUT", channel: this.taskSubscription });
+        resolve({
+          status: this.pgChangesStatus || "TIMEOUT",
+          channel: this.taskSubscription,
+        });
       }, timeoutMs);
 
       this.taskSubscription = this.supabase
@@ -909,9 +1150,11 @@ class SupabaseSync {
             this.pgChangesReceivedCount++;
             this.lastTaskReceivedAt = Date.now();
             this.lastTaskReceivedVia = "pg_changes";
-            console.log(`[Supabase] [pg_changes] 태스크 수신: ${payload.new.id}`);
+            console.log(
+              `[Supabase] [pg_changes] 태스크 수신: ${payload.new.id}`,
+            );
             callback(payload.new);
-          }
+          },
         )
         .on(
           "postgres_changes",
@@ -922,19 +1165,28 @@ class SupabaseSync {
             filter: `pc_id=eq.${pcId}`,
           },
           (payload) => {
-            if (payload.new.status === "pending" && payload.old.status !== "pending") {
+            if (
+              payload.new.status === "pending" &&
+              payload.old.status !== "pending"
+            ) {
               this.pgChangesReceivedCount++;
               this.lastTaskReceivedAt = Date.now();
               this.lastTaskReceivedVia = "pg_changes";
-              console.log(`[Supabase] [pg_changes] 태스크 재배정 수신: ${payload.new.id}`);
+              console.log(
+                `[Supabase] [pg_changes] 태스크 재배정 수신: ${payload.new.id}`,
+              );
               callback(payload.new);
             }
-          }
+          },
         )
         .subscribe((status) => {
           this.pgChangesStatus = status;
           console.log(`[Supabase] postgres_changes status: ${status}`);
-          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          if (
+            status === "SUBSCRIBED" ||
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT"
+          ) {
             clearTimeout(timeout);
             resolve({ status, channel: this.taskSubscription });
           }

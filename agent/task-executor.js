@@ -1360,6 +1360,45 @@ class TaskExecutor {
   }
 
   /**
+   * Run watch on a single device (for task_devices runner adapter).
+   * @param {string} deviceTarget - connection_id ?? serial
+   * @param {object} config - { video_url?, video_id?, duration_sec?, ... }
+   * @returns {Promise<{actualDurationSec?: number, watchPercentage?: number}>}
+   */
+  async runWatchForDevice(deviceTarget, config) {
+    const videoUrl =
+      config.video_url ||
+      (config.video_id &&
+        `https://www.youtube.com/watch?v=${config.video_id}`) ||
+      null;
+    if (!videoUrl) {
+      log.warn("[TaskExecutor] runWatchForDevice: no video_url/video_id in config");
+      return {};
+    }
+    const durationSec = Math.min(
+      Number(config.duration_sec) || 60,
+      300,
+    );
+    const engagementConfig = {
+      probLike: config.probLike ?? DEFAULT_PROBS.like,
+      probComment: config.probComment ?? DEFAULT_PROBS.comment,
+      probSubscribe: DEFAULT_PROBS.subscribe,
+      probPlaylist: DEFAULT_PROBS.playlist,
+      channelName: "",
+      videoId: config.video_id || "",
+      warmupSec: 0,
+    };
+    return this._watchVideoOnDevice(
+      deviceTarget,
+      videoUrl,
+      durationSec,
+      config.keyword || null,
+      config.video_title || config.title || null,
+      engagementConfig,
+    );
+  }
+
+  /**
    * Execute a task
    * @param {object} task - Task row from Supabase
    */
