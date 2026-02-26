@@ -426,7 +426,7 @@ function RightPanel({ data, health }: {
   data: RealtimeData | null;
   health: HealthData | undefined;
 }) {
-  const [time, setTime] = useState(new Date());
+  const [time, setTime] = useState<Date | null>(null);
 
   const { data: errorsData } = useSWR<ErrorsData>(
     "/api/dashboard/errors?hours=24",
@@ -435,6 +435,9 @@ function RightPanel({ data, health }: {
   );
 
   useEffect(() => {
+    // Set initial time immediately on mount (client-side only)
+    setTime(new Date());
+    // Then update every second
     const t = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -469,13 +472,13 @@ function RightPanel({ data, health }: {
       {/* Clock */}
       <div className="text-right">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {time.toLocaleDateString("ko-KR", { weekday: "long" })}
+          {time ? time.toLocaleDateString("ko-KR", { weekday: "long" }) : " "}
         </div>
         <div className="text-xs text-muted-foreground">
-          {time.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}
+          {time ? time.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" }) : " "}
         </div>
         <div className="mt-1 font-mono text-5xl font-light text-foreground tracking-tight">
-          {time.toLocaleTimeString("ko-KR", { hour12: false })}
+          {time ? time.toLocaleTimeString("ko-KR", { hour12: false }) : "00:00:00"}
         </div>
       </div>
 
@@ -678,4 +681,4 @@ export default function DashboardPage() {
       <RightPanel data={realtime ?? null} health={health} />
     </div>
   );
-}
+}
