@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSupportedAction, YOUTUBE_COMMANDER_ACTIONS } from "../commander-actions";
+import {
+  isSupportedAction,
+  YOUTUBE_COMMANDER_ACTIONS,
+} from "../commander-actions";
 
 export const dynamic = "force-dynamic";
 
-type CommandItem = { action: string; params?: Record<string, unknown>; fail_stop?: boolean };
+type CommandItem = {
+  action: string;
+  params?: Record<string, unknown>;
+  fail_stop?: boolean;
+};
 type PipelineBody = {
   commands: CommandItem[];
   step_delay?: number;
@@ -20,10 +27,13 @@ type PipelineBody = {
 async function resolveTargetDevices(
   supabase: ReturnType<typeof createSupabaseServerClient>,
   pc_id: string | null,
-  devicesHint?: string
+  devicesHint?: string,
 ): Promise<{ target_devices: string[]; devicesLabel: string }> {
   if (devicesHint && devicesHint !== "all") {
-    const list = devicesHint.split(",").map((s) => s.trim()).filter(Boolean);
+    const list = devicesHint
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     return { target_devices: list, devicesLabel: devicesHint };
   }
   if (!pc_id) {
@@ -34,7 +44,9 @@ async function resolveTargetDevices(
     .select("serial, connection_id")
     .eq("pc_id", pc_id)
     .in("status", ["online", "busy"]);
-  const targets = (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
+  const targets = (data || [])
+    .map((d) => d.connection_id || d.serial)
+    .filter(Boolean);
   return { target_devices: targets, devicesLabel: targets.join(",") };
 }
 
@@ -46,7 +58,7 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(commands) || commands.length === 0) {
       return NextResponse.json(
         { error: "commands (non-empty array) is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -55,17 +67,27 @@ export async function POST(request: NextRequest) {
       .map((c) => c.action);
     if (unknown.length > 0) {
       return NextResponse.json(
-        { error: `Unknown actions: ${unknown.join(", ")}`, available: Object.keys(YOUTUBE_COMMANDER_ACTIONS) },
-        { status: 400 }
+        {
+          error: `Unknown actions: ${unknown.join(", ")}`,
+          available: Object.keys(YOUTUBE_COMMANDER_ACTIONS),
+        },
+        { status: 400 },
       );
     }
 
     const supabase = createSupabaseServerClient();
-    const { target_devices, devicesLabel } = await resolveTargetDevices(supabase, pc_id ?? null, devicesHint);
+    const { target_devices, devicesLabel } = await resolveTargetDevices(
+      supabase,
+      pc_id ?? null,
+      devicesHint,
+    );
     if (target_devices.length === 0) {
       return NextResponse.json(
-        { error: "No target devices (set pc_id and ensure online/busy devices, or pass devices list)" },
-        { status: 400 }
+        {
+          error:
+            "No target devices (set pc_id and ensure online/busy devices, or pass devices list)",
+        },
+        { status: 400 },
       );
     }
 
@@ -95,18 +117,24 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({
-      success: true,
-      task_id: task.id,
-      status: task.status,
-      created_at: task.created_at,
-      command_count: commands.length,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        task_id: task.id,
+        status: task.status,
+        created_at: task.created_at,
+        command_count: commands.length,
+      },
+      { status: 201 },
+    );
   } catch (err) {
     console.error("[youtube/pipeline]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to create pipeline task" },
-      { status: 500 }
+      {
+        error:
+          err instanceof Error ? err.message : "Failed to create pipeline task",
+      },
+      { status: 500 },
     );
   }
 }

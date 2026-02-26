@@ -179,9 +179,8 @@ export async function createBatchTask(options: BatchTaskOptions) {
         .select("id, serial")
         .eq("pc_id", pc.id)
         .limit(Math.min(perPcCap, 100));
-      const { data: devices } = await devicesQuery.returns<
-        Array<{ id: string; serial: string }>
-      >();
+      const { data: devices } =
+        await devicesQuery.returns<Array<{ id: string; serial: string }>>();
       const deviceList = devices ?? [];
       const cap = deviceList.length;
       if (cap === 0) continue;
@@ -191,16 +190,23 @@ export async function createBatchTask(options: BatchTaskOptions) {
         const serial = dev?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
         const baseConfig = deviceConfigsForPc[i];
         const configWithWorkflow = buildWatchWorkflowConfig({
+          title: "",
+          keyword: baseConfig.video_id ?? "",
+          expectedTitleContains: [],
+          minWatchSec: 240,
+          maxWatchSec: 420,
+          minDurationSec: 30,
+          maxDurationSec: 7200,
+          probLike: 0.3,
+          probComment: 0.05,
+          probScrap: 0.1,
           videoId: baseConfig.video_id,
-          videoUrl: baseConfig.video_url,
-          durationSec: 60,
-          actions: {
-            probLike: 40,
-            probComment: 10,
-            probScrap: 5,
-          },
         });
-        const configJson: Json = { ...baseConfig, ...configWithWorkflow } as Json;
+        const configJson = {
+          ...configWithWorkflow,
+          video_url: baseConfig.video_url,
+          video_id: baseConfig.video_id,
+        } as unknown as Json;
         const row: TaskDeviceInsertRow = {
           task_id: task.id,
           device_serial: serial,
@@ -227,7 +233,8 @@ export async function createBatchTask(options: BatchTaskOptions) {
         .eq("worker_id", options.workerId)
         .limit(deviceCount)
         .returns<Array<{ serial: string }>>();
-      if (!devicesError) deviceSerials = (devices ?? []).map((d: { serial: any; }) => d.serial);
+      if (!devicesError)
+        deviceSerials = (devices ?? []).map((d: { serial: any }) => d.serial);
     }
     while (deviceSerials.length < deviceCount) {
       deviceSerials.push(`device_${deviceSerials.length + 1}`);
@@ -235,11 +242,16 @@ export async function createBatchTask(options: BatchTaskOptions) {
     for (let i = 0; i < deviceCount; i++) {
       const baseConfig = deviceConfigs[i];
       const configWithWorkflow = buildWatchWorkflowConfig({
+        title: "",
+        keyword: baseConfig.video_id ?? "",
+        expectedTitleContains: [],
         videoId: baseConfig.video_id,
-        videoUrl: baseConfig.video_url,
-        durationSec: 60,
       });
-      const configJson: Json = { ...baseConfig, ...configWithWorkflow } as Json;
+      const configJson = {
+        ...configWithWorkflow,
+        video_url: baseConfig.video_url,
+        video_id: baseConfig.video_id,
+      } as unknown as Json;
       allTaskDevices.push({
         task_id: task.id,
         device_serial: deviceSerials[i],

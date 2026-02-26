@@ -3,11 +3,11 @@
  *
  * 유휴 기기에 미션/워밍업 배분, 동시 실행 수 제한, 시간대별 활동량 조절.
  */
-const { getLogger } = require('../common/logger');
-const { sleep, randInt } = require('../adb/helpers');
-const { CONSTANTS } = require('../common/config');
+const { getLogger } = require("../common/logger");
+const { sleep, randInt } = require("../adb/helpers");
+const { CONSTANTS } = require("../common/config");
 
-const log = getLogger('orchestrator.scheduler');
+const log = getLogger("orchestrator.scheduler");
 
 /**
  * 시간대별 활동량 비율 (0.0 ~ 1.0)
@@ -22,14 +22,34 @@ const log = getLogger('orchestrator.scheduler');
  *   밤(23시):     65% (65대) — 점진 감소
  */
 const HOURLY_ACTIVITY = {
-  0: 0.55, 1: 0.50, 2: 0.50, 3: 0.50, 4: 0.50, 5: 0.55,
-  6: 0.70, 7: 0.75, 8: 0.80, 9: 0.90, 10: 0.95, 11: 1.0,
-  12: 1.0, 13: 0.95, 14: 0.95, 15: 0.95, 16: 1.0, 17: 1.0,
-  18: 0.95, 19: 0.95, 20: 0.90, 21: 0.85, 22: 0.80, 23: 0.65,
+  0: 0.55,
+  1: 0.5,
+  2: 0.5,
+  3: 0.5,
+  4: 0.5,
+  5: 0.55,
+  6: 0.7,
+  7: 0.75,
+  8: 0.8,
+  9: 0.9,
+  10: 0.95,
+  11: 1.0,
+  12: 1.0,
+  13: 0.95,
+  14: 0.95,
+  15: 0.95,
+  16: 1.0,
+  17: 1.0,
+  18: 0.95,
+  19: 0.95,
+  20: 0.9,
+  21: 0.85,
+  22: 0.8,
+  23: 0.65,
 };
 
 /** 워밍업 vs 미션 비율 */
-const WARMUP_RATIO = 0.30;
+const WARMUP_RATIO = 0.3;
 
 class DeviceScheduler {
   /**
@@ -70,19 +90,22 @@ class DeviceScheduler {
    */
   async assignMissions() {
     if (this._paused) {
-      log.info('scheduler_paused');
+      log.info("scheduler_paused");
       return { assigned: 0, warmup: 0, mission: 0, skipped: 0 };
     }
 
     const available = this.maxConcurrent - this._running.size;
     if (available <= 0) {
-      log.debug('no_slots', { running: this._running.size, max: this.maxConcurrent });
+      log.debug("no_slots", {
+        running: this._running.size,
+        max: this.maxConcurrent,
+      });
       return { assigned: 0, warmup: 0, mission: 0, skipped: 0 };
     }
 
     // 온라인 기기 목록
     const serials = await this.deviceService.getOnlineSerials();
-    const idleSerials = serials.filter(s => !this._running.has(s));
+    const idleSerials = serials.filter((s) => !this._running.has(s));
 
     if (idleSerials.length === 0) {
       return { assigned: 0, warmup: 0, mission: 0, skipped: 0 };
@@ -106,7 +129,7 @@ class DeviceScheduler {
         this._running.add(serial);
         warmup++;
         assigned++;
-        log.info('warmup_assigned', { serial, videoId: warmupVideo.id });
+        log.info("warmup_assigned", { serial, videoId: warmupVideo.id });
       } else {
         skipped++;
       }
@@ -122,7 +145,7 @@ class DeviceScheduler {
         this._running.add(serial);
         mission++;
         assigned++;
-        log.info('mission_assigned_queue', { serial, queueId: queued.id });
+        log.info("mission_assigned_queue", { serial, queueId: queued.id });
         continue;
       }
 
@@ -132,7 +155,7 @@ class DeviceScheduler {
         this._running.add(serial);
         mission++;
         assigned++;
-        log.info('mission_assigned_video', { serial, videoId: nextMission.id });
+        log.info("mission_assigned_video", { serial, videoId: nextMission.id });
         continue;
       }
 
@@ -140,7 +163,13 @@ class DeviceScheduler {
     }
 
     if (assigned > 0) {
-      log.info('assign_complete', { assigned, warmup, mission, skipped, rate: this.currentActivityRate });
+      log.info("assign_complete", {
+        assigned,
+        warmup,
+        mission,
+        skipped,
+        rate: this.currentActivityRate,
+      });
     }
 
     return { assigned, warmup, mission, skipped };
@@ -152,7 +181,7 @@ class DeviceScheduler {
    */
   releaseDevice(serial) {
     this._running.delete(serial);
-    log.debug('device_released', { serial, running: this._running.size });
+    log.debug("device_released", { serial, running: this._running.size });
   }
 
   /**
@@ -174,17 +203,19 @@ class DeviceScheduler {
   /** 전체 일시 중지 */
   pause() {
     this._paused = true;
-    log.warn('scheduler_paused');
+    log.warn("scheduler_paused");
   }
 
   /** 재개 */
   resume() {
     this._paused = false;
-    log.info('scheduler_resumed');
+    log.info("scheduler_resumed");
   }
 
   /** 일시 중지 상태 */
-  get isPaused() { return this._paused; }
+  get isPaused() {
+    return this._paused;
+  }
 }
 
 module.exports = { DeviceScheduler, HOURLY_ACTIVITY };

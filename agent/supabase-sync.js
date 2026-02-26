@@ -463,11 +463,14 @@ class SupabaseSync {
    * @returns {Promise<Array>} Claimed task_device rows
    */
   async claimNextTaskDevices(pcId, limit = 10, leaseMinutes = 5) {
-    const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
-      runner_pc_id: pcId,
-      max_to_claim: Math.min(Math.max(0, limit), 100),
-      lease_minutes: leaseMinutes,
-    });
+    const { data, error } = await this.supabase.rpc(
+      "claim_task_devices_for_pc",
+      {
+        runner_pc_id: pcId,
+        max_to_claim: Math.min(Math.max(0, limit), 100),
+        lease_minutes: leaseMinutes,
+      },
+    );
     if (error) {
       console.error(
         `[Supabase] claim_task_devices_for_pc failed: ${error.message}`,
@@ -503,17 +506,21 @@ class SupabaseSync {
    * @param {object} [result]
    * @param {number} [progress=100]
    */
-  async completeTaskDevice(taskDeviceId, pcId, resultJson = null, _progress = 100) {
-    const payload = resultJson != null ? resultJson : { progress: _progress ?? 100 };
+  async completeTaskDevice(
+    taskDeviceId,
+    pcId,
+    resultJson = null,
+    _progress = 100,
+  ) {
+    const payload =
+      resultJson != null ? resultJson : { progress: _progress ?? 100 };
     const { error } = await this.supabase.rpc("complete_task_device", {
       task_device_id: taskDeviceId,
       runner_pc_id: pcId,
       result_json: payload,
     });
     if (error) {
-      console.error(
-        `[Supabase] complete_task_device failed: ${error.message}`,
-      );
+      console.error(`[Supabase] complete_task_device failed: ${error.message}`);
     }
   }
 
@@ -524,13 +531,21 @@ class SupabaseSync {
    * @param {string} errorMessage
    * @param {boolean} [retryable=true]
    */
-  async failOrRetryTaskDevice(taskDeviceId, pcId, errorMessage, retryable = true) {
-    const { data, error } = await this.supabase.rpc("fail_or_retry_task_device", {
-      task_device_id: taskDeviceId,
-      runner_pc_id: pcId,
-      error_text: errorMessage,
-      retryable,
-    });
+  async failOrRetryTaskDevice(
+    taskDeviceId,
+    pcId,
+    errorMessage,
+    retryable = true,
+  ) {
+    const { data, error } = await this.supabase.rpc(
+      "fail_or_retry_task_device",
+      {
+        task_device_id: taskDeviceId,
+        runner_pc_id: pcId,
+        error_text: errorMessage,
+        retryable,
+      },
+    );
     if (error) {
       console.error(
         `[Supabase] fail_or_retry_task_device failed: ${error.message}`,
@@ -551,13 +566,18 @@ class SupabaseSync {
   /** RPC claim_task_devices_for_pc. Returns claimed task_device rows. */
   async claimTaskDevicesForPc(pcId, limit = 10) {
     const leaseMin = 5;
-    const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
-      runner_pc_id: pcId,
-      max_to_claim: Math.min(Math.max(0, limit), 100),
-      lease_minutes: leaseMin,
-    });
+    const { data, error } = await this.supabase.rpc(
+      "claim_task_devices_for_pc",
+      {
+        runner_pc_id: pcId,
+        max_to_claim: Math.min(Math.max(0, limit), 100),
+        lease_minutes: leaseMin,
+      },
+    );
     if (error) {
-      console.error(`[Supabase] claim_task_devices_for_pc failed: ${error.message}`);
+      console.error(
+        `[Supabase] claim_task_devices_for_pc failed: ${error.message}`,
+      );
       return [];
     }
     return Array.isArray(data) ? data : [];
@@ -571,7 +591,9 @@ class SupabaseSync {
       lease_minutes: leaseMinutes,
     });
     if (error) {
-      console.error(`[Supabase] renew_task_device_lease failed: ${error.message}`);
+      console.error(
+        `[Supabase] renew_task_device_lease failed: ${error.message}`,
+      );
     }
   }
 
@@ -1052,33 +1074,68 @@ class SupabaseSync {
   }
 
   /**
-   * Default workflow config for task_devices (matches lib/workflow-templates.ts structure).
-   * @param {object} opts - { videoId?, videoUrl?, durationSec?, keyword? }
+   * Default workflow config for task_devices (MAIN WATCH_BY_TITLE_V1 shape; keys fixed).
+   * @param {object} opts - { title?, keyword?, videoId?, videoUrl?, expectedTitleContains? }
    * @returns {object}
    */
   _defaultWatchWorkflowConfig(opts = {}) {
-    const durationSec = opts.durationSec ?? 60;
     return {
+      schemaVersion: 1,
       workflow: {
-        schemaVersion: 1,
-        type: "view_farm",
-        name: "default",
+        type: "MAIN",
+        name: "WATCH_BY_TITLE_V1",
         steps: [
-          { module: "search_video", waitSecAfter: 10, params: { keyword: opts.keyword } },
-          { module: "watch_video", waitSecAfter: 60, params: { durationSec } },
-          { module: "video_actions", waitSecAfter: 30 },
+          { module: "yt_preflight", waitSecAfter: 1, params: {} },
+          {
+            module: "yt_search_video",
+            waitSecAfter: 2,
+            params: { mode: "title" },
+          },
+          {
+            module: "yt_watch_video",
+            waitSecAfter: 1,
+            params: {
+              minWatchSec: opts.minWatchSec ?? 240,
+              maxWatchSec: opts.maxWatchSec ?? 420,
+            },
+          },
+          {
+            module: "yt_actions",
+            waitSecAfter: 0,
+            params: { like: true, comment: true, scrap: true },
+          },
         ],
+      },
+      video: {
+        videoId: opts.videoId ?? null,
+        title: opts.title ?? "",
+        keyword: opts.keyword ?? "",
+        channelId: opts.channelId ?? null,
+        verify: {
+          expectedTitleContains: opts.expectedTitleContains ?? [],
+          minDurationSec: opts.minDurationSec ?? 30,
+          maxDurationSec: opts.maxDurationSec ?? 7200,
+        },
+      },
+      actions: {
+        policy: {
+          probLike: opts.probLike ?? 0.3,
+          probComment: opts.probComment ?? 0.05,
+          probScrap: opts.probScrap ?? 0.1,
+          commentTemplates: opts.commentTemplates ?? [
+            "좋네요",
+            "재밌게 봤습니다",
+            "영상 잘 보고 갑니다",
+          ],
+        },
+        seed: opts.seed ?? null,
+      },
+      runtime: {
+        attempt: 0,
+        timeouts: { stepTimeoutSec: 180, taskTimeoutSec: 900 },
       },
       ...(opts.videoId && { video_id: opts.videoId }),
       ...(opts.videoUrl && { video_url: opts.videoUrl }),
-      duration_sec: durationSec,
-      actions: {
-        policy: {
-          probLike: 40,
-          probComment: 10,
-          probScrap: 5,
-        },
-      },
     };
   }
 
@@ -1100,7 +1157,9 @@ class SupabaseSync {
 
     if (devErr || !devices || devices.length === 0) {
       if (devErr) {
-        console.error(`[Supabase] fanOutTaskDevicesForTask devices: ${devErr.message}`);
+        console.error(
+          `[Supabase] fanOutTaskDevicesForTask devices: ${devErr.message}`,
+        );
       }
       return 0;
     }
@@ -1110,10 +1169,12 @@ class SupabaseSync {
       taskConfig.videoUrl ||
       (videoId ? `https://www.youtube.com/watch?v=${videoId}` : null);
     const baseConfig = this._defaultWatchWorkflowConfig({
-      videoId,
+      title: taskConfig.title ?? "",
+      keyword: taskConfig.keyword ?? videoId ?? "",
+      videoId: videoId ?? null,
       videoUrl,
-      durationSec: taskConfig.durationSec ?? taskConfig.duration_sec ?? 60,
-      keyword: taskConfig.keyword,
+      minWatchSec: taskConfig.minWatchSec ?? 240,
+      maxWatchSec: taskConfig.maxWatchSec ?? 420,
     });
 
     const rows = devices.map((d) => ({
@@ -1127,10 +1188,15 @@ class SupabaseSync {
 
     const { data, error } = await this.supabase
       .from("task_devices")
-      .upsert(rows, { onConflict: "task_id,device_id", ignoreDuplicates: true });
+      .upsert(rows, {
+        onConflict: "task_id,device_id",
+        ignoreDuplicates: true,
+      });
 
     if (error) {
-      console.error(`[Supabase] fanOutTaskDevicesForTask insert failed: ${error.message}`);
+      console.error(
+        `[Supabase] fanOutTaskDevicesForTask insert failed: ${error.message}`,
+      );
       return 0;
     }
     return Array.isArray(data) ? data.length : rows.length;
@@ -1204,7 +1270,10 @@ class SupabaseSync {
 
     const { error: tdErr } = await this.supabase
       .from("task_devices")
-      .upsert(rows, { onConflict: "task_id,device_id", ignoreDuplicates: true });
+      .upsert(rows, {
+        onConflict: "task_id,device_id",
+        ignoreDuplicates: true,
+      });
 
     if (tdErr) {
       console.error(

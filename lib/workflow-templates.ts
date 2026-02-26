@@ -1,126 +1,114 @@
 /**
  * Shared workflow templates for task_devices.config.
- * schemaVersion + steps (module, waitSecAfter, params?) + video.verify + actions.policy.
+ * Shape fixed: schemaVersion, workflow (type, name, steps), video, actions, runtime.
+ * Key names must not be changed.
  */
 
 export const WORKFLOW_SCHEMA_VERSION = 1;
 
-export type WorkflowStep = {
-  module: string;
-  waitSecAfter: number;
-  params?: Record<string, unknown>;
-};
-
-export type VideoVerify = {
-  titleContains?: string;
+export type WatchWorkflowInput = {
+  title: string;
+  keyword: string;
+  expectedTitleContains?: string[];
+  minWatchSec?: number;
+  maxWatchSec?: number;
   minDurationSec?: number;
   maxDurationSec?: number;
-};
-
-export type ActionsPolicy = {
   probLike?: number;
   probComment?: number;
   probScrap?: number;
-  likeTemplate?: string;
   commentTemplates?: string[];
-};
-
-export type WatchWorkflowInput = {
-  videoId?: string;
-  videoUrl?: string;
-  title?: string;
-  keyword?: string;
-  durationSec?: number;
-  verify?: VideoVerify;
-  actions?: ActionsPolicy;
-  steps?: WorkflowStep[];
-};
-
-export type MaintenanceWorkflowInput = {
-  steps?: WorkflowStep[];
+  seed?: string | null;
+  /** Optional: when creating from video record */
+  videoId?: string | null;
+  channelId?: string | null;
 };
 
 /**
- * 검색/시청/액션 템플릿 (task_devices.config.workflow)
+ * MAIN(시청) — 검색/시청/액션. Shape fixed (키 이름 변경 금지).
  */
-export function buildWatchWorkflowConfig(input: WatchWorkflowInput): {
-  workflow: {
-    schemaVersion: number;
-    type: string;
-    name: string;
-    steps: WorkflowStep[];
-  };
-  video_id?: string;
-  video_url?: string;
-  title?: string;
-  keyword?: string;
-  duration_sec?: number;
-  video?: { verify?: VideoVerify };
-  actions?: { policy: ActionsPolicy };
-} {
-  const steps: WorkflowStep[] =
-    input.steps ??
-    [
-      { module: "search_video", waitSecAfter: 10, params: { keyword: input.keyword } },
-      { module: "watch_video", waitSecAfter: 60, params: { durationSec: input.durationSec ?? 60 } },
-      { module: "video_actions", waitSecAfter: 30 },
-    ];
-
-  const videoUrl =
-    input.videoUrl ??
-    (input.videoId ? `https://www.youtube.com/watch?v=${input.videoId}` : undefined);
-
-  const policy: ActionsPolicy = {
-    probLike: 40,
-    probComment: 10,
-    probScrap: 5,
-    likeTemplate: "👍",
-    commentTemplates: ["좋아요", "유익해요"],
-    ...input.actions,
-  };
-
+export function buildWatchWorkflowConfig(input: WatchWorkflowInput) {
   return {
+    schemaVersion: 1,
     workflow: {
-      schemaVersion: WORKFLOW_SCHEMA_VERSION,
-      type: "view_farm",
-      name: "default",
-      steps,
+      type: "MAIN",
+      name: "WATCH_BY_TITLE_V1",
+      steps: [
+        { module: "yt_preflight", waitSecAfter: 1, params: {} },
+        {
+          module: "yt_search_video",
+          waitSecAfter: 2,
+          params: { mode: "title" },
+        },
+        {
+          module: "yt_watch_video",
+          waitSecAfter: 1,
+          params: {
+            minWatchSec: input.minWatchSec ?? 240,
+            maxWatchSec: input.maxWatchSec ?? 420,
+          },
+        },
+        {
+          module: "yt_actions",
+          waitSecAfter: 0,
+          params: { like: true, comment: true, scrap: true },
+        },
+      ],
     },
-    ...(input.videoId && { video_id: input.videoId }),
-    ...(videoUrl && { video_url: videoUrl }),
-    ...(input.title && { title: input.title }),
-    ...(input.keyword && { keyword: input.keyword }),
-    ...(input.durationSec != null && { duration_sec: input.durationSec }),
-    ...(input.verify && { video: { verify: input.verify } }),
-    actions: { policy },
-  };
+    video: {
+      videoId: input.videoId ?? null,
+      title: input.title ?? "",
+      keyword: input.keyword ?? "",
+      channelId: input.channelId ?? null,
+      verify: {
+        expectedTitleContains: input.expectedTitleContains ?? [],
+        minDurationSec: input.minDurationSec ?? 30,
+        maxDurationSec: input.maxDurationSec ?? 7200,
+      },
+    },
+    actions: {
+      policy: {
+        probLike: input.probLike ?? 0.3,
+        probComment: input.probComment ?? 0.05,
+        probScrap: input.probScrap ?? 0.1,
+        commentTemplates: input.commentTemplates ?? [
+          "좋네요",
+          "재밌게 봤습니다",
+          "영상 잘 보고 갑니다",
+        ],
+      },
+      seed: input.seed ?? null,
+    },
+    runtime: {
+      attempt: 0,
+      timeouts: {
+        stepTimeoutSec: 180,
+        taskTimeoutSec: 900,
+      },
+    },
+  } as const;
 }
 
 /**
- * ADB 최적화/재연결 템플릿 (간단)
+ * MAINTENANCE(유지보수) — adb 최적화/재연결. Shape fixed.
  */
-export function buildMaintenanceWorkflowConfig(
-  input: MaintenanceWorkflowInput = {},
-): {
-  workflow: {
-    schemaVersion: number;
-    type: string;
-    name: string;
-    steps: WorkflowStep[];
-  };
-} {
-  const steps: WorkflowStep[] =
-    input.steps ?? [
-      { module: "adb_optimize", waitSecAfter: 5 },
-      { module: "adb_reconnect", waitSecAfter: 10 },
-    ];
-
+export function buildMaintenanceWorkflowConfig(profile: string = "default") {
   return {
+    schemaVersion: 1,
     workflow: {
-      schemaVersion: WORKFLOW_SCHEMA_VERSION,
-      type: "maintenance",
-      name: "adb_optimize_reconnect",
-      steps,
+      type: "MAINTENANCE",
+      name: "DEVICE_OPTIMIZE_V1",
+      steps: [
+        { module: "adb_restart", waitSecAfter: 2, params: {} },
+        { module: "adb_optimize", waitSecAfter: 1, params: { profile } },
+      ],
     },
-  };
+    runtime: {
+      attempt: 0,
+      timeouts: {
+        stepTimeoutSec: 60,
+        taskTimeoutSec: 240,
+      },
+    },
+  } as const;
 }
