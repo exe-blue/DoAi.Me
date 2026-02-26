@@ -177,7 +177,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
         .from("devices")
         .select("id, serial")
         .eq("pc_id", pc.id)
-        .limit(Math.min(perPcCap, 20))
+        .limit(Math.min(perPcCap, 100))
         .returns<Array<{ id: string; serial: string }>>();
       const deviceList = devices ?? [];
       const cap = deviceList.length;
