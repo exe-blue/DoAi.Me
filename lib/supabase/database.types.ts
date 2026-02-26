@@ -695,12 +695,18 @@ export type Database = {
       }
       task_devices: {
         Row: {
+          claimed_by_pc_id: string | null
           completed_at: string | null
+          config: Json | null
           created_at: string | null
           device_serial: string
           duration_ms: number | null
           error: string | null
           id: string
+          last_error_at: string | null
+          lease_expires_at: string | null
+          pc_id: string | null
+          progress: number | null
           result: Json | null
           retry_count: number | null
           started_at: string | null
@@ -713,12 +719,18 @@ export type Database = {
           xiaowei_response: Json | null
         }
         Insert: {
+          claimed_by_pc_id?: string | null
           completed_at?: string | null
+          config?: Json | null
           created_at?: string | null
           device_serial: string
           duration_ms?: number | null
           error?: string | null
           id?: string
+          last_error_at?: string | null
+          lease_expires_at?: string | null
+          pc_id?: string | null
+          progress?: number | null
           result?: Json | null
           retry_count?: number | null
           started_at?: string | null
@@ -731,12 +743,18 @@ export type Database = {
           xiaowei_response?: Json | null
         }
         Update: {
+          claimed_by_pc_id?: string | null
           completed_at?: string | null
+          config?: Json | null
           created_at?: string | null
           device_serial?: string
           duration_ms?: number | null
           error?: string | null
           id?: string
+          last_error_at?: string | null
+          lease_expires_at?: string | null
+          pc_id?: string | null
+          progress?: number | null
           result?: Json | null
           retry_count?: number | null
           started_at?: string | null

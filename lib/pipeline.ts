@@ -184,11 +184,21 @@ export async function createBatchTask(options: BatchTaskOptions) {
       const deviceConfigsForPc = _distributeVideos(videos, cap, distribution);
       for (let i = 0; i < cap; i++) {
         const serial = serials[i]?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
+        const baseConfig = deviceConfigsForPc[i];
+        const configWithWorkflow: Json = {
+          ...baseConfig,
+          duration_sec: 60,
+          workflow: {
+            type: "view_farm",
+            name: "default",
+            steps: [...DEFAULT_WORKFLOW_STEPS],
+          },
+        };
         allTaskDevices.push({
           task_id: task.id,
           device_serial: serial,
           status: "pending",
-          config: deviceConfigsForPc[i] as Json,
+          config: configWithWorkflow,
           worker_id: options.workerId ?? null,
           pc_id: pc.id,
         });
@@ -208,17 +218,27 @@ export async function createBatchTask(options: BatchTaskOptions) {
         .eq("worker_id", options.workerId)
         .limit(deviceCount)
         .returns<Array<{ serial: string }>>();
-      if (!devicesError) deviceSerials = (devices ?? []).map((d) => d.serial);
+      if (!devicesError) deviceSerials = (devices ?? []).map((d: { serial: any; }) => d.serial);
     }
     while (deviceSerials.length < deviceCount) {
       deviceSerials.push(`device_${deviceSerials.length + 1}`);
     }
     for (let i = 0; i < deviceCount; i++) {
+      const baseConfig = deviceConfigs[i];
+      const configWithWorkflow: Json = {
+        ...baseConfig,
+        duration_sec: 60,
+        workflow: {
+          type: "view_farm",
+          name: "default",
+          steps: [...DEFAULT_WORKFLOW_STEPS],
+        },
+      };
       allTaskDevices.push({
         task_id: task.id,
         device_serial: deviceSerials[i],
         status: "pending",
-        config: deviceConfigs[i] as Json,
+        config: configWithWorkflow,
         worker_id: options.workerId ?? null,
       });
       allConfigs.push(deviceConfigs[i]);
@@ -271,6 +291,11 @@ function _priorityWeight(p: string | null): number {
       return 2;
   }
 }
+
+/** Default workflow steps for task_devices SSOT runner */
+const DEFAULT_WORKFLOW_STEPS = [
+  { module: "watch", waitSecAfter: 60 },
+] as const;
 
 function _distributeVideos(
   videos: Array<{ id: string; priority: string | null }>,
