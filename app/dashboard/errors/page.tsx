@@ -63,10 +63,10 @@ export default function ErrorsPage() {
   const [hours, setHours] = useState(24);
 
   const errorsKey = buildErrorsKey(hours);
-  const { data: errorsData, error: errorsError, isLoading: errorsLoading, mutate: mutateErrors } = useSWR(
-    errorsKey,
-    fetcher
-  );
+  const { data: errorsData, error: errorsError, isLoading: errorsLoading, mutate: mutateErrors } = useSWR<{
+    errors?: ErrorSummary[];
+    totalErrors?: number;
+  }>(errorsKey, fetcher);
 
   const logsKey = buildLogsKey(hours);
   const { data: logsData } = useSWR<{ logs: LogEntry[] }>(logsKey, fetcher);

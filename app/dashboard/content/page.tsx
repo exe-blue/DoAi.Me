@@ -217,10 +217,11 @@ export default function ContentPage() {
       body: { name, youtube_channel_id: youtubeChannelId },
       silent: true,
     });
-    if (!res.success || !res.data?.channel?.id) {
+    const data = res.data as { channel?: { id: string } } | undefined;
+    if (!res.success || !data?.channel?.id) {
       throw new Error(res.error || "채널 생성 실패");
     }
-    return (res.data as { channel: { id: string } }).channel.id;
+    return data.channel.id;
   };
 
   const handleFetchVideo = async () => {
@@ -259,7 +260,7 @@ export default function ContentPage() {
   const handleAddSubmit = async () => {
     if (!videoInfo) return;
     const alreadyCompleted = tasks.find(
-      (t) => t.videoId === videoInfo.videoId && (t.status === "completed" || t.status === "done")
+      (t) => t.videoId === videoInfo.videoId && ["completed", "done"].includes(t.status as string)
     );
     if (alreadyCompleted && !window.confirm("이미 완료된 영상입니다. 다시 실행하시겠습니까?")) {
       return;
@@ -522,7 +523,7 @@ export default function ContentPage() {
   };
 
   const handleRetry = async (taskId: string) => {
-    const res = await apiClient.post(`/api/tasks/${taskId}/retry`, { body: {} }, { silent: true });
+    const res = await apiClient.post(`/api/tasks/${taskId}/retry`, { body: {}, silent: true });
     if (res.success) {
       toast.success("재시도가 등록되었습니다.");
       mutate();

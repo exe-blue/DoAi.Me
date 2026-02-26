@@ -5,7 +5,8 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { createBatchTask } from "@/lib/pipeline";
 
-const tq = (sb: ReturnType<typeof createServerClient>) => sb.from("task_queue");
+const tq = (sb: ReturnType<typeof createServerClient>) =>
+  (sb as { from: (t: string) => ReturnType<ReturnType<typeof createServerClient>["from"]> }).from("task_queue");
 
 export type DispatchResult =
   | { ok: true; dispatched: 0; message: string; error?: string }
@@ -33,14 +34,22 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     return (a.created_at ?? "").localeCompare(b.created_at ?? "");
   });
 
-  const item = sorted[0];
-  const config = item.task_config || {};
-  const contentMode = config.contentMode ?? "single";
-  const videoId = config.videoId ?? config.video_id;
-  const channelId = config.channelId ?? config.channel_id;
+  const item = sorted[0] as {
+    id: string;
+    task_config?: Record<string, unknown>;
+    source?: string;
+    priority?: number;
+    created_at?: string;
+  };
+  const config = (item.task_config || {}) as Record<string, unknown>;
+  const contentMode = (config.contentMode as string | undefined) ?? "single";
+  const videoId = (config.videoId as string | undefined) ?? (config.video_id as string | undefined);
+  const channelId = (config.channelId as string | undefined) ?? (config.channel_id as string | undefined);
 
   if (!videoId || !channelId) {
-    await tq(supabase).update({ status: "cancelled" }).eq("id", item.id);
+    await (tq(supabase) as unknown as { update: (v: object) => { eq: (col: string, val: string) => Promise<unknown> } })
+      .update({ status: "cancelled" })
+      .eq("id", item.id);
     return {
       ok: true,
       dispatched: 0,
@@ -59,7 +68,7 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     variables: config.variables,
   });
 
-  await tq(supabase)
+  await (tq(supabase) as unknown as { update: (v: object) => { eq: (col: string, val: string) => Promise<unknown> } })
     .update({
       status: "dispatched",
       dispatched_at: new Date().toISOString(),
