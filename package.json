@@ -6,9 +6,9 @@
     "packages/*"
   ],
   "scripts": {
-    "preinstall": "node -e \"if (process.env.VERCEL || process.env.CI) process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
-    "prebuild": "node -e \"if (process.env.VERCEL || process.env.CI) process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
-    "pretest": "node -e \"if (process.env.VERCEL || process.env.CI) process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
+    "preinstall": "node -e \"if (process.env.VERCEL || process.env.CI || process.env.DOAI_ALLOW_NATIVE_NPM === '1' || process.env.SKIP_DEVCONTAINER_GUARD === '1' || process.platform === 'win32') process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
+    "prebuild": "node -e \"if (process.env.VERCEL || process.env.CI || process.env.DOAI_ALLOW_NATIVE_NPM === '1' || process.env.SKIP_DEVCONTAINER_GUARD === '1' || process.platform === 'win32') process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
+    "pretest": "node -e \"if (process.env.VERCEL || process.env.CI || process.env.DOAI_ALLOW_NATIVE_NPM === '1' || process.env.SKIP_DEVCONTAINER_GUARD === '1' || process.platform === 'win32') process.exit(0); require('child_process').execSync('node ./scripts/guard-devcontainer.mjs', {stdio:'inherit'})\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

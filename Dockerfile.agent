@@ -1,0 +1,17 @@
+# DoAi.Me Agent - Node PC 클라이언트 (Xiaowei WebSocket 연동)
+# 원격 PC에서 Docker로 실행 시, 호스트의 Xiaowei에 host.docker.internal:22222 로 접속.
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Agent 의존성만 설치 (agent/package.json)
+COPY agent/package.json agent/package-lock.json ./
+RUN npm ci --omit=dev
+
+# Agent 소스 (node_modules 제외는 .dockerignore)
+COPY agent/ ./
+
+# 로그는 볼륨으로 마운트 권장
+RUN mkdir -p logs
+
+ENTRYPOINT ["node", "agent.js"]

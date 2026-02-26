@@ -6,10 +6,21 @@
  * Why:
  * - Prevent WSL/Windows/Container mixing that causes huge diffs, EOL issues,
  *   "rollback-looking" behavior, and inconsistent builds.
+ *
+ * Override (원격 PC / Docker 빌드 등): DOAI_ALLOW_NATIVE_NPM=1 또는 SKIP_DEVCONTAINER_GUARD=1
  */
 
 import fs from "node:fs";
 import path from "node:path";
+
+// 원격 PC·네이티브 Windows 등에서 npm ci 허용
+if (process.env.DOAI_ALLOW_NATIVE_NPM === "1" || process.env.SKIP_DEVCONTAINER_GUARD === "1") {
+  process.exit(0);
+}
+// 네이티브 Windows 경로(C:\...)에서 실행 시 통과 (원격 PC Agent/Docker 빌드 등)
+if (process.platform === "win32" && /^[A-Za-z]:[\\/]/.test(process.cwd())) {
+  process.exit(0);
+}
 
 function fileExists(p) {
   try {

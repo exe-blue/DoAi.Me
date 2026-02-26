@@ -23,7 +23,6 @@ services:
       - ./types:/app/types
       - ./hooks:/app/hooks
       - ./pages:/app/pages
-      - ./.next:/app/.next
       - ./node_modules:/app/node_modules
     develop:
       watch:
