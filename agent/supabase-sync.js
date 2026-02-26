@@ -1052,6 +1052,169 @@ class SupabaseSync {
   }
 
   /**
+   * Default workflow config for task_devices (matches lib/workflow-templates.ts structure).
+   * @param {object} opts - { videoId?, videoUrl?, durationSec?, keyword? }
+   * @returns {object}
+   */
+  _defaultWatchWorkflowConfig(opts = {}) {
+    const durationSec = opts.durationSec ?? 60;
+    return {
+      workflow: {
+        schemaVersion: 1,
+        type: "view_farm",
+        name: "default",
+        steps: [
+          { module: "search_video", waitSecAfter: 10, params: { keyword: opts.keyword } },
+          { module: "watch_video", waitSecAfter: 60, params: { durationSec } },
+          { module: "video_actions", waitSecAfter: 30 },
+        ],
+      },
+      ...(opts.videoId && { video_id: opts.videoId }),
+      ...(opts.videoUrl && { video_url: opts.videoUrl }),
+      duration_sec: durationSec,
+      actions: {
+        policy: {
+          probLike: 40,
+          probComment: 10,
+          probScrap: 5,
+        },
+      },
+    };
+  }
+
+  /**
+   * Fan-out: create task_devices rows for a task for all devices of a PC (runner will claim them).
+   * @param {string} taskId - task UUID
+   * @param {string} pcId - PC UUID
+   * @param {{ taskConfig?: object, maxDevices?: number }} options
+   * @returns {Promise<number>} number of task_devices inserted
+   */
+  async fanOutTaskDevicesForTask(taskId, pcId, options = {}) {
+    const taskConfig = options.taskConfig || {};
+    const maxDevices = options.maxDevices ?? 100;
+    const { data: devices, error: devErr } = await this.supabase
+      .from("devices")
+      .select("id, serial")
+      .eq("pc_id", pcId)
+      .limit(maxDevices);
+
+    if (devErr || !devices || devices.length === 0) {
+      if (devErr) {
+        console.error(`[Supabase] fanOutTaskDevicesForTask devices: ${devErr.message}`);
+      }
+      return 0;
+    }
+
+    const videoId = taskConfig.videoId || taskConfig.video_id;
+    const videoUrl =
+      taskConfig.videoUrl ||
+      (videoId ? `https://www.youtube.com/watch?v=${videoId}` : null);
+    const baseConfig = this._defaultWatchWorkflowConfig({
+      videoId,
+      videoUrl,
+      durationSec: taskConfig.durationSec ?? taskConfig.duration_sec ?? 60,
+      keyword: taskConfig.keyword,
+    });
+
+    const rows = devices.map((d) => ({
+      task_id: taskId,
+      pc_id: pcId,
+      device_id: d.id,
+      device_serial: d.serial,
+      status: "queued",
+      config: { ...baseConfig, video_id: videoId, video_url: videoUrl },
+    }));
+
+    const { data, error } = await this.supabase
+      .from("task_devices")
+      .upsert(rows, { onConflict: "task_id,device_id", ignoreDuplicates: true });
+
+    if (error) {
+      console.error(`[Supabase] fanOutTaskDevicesForTask insert failed: ${error.message}`);
+      return 0;
+    }
+    return Array.isArray(data) ? data.length : rows.length;
+  }
+
+  /**
+   * Absorb command into task + task_devices (USE_TASK_DEVICES_ENGINE path).
+   * Creates one task (task_name manual_command, payload = original command) and fan-out task_devices.
+   * @param {object} cmdRow - command row (id, target_worker?, payload?, device_serials?)
+   * @param {string} pcId - this PC UUID
+   * @returns {Promise<object|null>} created task or null
+   */
+  async createTaskAndTaskDevicesFromCommand(cmdRow, pcId) {
+    const payload = cmdRow.payload || {};
+    const deviceSerials = payload.device_serials || payload.deviceSerials;
+
+    const taskInsert = {
+      title: "manual_command",
+      type: "youtube",
+      task_type: "command",
+      status: "pending",
+      pc_id: pcId,
+      payload: { _command: cmdRow, _commandId: cmdRow.id },
+    };
+
+    const { data: task, error: taskErr } = await this.supabase
+      .from("tasks")
+      .insert(taskInsert)
+      .select("*")
+      .single();
+
+    if (taskErr) {
+      console.error(
+        `[Supabase] createTaskAndTaskDevicesFromCommand task insert failed: ${taskErr.message}`,
+      );
+      return null;
+    }
+
+    let deviceList;
+    if (Array.isArray(deviceSerials) && deviceSerials.length > 0) {
+      const { data: devs } = await this.supabase
+        .from("devices")
+        .select("id, serial")
+        .eq("pc_id", pcId)
+        .in("serial", deviceSerials);
+      deviceList = devs || [];
+    } else {
+      const { data: devs } = await this.supabase
+        .from("devices")
+        .select("id, serial")
+        .eq("pc_id", pcId)
+        .limit(100);
+      deviceList = devs || [];
+    }
+
+    if (deviceList.length === 0) {
+      return task;
+    }
+
+    const baseConfig = this._defaultWatchWorkflowConfig({
+      durationSec: 60,
+    });
+    const rows = deviceList.map((d) => ({
+      task_id: task.id,
+      pc_id: pcId,
+      device_id: d.id,
+      device_serial: d.serial,
+      status: "queued",
+      config: { ...baseConfig, _commandPayload: payload },
+    }));
+
+    const { error: tdErr } = await this.supabase
+      .from("task_devices")
+      .upsert(rows, { onConflict: "task_id,device_id", ignoreDuplicates: true });
+
+    if (tdErr) {
+      console.error(
+        `[Supabase] createTaskAndTaskDevicesFromCommand task_devices failed: ${tdErr.message}`,
+      );
+    }
+    return task;
+  }
+
+  /**
    * Subscribe to task_queue and commands (명세 4.4: Realtime 구독)
    * @param {string} pcNumber - e.g. "PC01"
    * @param {{ onTaskQueue: (row: object) => void, onCommand: (row: object) => void }} callbacks

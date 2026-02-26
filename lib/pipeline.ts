@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json, VideoRow, TaskDeviceInsert } from "@/lib/supabase/types";
 import type { TaskVariables } from "@/lib/types";
+import { buildWatchWorkflowConfig } from "@/lib/workflow-templates";
 
 const DEFAULT_VARIABLES: TaskVariables = {
   watchPercent: 80,
@@ -173,12 +174,14 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
   if (pcList.length > 0) {
     for (const pc of pcList) {
-      const { data: devices } = await supabase
+      const devicesQuery = supabase
         .from("devices")
         .select("id, serial")
         .eq("pc_id", pc.id)
-        .limit(Math.min(perPcCap, 100))
-        .returns<Array<{ id: string; serial: string }>>();
+        .limit(Math.min(perPcCap, 100));
+      const { data: devices } = await devicesQuery.returns<
+        Array<{ id: string; serial: string }>
+      >();
       const deviceList = devices ?? [];
       const cap = deviceList.length;
       if (cap === 0) continue;
@@ -187,20 +190,22 @@ export async function createBatchTask(options: BatchTaskOptions) {
         const dev = deviceList[i];
         const serial = dev?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
         const baseConfig = deviceConfigsForPc[i];
-        const configWithWorkflow: Json = {
-          ...baseConfig,
-          duration_sec: 60,
-          workflow: {
-            type: "view_farm",
-            name: "default",
-            steps: [...DEFAULT_WORKFLOW_STEPS],
+        const configWithWorkflow = buildWatchWorkflowConfig({
+          videoId: baseConfig.video_id,
+          videoUrl: baseConfig.video_url,
+          durationSec: 60,
+          actions: {
+            probLike: 40,
+            probComment: 10,
+            probScrap: 5,
           },
-        };
+        });
+        const configJson: Json = { ...baseConfig, ...configWithWorkflow } as Json;
         const row: TaskDeviceInsertRow = {
           task_id: task.id,
           device_serial: serial,
           status: "pending",
-          config: configWithWorkflow,
+          config: configJson,
           worker_id: options.workerId ?? null,
           pc_id: pc.id,
         };
@@ -229,20 +234,17 @@ export async function createBatchTask(options: BatchTaskOptions) {
     }
     for (let i = 0; i < deviceCount; i++) {
       const baseConfig = deviceConfigs[i];
-      const configWithWorkflow: Json = {
-        ...baseConfig,
-        duration_sec: 60,
-        workflow: {
-          type: "view_farm",
-          name: "default",
-          steps: [...DEFAULT_WORKFLOW_STEPS],
-        },
-      };
+      const configWithWorkflow = buildWatchWorkflowConfig({
+        videoId: baseConfig.video_id,
+        videoUrl: baseConfig.video_url,
+        durationSec: 60,
+      });
+      const configJson: Json = { ...baseConfig, ...configWithWorkflow } as Json;
       allTaskDevices.push({
         task_id: task.id,
         device_serial: deviceSerials[i],
         status: "pending",
-        config: configWithWorkflow,
+        config: configJson,
         worker_id: options.workerId ?? null,
       });
       allConfigs.push(deviceConfigs[i]);
@@ -251,7 +253,10 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
   const { error: taskDevicesError } = await supabase
     .from("task_devices")
-    .insert(allTaskDevices as TaskDeviceInsert[]);
+    .upsert(allTaskDevices as TaskDeviceInsert[], {
+      onConflict: "task_id,device_id",
+      ignoreDuplicates: true,
+    });
   if (taskDevicesError) throw taskDevicesError;
 
   // Step 4: Increment completed_views for assigned videos
@@ -295,13 +300,6 @@ function _priorityWeight(p: string | null): number {
       return 2;
   }
 }
-
-/** Default workflow steps for task_devices SSOT runner (search → watch → actions) */
-const DEFAULT_WORKFLOW_STEPS = [
-  { module: "search_video", waitSecAfter: 10 },
-  { module: "watch_video", waitSecAfter: 60 },
-  { module: "video_actions", waitSecAfter: 30 },
-] as const;
 
 function _distributeVideos(
   videos: Array<{ id: string; priority: string | null }>,

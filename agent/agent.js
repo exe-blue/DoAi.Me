@@ -461,7 +461,102 @@ async function main() {
       log.error(`[Agent] Initial task poll error: ${err.message}`);
     }
   } else {
-    log.info("[Agent] Legacy tasks path skipped (USE_TASK_DEVICES_ENGINE=true)");
+    // Task-devices path: task_queue → create task + fan-out (no execute); commands → absorb into task + task_devices
+    const workerChannelResult =
+      await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
+        onTaskQueue: async (queueRow) => {
+          if (queueRow.status !== "queued") return;
+          const task = await supabaseSync.createTaskFromQueueItem(
+            queueRow,
+            supabaseSync.pcId,
+          );
+          if (task) {
+            const n = await supabaseSync.fanOutTaskDevicesForTask(
+              task.id,
+              supabaseSync.pcId,
+              { taskConfig: queueRow.task_config },
+            );
+            log.info(
+              `[Agent] task_queue → task ${task.id} + ${n} task_devices (runner will claim)`,
+            );
+          }
+        },
+        onCommand: async (cmdRow) => {
+          if (cmdRow.status !== "pending") return;
+          try {
+            await supabaseSync.supabase
+              .from("commands")
+              .update({ status: "running" })
+              .eq("id", cmdRow.id);
+            const task = await supabaseSync.createTaskAndTaskDevicesFromCommand(
+              cmdRow,
+              supabaseSync.pcId,
+            );
+            if (task) {
+              await supabaseSync.supabase
+                .from("commands")
+                .update({
+                  status: "completed",
+                  completed_at: new Date().toISOString(),
+                  result: { task_id: task.id },
+                })
+                .eq("id", cmdRow.id);
+              log.info(
+                `[Agent] Command ${cmdRow.id} absorbed → task ${task.id} + task_devices`,
+              );
+            } else {
+              await supabaseSync.supabase
+                .from("commands")
+                .update({
+                  status: "failed",
+                  completed_at: new Date().toISOString(),
+                  result: { error: "createTaskAndTaskDevicesFromCommand failed" },
+                })
+                .eq("id", cmdRow.id);
+            }
+          } catch (err) {
+            log.error(`[Agent] Command ${cmdRow.id} absorb failed: ${err.message}`);
+            await supabaseSync.supabase
+              .from("commands")
+              .update({
+                status: "failed",
+                completed_at: new Date().toISOString(),
+                result: { error: err.message },
+              })
+              .eq("id", cmdRow.id);
+          }
+        },
+      });
+    if (workerChannelResult.status === "SUBSCRIBED") {
+      log.info("[Agent] ✓ task_queue + commands 구독 (task_devices fan-out/absorb)");
+    } else {
+      log.warn(
+        `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
+      );
+    }
+
+    const processTaskQueuePending = async () => {
+      try {
+        const items = await supabaseSync.getPendingTaskQueueItems(
+          config.pcNumber,
+        );
+        for (const row of items) {
+          const task = await supabaseSync.createTaskFromQueueItem(
+            row,
+            supabaseSync.pcId,
+          );
+          if (task) {
+            await supabaseSync.fanOutTaskDevicesForTask(task.id, supabaseSync.pcId, {
+              taskConfig: row.task_config,
+            });
+          }
+        }
+      } catch (err) {
+        log.error(`[Agent] Task queue poll error: ${err.message}`);
+      }
+    };
+    taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
+    processTaskQueuePending();
   }
 
   // 14. Start ADB reconnect monitoring (manager already initialized above)
@@ -524,8 +619,8 @@ async function main() {
   }
 
   videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  if (config.isPrimaryPc) {
-    // Wire push: VideoDispatcher creates assignments → immediately nudge DeviceOrchestrator
+  if (config.isPrimaryPc && !config.useTaskDevicesEngine) {
+    // Wire push: VideoDispatcher creates job_assignments → nudge DeviceOrchestrator (legacy only)
     videoDispatcher.on("nudge", () => {
       if (deviceOrchestrator) {
         log.info("[Agent] ⚡ VideoDispatcher → nudge → DeviceOrchestrator");
@@ -535,6 +630,10 @@ async function main() {
     videoDispatcher.start();
     log.info(
       "[Agent] ✓ Video dispatcher started (Realtime push + 60s fallback)",
+    );
+  } else if (config.useTaskDevicesEngine) {
+    log.info(
+      "[Agent] - Video dispatcher skipped (USE_TASK_DEVICES_ENGINE: job_assignments disabled)",
     );
   } else {
     log.info(
