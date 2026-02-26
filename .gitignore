@@ -41,6 +41,7 @@ htmlcov/
 .omc/
 .claude/
 .cursor/
+.cursorrules
 *.swp
 *.swo
 
@@ -67,3 +68,4 @@ yarn-error.log*
 .env.sentry-build-plugin
 _archive/migration-scripts/update_agent_v3.sh
 agent/logs/
+agent/farm_logs/

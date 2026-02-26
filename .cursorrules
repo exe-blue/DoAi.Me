@@ -1,5 +1,0 @@
-# Cursor Rules Redirect (강제)
-
-이 레포의 단일 규칙 소스는 `.cursor/rules/` 입니다.
-- 이 파일(.cursorrules)에는 규칙을 작성하지 않습니다.
-- 규칙 변경은 `.cursor/rules/*`에서만 수행합니다.
