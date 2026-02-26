@@ -1,0 +1,352 @@
+---
+# Kubernetes Deployment Configuration for DoAi.Me
+# Apply with: kubectl apply -f kubernetes-manifests.yaml
+# This provides horizontal scaling, automatic restarts, and production-grade orchestration
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: doai-me
+
+---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doai-me-config
+  namespace: doai-me
+data:
+  NODE_ENV: "production"
+  SENTRY_ENVIRONMENT: "production"
+
+---
+# Secret for sensitive environment variables
+# Create with: kubectl create secret generic doai-me-secrets \
+#   --from-literal=NEXT_PUBLIC_SUPABASE_URL=... \
+#   --from-literal=NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+#   -n doai-me
+apiVersion: v1
+kind: Secret
+metadata:
+  name: doai-me-secrets
+  namespace: doai-me
+type: Opaque
+data:
+  # Generate with: echo -n 'value' | base64
+  # Replace these with actual base64-encoded secrets
+  NEXT_PUBLIC_SUPABASE_URL: ""
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ""
+  SUPABASE_SERVICE_ROLE_KEY: ""
+  YOUTUBE_API_KEY: ""
+  SENTRY_DSN: ""
+  SENTRY_AUTH_TOKEN: ""
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doai-me-app
+  namespace: doai-me
+  labels:
+    app: doai-me
+    tier: app
+spec:
+  replicas: 3  # Horizontal scaling
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero downtime deployments
+  selector:
+    matchLabels:
+      app: doai-me
+  template:
+    metadata:
+      labels:
+        app: doai-me
+        tier: app
+    spec:
+      # Pod disruption budget for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - doai-me
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: app
+          image: doai-me:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          
+          # Environment variables from ConfigMap and Secret
+          envFrom:
+            - configMapRef:
+                name: doai-me-config
+            - secretRef:
+                name: doai-me-secrets
+          
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.next
+      
+      # Pod-level security context
+      securityContext:
+        fsGroup: 1001
+      
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+      
+      # Restart policy
+      restartPolicy: Always
+      
+      # Termination grace period for graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+---
+# Service for internal load balancing
+apiVersion: v1
+kind: Service
+metadata:
+  name: doai-me-app
+  namespace: doai-me
+  labels:
+    app: doai-me
+spec:
+  type: ClusterIP
+  selector:
+    app: doai-me
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  sessionAffinity: None
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: doai-me-hpa
+  namespace: doai-me
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: doai-me-app
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+
+---
+# Pod Disruption Budget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: doai-me-pdb
+  namespace: doai-me
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: doai-me
+
+---
+# Ingress for external access with TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doai-me-ingress
+  namespace: doai-me
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - doai.me
+        - www.doai.me
+      secretName: doai-me-tls
+  rules:
+    - host: doai.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: doai-me-app
+                port:
+                  number: 80
+    - host: www.doai.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: doai-me-app
+                port:
+                  number: 80
+
+---
+# Certificate for TLS (requires cert-manager)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: doai-me-cert
+  namespace: doai-me
+spec:
+  secretName: doai-me-tls
+  duration: 2160h  # 90d
+  renewBefore: 360h  # 15d
+  commonName: doai.me
+  dnsNames:
+    - doai.me
+    - www.doai.me
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+
+---
+# Example ClusterIssuer for Let's Encrypt (install cert-manager first)
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-prod
+# spec:
+#   acme:
+#     server: https://acme-v02.api.letsencrypt.org/directory
+#     email: your-email@doai.me
+#     privateKeySecretRef:
+#       name: letsencrypt-prod
+#     solvers:
+#       - http01:
+#           ingress:
+#             class: nginx
+
+---
+# NetworkPolicy for pod-to-pod communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: doai-me-network-policy
+  namespace: doai-me
+spec:
+  podSelector:
+    matchLabels:
+      app: doai-me
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 5432  # Supabase/Postgres
+    - to:
+        - podSelector: {}

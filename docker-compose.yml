@@ -1,0 +1,60 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doai-me-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+    env_file: .env.local
+    volumes:
+      # Source code volume for hot reload
+      - ./src:/app/src
+      - ./app:/app/app
+      - ./components:/app/components
+      - ./lib:/app/lib
+      - ./types:/app/types
+      - ./hooks:/app/hooks
+      - ./pages:/app/pages
+      - ./.next:/app/.next
+      - ./node_modules:/app/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: sync
+          path: ./app
+          target: /app/app
+        - action: sync
+          path: ./components
+          target: /app/components
+        - action: sync
+          path: ./lib
+          target: /app/lib
+        - action: sync
+          path: ./types
+          target: /app/types
+        - action: sync
+          path: ./hooks
+          target: /app/hooks
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    name: doai-me-network
+    driver: bridge

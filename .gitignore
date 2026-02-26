@@ -18,6 +18,8 @@ tsconfig.tsbuildinfo
 .env.test.local
 .env.production.local
 .env.sentry
+.env.staging
+.env.prod
 agent/.env
 agent/.env*
 
@@ -72,3 +74,4 @@ agent/logs/
 agent/farm_logs/
 agent/.script-cache/
 agent/cache/
+.env*.local
