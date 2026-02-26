@@ -59,6 +59,15 @@ export default async function LandingPage() {
             회원가입
           </Link>
         </div>
+        <p className="text-sm text-muted-foreground">
+          <Link href="/agreement" className="underline hover:text-foreground">
+            이용약관
+          </Link>
+          {" · "}
+          <Link href="/privacy" className="underline hover:text-foreground">
+            개인정보처리방침
+          </Link>
+        </p>
       </div>
     </div>
   );

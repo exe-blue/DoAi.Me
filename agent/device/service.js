@@ -11,13 +11,14 @@
  * 단독 실행:
  *   node agent/device/service.js
  */
-const { getLogger } = require('../common/logger');
-const { pcModels, deviceModels } = require('./models');
-const { ADBDevice } = require('../adb/client');
-const { dumpUI, getForegroundApp } = require('../adb/screen');
-const { sleep } = require('../adb/helpers');
+const { getLogger } = require("../common/logger");
+const { pcModels, deviceModels } = require("./models");
+const { ADBDevice } = require("../adb/client");
+const { resolveHardwareSerialsForList } = require("../device-serial-resolver");
+const { dumpUI, getForegroundApp } = require("../adb/screen");
+const { sleep } = require("../adb/helpers");
 
-const log = getLogger('device.service');
+const log = getLogger("device.service");
 
 class DeviceService {
   /**
@@ -30,7 +31,7 @@ class DeviceService {
     this.supabase = supabase;
     this.config = config;
     this.pcId = null;
-    this.pcNumber = config.pcNumber || 'PC00';
+    this.pcNumber = config.pcNumber || "PC00";
   }
 
   // ═══════════════════════════════════════════════════════
@@ -44,7 +45,7 @@ class DeviceService {
    */
   async registerPC(pcNumber) {
     const pn = pcNumber || this.pcNumber;
-    log.info('pc_register_start', { pcNumber: pn });
+    log.info("pc_register_start", { pcNumber: pn });
 
     // 1. Supabase에 PC 등록
     pcModels.init(this.supabase);
@@ -56,10 +57,10 @@ class DeviceService {
     const checks = await this._verifyEnvironment();
 
     // 3. PC 상태 업데이트
-    const allOk = Object.values(checks).every(v => v === true);
-    await pcModels.updateStatus(pc.id, allOk ? 'online' : 'error');
+    const allOk = Object.values(checks).every((v) => v === true);
+    await pcModels.updateStatus(pc.id, allOk ? "online" : "error");
 
-    log.info('pc_registered', { pcId: pc.id, pcNumber: pn, checks });
+    log.info("pc_registered", { pcId: pc.id, pcNumber: pn, checks });
     return { pc, checks };
   }
 
@@ -76,9 +77,11 @@ class DeviceService {
 
     // Supabase 연결
     try {
-      const { error } = await this.supabase.from('pcs').select('id').limit(1);
+      const { error } = await this.supabase.from("pcs").select("id").limit(1);
       checks.supabase = !error;
-    } catch { checks.supabase = false; }
+    } catch {
+      checks.supabase = false;
+    }
 
     // Xiaowei 연결
     checks.xiaowei = !!(this.xiaowei && this.xiaowei.connected);
@@ -89,9 +92,13 @@ class DeviceService {
         this.config.validate();
         checks.configValid = true;
       } else {
-        checks.configValid = !!(this.config.supabaseUrl && this.config.pcNumber);
+        checks.configValid = !!(
+          this.config.supabaseUrl && this.config.pcNumber
+        );
       }
-    } catch { checks.configValid = false; }
+    } catch {
+      checks.configValid = false;
+    }
 
     return checks;
   }
@@ -106,7 +113,7 @@ class DeviceService {
    */
   async discoverDevices() {
     if (!this.xiaowei || !this.xiaowei.connected) {
-      log.warn('discover_skip', { reason: 'xiaowei_offline' });
+      log.warn("discover_skip", { reason: "xiaowei_offline" });
       return [];
     }
 
@@ -118,14 +125,14 @@ class DeviceService {
       let devices = [];
       if (Array.isArray(res.data)) {
         devices = res.data;
-      } else if (res.data && typeof res.data === 'object') {
-        devices = Object.keys(res.data).map(serial => ({ serial }));
+      } else if (res.data && typeof res.data === "object") {
+        devices = Object.keys(res.data).map((serial) => ({ serial }));
       }
 
-      log.info('devices_discovered', { count: devices.length });
+      log.info("devices_discovered", { count: devices.length });
       return devices;
     } catch (err) {
-      log.error('discover_failed', { error: err.message });
+      log.error("discover_failed", { error: err.message });
       return [];
     }
   }
@@ -135,33 +142,47 @@ class DeviceService {
    * @returns {Promise<{registered: number, updated: number, errors: number, devices: Array}>}
    */
   async discoverAndRegister() {
-    if (!this.pcId) throw new Error('PC not registered. Call registerPC() first.');
-    log.info('register_devices_start', { pcId: this.pcId });
+    if (!this.pcId)
+      throw new Error("PC not registered. Call registerPC() first.");
+    log.info("register_devices_start", { pcId: this.pcId });
 
     const discovered = await this.discoverDevices();
     if (discovered.length === 0) {
-      log.warn('no_devices_found');
+      log.warn("no_devices_found");
       return { registered: 0, updated: 0, errors: 0, devices: [] };
     }
 
-    // 기기 정보 수집
+    // OTG(IP:5555): resolve hardware serial, keep connectionId for device_target
+    const normalized = discovered.map((d) => ({
+      serial: typeof d === "string" ? d : d.serial || d.id || d.deviceId || "",
+    }));
+    const resolved = await resolveHardwareSerialsForList(
+      this.xiaowei,
+      normalized,
+    );
+
     const deviceRows = [];
     let errors = 0;
-
-    for (const d of discovered) {
-      const serial = d.serial || d;
+    for (const d of resolved) {
+      const target = d.connectionId || d.serial;
+      const serial = d.serial;
       try {
-        const dev = new ADBDevice(this.xiaowei, serial);
+        const dev = new ADBDevice(this.xiaowei, target);
         const info = await dev.getDeviceInfo();
         deviceRows.push({
-          serial: serial,
-          status: 'online',
+          serial,
+          connection_id: d.connectionId || null,
+          status: "online",
           model: info.model || null,
           battery_level: info.battery >= 0 ? info.battery : null,
         });
       } catch (err) {
-        log.warn('device_info_failed', { serial, error: err.message });
-        deviceRows.push({ serial, status: 'online' });
+        log.warn("device_info_failed", { serial, target, error: err.message });
+        deviceRows.push({
+          serial,
+          connection_id: d.connectionId || null,
+          status: "online",
+        });
         errors++;
       }
     }
@@ -170,10 +191,10 @@ class DeviceService {
     const result = await deviceModels.bulkUpsert(deviceRows, this.pcId);
 
     // 미발견 기기 offline 처리
-    const activeSerials = deviceRows.map(d => d.serial);
+    const activeSerials = deviceRows.map((d) => d.serial);
     await deviceModels.markMissingOffline(this.pcId, activeSerials);
 
-    log.info('register_devices_done', {
+    log.info("register_devices_done", {
       discovered: discovered.length,
       registered: result.success,
       errors,
@@ -194,24 +215,24 @@ class DeviceService {
    * @returns {Promise<string|null>} device UUID
    */
   async registerDevice(serial, fields = {}) {
-    if (!this.pcId) throw new Error('PC not registered');
+    if (!this.pcId) throw new Error("PC not registered");
     const dev = new ADBDevice(this.xiaowei, serial);
 
     let info = {};
     try {
       info = await dev.getDeviceInfo();
     } catch (err) {
-      log.warn('device_info_failed', { serial, error: err.message });
+      log.warn("device_info_failed", { serial, error: err.message });
     }
 
     const id = await deviceModels.upsert(serial, this.pcId, {
-      status: 'online',
+      status: "online",
       model: info.model || fields.model || null,
       battery_level: info.battery >= 0 ? info.battery : null,
       ...fields,
     });
 
-    log.info('device_registered', { serial, deviceId: id, model: info.model });
+    log.info("device_registered", { serial, deviceId: id, model: info.model });
     return id;
   }
 
@@ -230,41 +251,53 @@ class DeviceService {
 
     // 1. 불필요 앱 종료 (YouTube, 시스템 앱 제외)
     try {
-      await dev.shell('am kill-all');
+      await dev.shell("am kill-all");
       results.killedBgApps = true;
-    } catch { results.killedBgApps = false; }
+    } catch {
+      results.killedBgApps = false;
+    }
 
     // 2. 캐시 정리
     try {
-      await dev.shell('pm trim-caches 500M');
+      await dev.shell("pm trim-caches 500M");
       results.trimmedCache = true;
-    } catch { results.trimmedCache = false; }
+    } catch {
+      results.trimmedCache = false;
+    }
 
     // 3. 화면 밝기 최소화 (배터리 절약)
     try {
-      await dev.shell('settings put system screen_brightness_mode 0');
-      await dev.shell('settings put system screen_brightness 1');
+      await dev.shell("settings put system screen_brightness_mode 0");
+      await dev.shell("settings put system screen_brightness 1");
       results.brightnessMin = true;
-    } catch { results.brightnessMin = false; }
+    } catch {
+      results.brightnessMin = false;
+    }
 
     // 4. 화면 꺼짐 시간 최대 (자동화 중 꺼지지 않도록)
     try {
-      await dev.shell('settings put system screen_off_timeout 1800000'); // 30분
+      await dev.shell("settings put system screen_off_timeout 1800000"); // 30분
       results.screenTimeout = true;
-    } catch { results.screenTimeout = false; }
+    } catch {
+      results.screenTimeout = false;
+    }
 
     // 5. 세로 모드 고정
     try {
       await dev.forcePortrait();
       results.portrait = true;
-    } catch { results.portrait = false; }
+    } catch {
+      results.portrait = false;
+    }
 
     // 6. 배터리 정보
     try {
       results.battery = await dev.getBatteryLevel();
-    } catch { results.battery = -1; }
+    } catch {
+      results.battery = -1;
+    }
 
-    log.info('device_optimized', { serial, ...results });
+    log.info("device_optimized", { serial, ...results });
     return results;
   }
 
@@ -273,27 +306,27 @@ class DeviceService {
    * @returns {Promise<{total: number, success: number, failed: number}>}
    */
   async optimizeAll() {
-    if (!this.pcId) throw new Error('PC not registered');
+    if (!this.pcId) throw new Error("PC not registered");
 
-    const devices = await deviceModels.listByPc(this.pcId, ['online', 'busy']);
+    const devices = await deviceModels.listByPc(this.pcId, ["online", "busy"]);
     let success = 0;
     let failed = 0;
 
-    log.info('optimize_all_start', { count: devices.length });
+    log.info("optimize_all_start", { count: devices.length });
 
     for (const d of devices) {
-      const serial = d.serial_number;
+      const serial = d.serial;
       try {
         await this.optimizeDevice(serial);
         success++;
       } catch (err) {
-        log.error('optimize_failed', { serial, error: err.message });
+        log.error("optimize_failed", { serial, error: err.message });
         failed++;
       }
       await sleep(200); // 디바이스 간 약간의 간격
     }
 
-    log.info('optimize_all_done', { total: devices.length, success, failed });
+    log.info("optimize_all_done", { total: devices.length, success, failed });
     return { total: devices.length, success, failed };
   }
 
@@ -310,8 +343,8 @@ class DeviceService {
   /** 온라인 디바이스 시리얼 목록 */
   async getOnlineSerials() {
     if (!this.pcId) return [];
-    const devices = await deviceModels.listByPc(this.pcId, ['online', 'busy']);
-    return devices.map(d => d.serial_number);
+    const devices = await deviceModels.listByPc(this.pcId, ["online", "busy"]);
+    return devices.map((d) => d.serial);
   }
 }
 

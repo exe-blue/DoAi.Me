@@ -30,7 +30,7 @@ class DeviceOrchestrator {
    * @param {import('./xiaowei-client')} xiaowei
    * @param {import('@supabase/supabase-js').SupabaseClient} supabase
    * @param {import('./task-executor')} taskExecutor
-   * @param {object} config - { pcId (UUID), maxConcurrent? }
+   * @param {object} config - { pcId (UUID), maxConcurrent?, useTaskDevicesEngine? }
    */
   constructor(xiaowei, supabase, taskExecutor, config) {
     this.xiaowei = xiaowei;
@@ -38,6 +38,7 @@ class DeviceOrchestrator {
     this.taskExecutor = taskExecutor;
     this.pcId = config.pcId;
     this.maxConcurrent = config.maxConcurrent ?? 10;
+    this.useTaskDevicesEngine = config.useTaskDevicesEngine === true;
 
     /** @type {Map<string, DeviceState>} serial -> state */
     this.deviceStates = new Map();
@@ -49,9 +50,13 @@ class DeviceOrchestrator {
 
   start() {
     if (this._pollTimer) return;
-    log.info(`[DeviceOrchestrator] Starting (Realtime push + ${ORCHESTRATE_INTERVAL_MS / 1000}s fallback, maxConcurrent=${this.maxConcurrent})`);
+    log.info(`[DeviceOrchestrator] Starting (Realtime push + ${ORCHESTRATE_INTERVAL_MS / 1000}s fallback, maxConcurrent=${this.maxConcurrent}, useTaskDevicesEngine=${this.useTaskDevicesEngine})`);
     this._pollTimer = setInterval(() => this._orchestrate().catch((e) => log.error("[DeviceOrchestrator]", e)), ORCHESTRATE_INTERVAL_MS);
-    this._subscribeToNewAssignments();
+    if (!this.useTaskDevicesEngine) {
+      this._subscribeToNewAssignments();
+    } else {
+      log.info("[DeviceOrchestrator] job_assignments disabled (USE_TASK_DEVICES_ENGINE)");
+    }
   }
 
   stop() {
@@ -110,6 +115,7 @@ class DeviceOrchestrator {
    * 3초마다: 디바이스 목록 갱신, idle → 배정, free_watch → 대기열 있으면 중단, watching → 타임아웃, error → 복구
    */
   async _orchestrate() {
+    if (this.useTaskDevicesEngine) return; // execution handled by task-devices-runner
     if (!this.xiaowei.connected) return;
     let devices = [];
     try {
@@ -248,7 +254,7 @@ class DeviceOrchestrator {
         .from("devices")
         .select("id")
         .eq("pc_id", this.pcId)
-        .eq("serial_number", serial)
+        .eq("serial", serial)
         .limit(1);
       const deviceId = devRows && devRows[0] ? devRows[0].id : null;
 

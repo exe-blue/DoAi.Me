@@ -26,13 +26,18 @@ class AdbReconnectManager {
    * Start the reconnect monitoring loop
    */
   start() {
-    console.log(`[ADB Reconnect] Starting (every ${this.reconnectInterval / 1000}s)`);
+    console.log(
+      `[ADB Reconnect] Starting (every ${this.reconnectInterval / 1000}s)`,
+    );
 
     // Run immediately (unless already running), then on interval
     if (!this._reconnectRunning) {
       this.reconnectCycle();
     }
-    this.reconnectHandle = setInterval(() => this.reconnectCycle(), this.reconnectInterval);
+    this.reconnectHandle = setInterval(
+      () => this.reconnectCycle(),
+      this.reconnectInterval,
+    );
   }
 
   /**
@@ -42,7 +47,7 @@ class AdbReconnectManager {
     if (this.reconnectHandle) {
       clearInterval(this.reconnectHandle);
       this.reconnectHandle = null;
-      console.log('[ADB Reconnect] Stopped');
+      console.log("[ADB Reconnect] Stopped");
     }
   }
 
@@ -51,7 +56,10 @@ class AdbReconnectManager {
    * @param {Array<{serial: string}>} devices
    */
   updateRegisteredDevices(devices) {
-    this.registeredDevices = new Set(devices.map(d => d.serial).filter(Boolean));
+    // Use connectionId when present (e.g. IP:5555) so set matches Xiaowei list() output
+    this.registeredDevices = new Set(
+      devices.map((d) => d.connectionId || d.serial).filter(Boolean),
+    );
   }
 
   /**
@@ -60,7 +68,7 @@ class AdbReconnectManager {
   async reconnectCycle() {
     // Guard: skip if a previous cycle is still running
     if (this._reconnectRunning) {
-      console.log('[ADB Reconnect] Previous cycle still running, skipping');
+      console.log("[ADB Reconnect] Previous cycle still running, skipping");
       return;
     }
     this._reconnectRunning = true;
@@ -68,45 +76,55 @@ class AdbReconnectManager {
     try {
       // Skip if Xiaowei is not connected
       if (!this.xiaowei.connected) {
-        console.log('[ADB Reconnect] Xiaowei offline, skipping cycle');
+        console.log("[ADB Reconnect] Xiaowei offline, skipping cycle");
         return;
       }
 
       // Get currently connected devices from Xiaowei
       const response = await this.xiaowei.list();
       const connectedDevices = this.parseDeviceList(response);
-      const connectedSerials = new Set(connectedDevices.map(d => d.serial).filter(Boolean));
+      const connectedSerials = new Set(
+        connectedDevices.map((d) => d.serial).filter(Boolean),
+      );
 
       // Find disconnected devices (registered but not connected)
-      const disconnected = [...this.registeredDevices].filter(s => !connectedSerials.has(s));
+      const disconnected = [...this.registeredDevices].filter(
+        (s) => !connectedSerials.has(s),
+      );
 
       if (disconnected.length === 0) {
-        console.log('[ADB Reconnect] All devices connected, nothing to do');
+        console.log("[ADB Reconnect] All devices connected, nothing to do");
         return;
       }
 
-      console.log(`[ADB Reconnect] Found ${disconnected.length} disconnected device(s)`);
+      console.log(
+        `[ADB Reconnect] Found ${disconnected.length} disconnected device(s)`,
+      );
 
       // Filter out dead devices
-      const alive = disconnected.filter(serial => {
+      const alive = disconnected.filter((serial) => {
         const failure = this.deviceFailures.get(serial);
         return !failure || !failure.isDead;
       });
 
-      const dead = disconnected.filter(serial => {
+      const dead = disconnected.filter((serial) => {
         const failure = this.deviceFailures.get(serial);
         return failure && failure.isDead;
       });
 
       if (dead.length > 0) {
-        console.log(`[ADB Reconnect] Skipping ${dead.length} dead device(s): ${dead.join(', ')}`);
+        console.log(
+          `[ADB Reconnect] Skipping ${dead.length} dead device(s): ${dead.join(", ")}`,
+        );
       }
 
       // Process alive devices in batches
       const statusChanges = [];
       for (let i = 0; i < alive.length; i += this.batchSize) {
         const batch = alive.slice(i, i + this.batchSize);
-        console.log(`[ADB Reconnect] Processing batch ${Math.floor(i / this.batchSize) + 1}: ${batch.length} device(s)`);
+        console.log(
+          `[ADB Reconnect] Processing batch ${Math.floor(i / this.batchSize) + 1}: ${batch.length} device(s)`,
+        );
 
         for (const serial of batch) {
           const result = await this.reconnectDevice(serial);
@@ -128,27 +146,38 @@ class AdbReconnectManager {
 
       // Publish system events
       if (this.broadcaster) {
-        const recovered = statusChanges.filter(c => c.status === 'online').map(c => c.serial);
-        const failed = statusChanges.filter(c => c.status === 'error').map(c => c.serial);
-        const newlyDead = statusChanges.filter(c => c.isDead).map(c => c.serial);
+        const recovered = statusChanges
+          .filter((c) => c.status === "online")
+          .map((c) => c.serial);
+        const failed = statusChanges
+          .filter((c) => c.status === "error")
+          .map((c) => c.serial);
+        const newlyDead = statusChanges
+          .filter((c) => c.isDead)
+          .map((c) => c.serial);
 
         if (recovered.length > 0) {
-          await this.broadcaster.publishSystemEvent('adb_reconnect_success',
+          await this.broadcaster.publishSystemEvent(
+            "adb_reconnect_success",
             `${recovered.length} device(s) reconnected via ADB`,
-            { serials: recovered, count: recovered.length });
+            { serials: recovered, count: recovered.length },
+          );
         }
         if (failed.length > 0) {
-          await this.broadcaster.publishSystemEvent('adb_reconnect_failed',
+          await this.broadcaster.publishSystemEvent(
+            "adb_reconnect_failed",
             `${failed.length} device(s) failed to reconnect`,
-            { serials: failed, count: failed.length });
+            { serials: failed, count: failed.length },
+          );
         }
         if (newlyDead.length > 0) {
-          await this.broadcaster.publishSystemEvent('adb_device_dead',
+          await this.broadcaster.publishSystemEvent(
+            "adb_device_dead",
             `${newlyDead.length} device(s) flagged as dead (${this.deadThreshold}+ failures)`,
-            { serials: newlyDead, count: newlyDead.length });
+            { serials: newlyDead, count: newlyDead.length },
+          );
         }
       }
-
     } catch (err) {
       console.error(`[ADB Reconnect] Cycle error: ${err.message}`);
     } finally {
@@ -165,24 +194,37 @@ class AdbReconnectManager {
   async reconnectDevice(serial) {
     let success = false;
 
-    // IP 주소 조회 (DB에 저장된 ip_intranet 또는 시리얼에서 추출)
-    const ip = await this._getDeviceIp(serial);
+    // IP:PORT 형식이면 시리얼에서 직접 추출 (TCP/IP 연결 기기)
+    let ip = null;
+    if (serial && /^[^:]+:\d+$/.test(serial)) {
+      const idx = serial.lastIndexOf(":");
+      ip = serial.substring(0, idx);
+    }
+    if (!ip) ip = await this._getDeviceIp(serial);
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}${ip ? ` (IP: ${ip})` : ''}`);
+        console.log(
+          `[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}${ip ? ` (IP: ${ip})` : ""}`,
+        );
 
         // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
         if (ip) {
           try {
             const connectResult = await Promise.race([
               this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
-              this.timeoutPromise(this.reconnectTimeout)
+              this.timeoutPromise(this.reconnectTimeout),
             ]);
             const connectOut = this._extractOutput(connectResult);
-            if (connectOut && (connectOut.includes('connected') || connectOut.includes('already'))) {
+            if (
+              connectOut &&
+              (connectOut.includes("connected") ||
+                connectOut.includes("already"))
+            ) {
               success = true;
-              console.log(`[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`);
+              console.log(
+                `[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`,
+              );
               break;
             }
           } catch {}
@@ -190,8 +232,8 @@ class AdbReconnectManager {
 
         // 방법 2: Xiaowei adb connect (기본)
         const result = await Promise.race([
-          this.xiaowei.adb(serial, 'connect'),
-          this.timeoutPromise(this.reconnectTimeout)
+          this.xiaowei.adb(serial, "connect"),
+          this.timeoutPromise(this.reconnectTimeout),
         ]);
 
         if (result && !result.error) {
@@ -199,10 +241,14 @@ class AdbReconnectManager {
           console.log(`[ADB Reconnect] ✓ ${serial} reconnected`);
           break;
         } else {
-          console.log(`[ADB Reconnect] ✗ ${serial} attempt ${attempt} failed: ${result?.error || 'unknown error'}`);
+          console.log(
+            `[ADB Reconnect] ✗ ${serial} attempt ${attempt} failed: ${result?.error || "unknown error"}`,
+          );
         }
       } catch (err) {
-        console.log(`[ADB Reconnect] ✗ ${serial} attempt ${attempt} error: ${err.message}`);
+        console.log(
+          `[ADB Reconnect] ✗ ${serial} attempt ${attempt} error: ${err.message}`,
+        );
       }
 
       if (attempt < this.maxRetries) {
@@ -214,23 +260,58 @@ class AdbReconnectManager {
     if (success) {
       // Reset failure count on success
       this.deviceFailures.delete(serial);
-      return { serial, status: 'online' };
+      return { serial, status: "online" };
     } else {
       // Increment failure count
-      const failure = this.deviceFailures.get(serial) || { failures: 0, lastDisconnect: null, isDead: false };
+      const failure = this.deviceFailures.get(serial) || {
+        failures: 0,
+        lastDisconnect: null,
+        isDead: false,
+      };
       failure.failures++;
       failure.lastDisconnect = new Date().toISOString();
 
       // Check if device should be flagged as dead
       if (failure.failures >= this.deadThreshold && !failure.isDead) {
         failure.isDead = true;
-        console.warn(`[ADB Reconnect] ${serial} flagged as DEAD (${failure.failures} consecutive failures)`);
+        console.warn(
+          `[ADB Reconnect] ${serial} flagged as DEAD (${failure.failures} consecutive failures)`,
+        );
         this.deviceFailures.set(serial, failure);
-        return { serial, status: 'error', isDead: true };
+        return { serial, status: "error", isDead: true };
       }
 
       this.deviceFailures.set(serial, failure);
-      return { serial, status: 'error' };
+      return { serial, status: "error" };
+    }
+  }
+
+  /**
+   * Resolve connection id (e.g. IP:5555) to DB serial for upsert.
+   * When serial is IP:PORT we look up device by ip_intranet so we update the correct row.
+   * @param {string} connectionIdOrSerial
+   * @returns {Promise<string>} serial to use for batchUpsertDevices
+   */
+  async _resolveSerialForUpsert(connectionIdOrSerial) {
+    if (!connectionIdOrSerial) return connectionIdOrSerial;
+    if (!/^[^:]+:\d+$/.test(connectionIdOrSerial)) return connectionIdOrSerial;
+    const ip = connectionIdOrSerial.substring(
+      0,
+      connectionIdOrSerial.lastIndexOf(":"),
+    );
+    try {
+      const { data } = await this.supabaseSync.supabase
+        .from("devices")
+        .select("serial, connection_id")
+        .eq("ip_intranet", ip)
+        .eq("pc_id", this.supabaseSync.pcId)
+        .limit(1)
+        .maybeSingle();
+      const canonical =
+        data?.connection_id ?? data?.serial ?? connectionIdOrSerial;
+      return canonical;
+    } catch {
+      return connectionIdOrSerial;
     }
   }
 
@@ -241,13 +322,17 @@ class AdbReconnectManager {
   async applyStatusChanges(changes) {
     if (changes.length === 0) return;
 
-    const devices = changes.map(c => ({
-      serial: c.serial,
-      status: c.status,
-    }));
+    const devices = await Promise.all(
+      changes.map(async (c) => ({
+        serial: await this._resolveSerialForUpsert(c.serial),
+        status: c.status,
+      })),
+    );
 
     await this.supabaseSync.batchUpsertDevices(devices, this.supabaseSync.pcId);
-    console.log(`[ADB Reconnect] Updated ${changes.length} device status(es) in DB`);
+    console.log(
+      `[ADB Reconnect] Updated ${changes.length} device status(es) in DB`,
+    );
   }
 
   /**
@@ -255,7 +340,7 @@ class AdbReconnectManager {
    * @returns {Array<string>}
    */
   getHealthyDevices() {
-    return [...this.registeredDevices].filter(serial => {
+    return [...this.registeredDevices].filter((serial) => {
       const failure = this.deviceFailures.get(serial);
       return !failure || !failure.isDead;
     });
@@ -295,18 +380,21 @@ class AdbReconnectManager {
   parseDeviceList(response) {
     if (!response) return [];
 
+    const toSerial = (d) =>
+      (d && (d.onlySerial || d.serial || d.id || d.deviceId)) || "";
+
     if (Array.isArray(response)) {
-      return response.map(d => ({ serial: d.serial || d.id || d.deviceId || '' }));
+      return response.map((d) => ({ serial: toSerial(d) }));
     }
 
     const devices = response.data || response.devices || response.list;
     if (Array.isArray(devices)) {
-      return devices.map(d => ({ serial: d.serial || d.id || d.deviceId || '' }));
+      return devices.map((d) => ({ serial: toSerial(d) }));
     }
 
-    if (typeof response === 'object' && !Array.isArray(response)) {
+    if (typeof response === "object" && !Array.isArray(response)) {
       const entries = Object.entries(response).filter(
-        ([key]) => !['action', 'status', 'code', 'msg'].includes(key)
+        ([key]) => !["action", "status", "code", "msg"].includes(key),
       );
       if (entries.length > 0) {
         return entries.map(([serial]) => ({ serial }));
@@ -324,9 +412,9 @@ class AdbReconnectManager {
   async _getDeviceIp(serial) {
     try {
       const { data } = await this.supabaseSync.supabase
-        .from('devices')
-        .select('ip_intranet')
-        .eq('serial_number', serial)
+        .from("devices")
+        .select("ip_intranet")
+        .eq("serial", serial)
         .maybeSingle();
       return data?.ip_intranet || null;
     } catch {
@@ -340,14 +428,14 @@ class AdbReconnectManager {
    * @returns {string}
    */
   _extractOutput(res) {
-    if (!res) return '';
-    if (typeof res === 'string') return res;
-    if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+    if (!res) return "";
+    if (typeof res === "string") return res;
+    if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
       const vals = Object.values(res.data);
-      if (vals.length > 0 && typeof vals[0] === 'string') return vals[0];
+      if (vals.length > 0 && typeof vals[0] === "string") return vals[0];
     }
     if (res.msg) return String(res.msg);
-    return '';
+    return "";
   }
 
   /**
@@ -356,7 +444,7 @@ class AdbReconnectManager {
    * @returns {Promise<void>}
    */
   sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -366,7 +454,7 @@ class AdbReconnectManager {
    */
   timeoutPromise(ms) {
     return new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout')), ms)
+      setTimeout(() => reject(new Error("Timeout")), ms),
     );
   }
 }

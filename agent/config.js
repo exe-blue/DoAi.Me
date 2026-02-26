@@ -51,13 +51,25 @@ class AgentConfig extends EventEmitter {
     this.configDir = process.env.CONFIG_DIR || "";
 
     // ── Dynamic settings (env defaults, overridden by DB) ──
-    this.heartbeatInterval = parseInt(process.env.HEARTBEAT_INTERVAL || "30000", 10);
-    this.taskPollInterval = parseInt(process.env.TASK_POLL_INTERVAL || "5000", 10);
+    this.heartbeatInterval = parseInt(
+      process.env.HEARTBEAT_INTERVAL || "30000",
+      10,
+    );
+    this.taskPollInterval = parseInt(
+      process.env.TASK_POLL_INTERVAL || "5000",
+      10,
+    );
     this.adbReconnectInterval = 60000;
     this.proxyCheckInterval = 300000;
     this.proxyPolicy = "sticky";
-    this.maxConcurrentTasks = 20;
-    this.taskExecutionTimeoutMs = parseInt(process.env.TASK_EXECUTION_TIMEOUT_MS || "300000", 10); // 5 min default
+    this.maxConcurrentTasks = parseInt(
+      process.env.MAX_CONCURRENT_TASKS || "10",
+      10,
+    );
+    this.taskExecutionTimeoutMs = parseInt(
+      process.env.TASK_EXECUTION_TIMEOUT_MS || "300000",
+      10,
+    ); // 5 min default
     this.deviceInterval = 500;
     this.watchDuration = [30, 120];
     this.taskInterval = [1000, 3000];
@@ -66,7 +78,9 @@ class AgentConfig extends EventEmitter {
     this.commandLogRetentionDays = 30;
 
     this.isPrimaryPc =
-      process.env.IS_PRIMARY_PC === "true" || process.env.IS_PRIMARY_PC === "1" || false;
+      process.env.IS_PRIMARY_PC === "true" ||
+      process.env.IS_PRIMARY_PC === "1" ||
+      false;
 
     // Internal
     this._settings = {}; // raw DB values keyed by setting key
@@ -83,7 +97,9 @@ class AgentConfig extends EventEmitter {
       .select("key, value, description, updated_at");
 
     if (error) {
-      console.error(`[Config] Failed to load settings from DB: ${error.message}`);
+      console.error(
+        `[Config] Failed to load settings from DB: ${error.message}`,
+      );
       return;
     }
 
@@ -113,9 +129,11 @@ class AgentConfig extends EventEmitter {
           this._applySettingFromDB(key, value);
 
           const newValue = propName ? this[propName] : this._settings[key];
-          console.log(`[Config] ${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+          console.log(
+            `[Config] ${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`,
+          );
           this.emit("config-updated", { key, oldValue, newValue });
-        }
+        },
       )
       .subscribe((status) => {
         console.log(`[Config] Settings Realtime status: ${status}`);

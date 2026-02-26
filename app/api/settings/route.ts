@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("settings")
@@ -50,7 +50,7 @@ export async function GET() {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json();
 
     if (!body || typeof body !== "object" || Object.keys(body).length === 0) {

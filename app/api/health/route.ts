@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
   // Full health report
   const period = (searchParams.get("period") || "24h") as "24h" | "7d" | "30d";
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
 
   const hoursMap = { "24h": 24, "7d": 168, "30d": 720 };
   const hours = hoursMap[period] || 24;

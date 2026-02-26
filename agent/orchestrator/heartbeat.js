@@ -123,7 +123,7 @@ class HeartbeatManager {
     let online = 0, offline = 0, errorCount = 0;
 
     for (const d of devices) {
-      const serial = d.serial_number;
+      const serial = d.serial;
       const lastSeen = d.last_seen_at ? new Date(d.last_seen_at).getTime() : 0;
       const elapsed = now - lastSeen;
 

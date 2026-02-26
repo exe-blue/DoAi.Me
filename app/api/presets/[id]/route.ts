@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { PresetRow } from "@/lib/supabase/types";
 import { presetUpdateSchema } from "@/lib/schemas";
 
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { data, error } = await supabase
@@ -49,7 +49,7 @@ export async function PUT(
       );
     }
 
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const updates: Record<string, any> = {};
     for (const key of ["name", "type", "description", "config"] as const) {
       if (key in result.data) {
@@ -82,7 +82,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { error } = await supabase

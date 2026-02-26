@@ -74,7 +74,7 @@ class DeviceWatchdog {
       // 1. Get current device list from DB
       const { data: devices, error } = await this.supabaseSync.supabase
         .from('devices')
-        .select('serial_number, status, last_seen_at')
+        .select('serial, status, last_seen_at')
         .eq('pc_id', pcId);
 
       if (error || !devices) {
@@ -104,17 +104,17 @@ class DeviceWatchdog {
 
       // 3. For devices with status='error' — track consecutive errors and attempt recovery
       for (const device of errorDevices) {
-        const count = (this._errorCounts.get(device.serial_number) || 0) + 1;
-        this._errorCounts.set(device.serial_number, count);
+        const count = (this._errorCounts.get(device.serial) || 0) + 1;
+        this._errorCounts.set(device.serial, count);
 
         if (count >= this.ERROR_COUNT_TRIGGER) {
-          await this._attemptRecovery(device.serial_number);
+          await this._attemptRecovery(device.serial);
         }
       }
 
       // Clear error counts for devices that are no longer in error
       for (const [serial] of this._errorCounts) {
-        const dev = devices.find(d => d.serial_number === serial);
+        const dev = devices.find(d => d.serial === serial);
         if (dev && dev.status !== 'error') {
           this._errorCounts.delete(serial);
           this._recoveryAttempts.delete(serial);
@@ -126,7 +126,7 @@ class DeviceWatchdog {
         if (!device.last_seen) continue;
         const lastSeen = new Date(device.last_seen).getTime();
         if ((now - lastSeen) > this.LAST_SEEN_STALE_MS) {
-          await this._checkPing(device.serial_number);
+          await this._checkPing(device.serial);
         }
       }
     } catch (err) {
@@ -206,7 +206,7 @@ class DeviceWatchdog {
           status: 'offline',
           last_seen_at: new Date().toISOString(),
         })
-        .eq('serial_number', serial)
+        .eq('serial', serial)
         .eq('pc_id', pcId);
     } catch (err) {
       console.error(`[DeviceWatchdog] Failed to mark ${serial} as dead: ${err.message}`);
@@ -247,7 +247,7 @@ class DeviceWatchdog {
       const pcId = this.supabaseSync.pcId;
       const { data: offlineDevices } = await this.supabaseSync.supabase
         .from('devices')
-        .select('serial_number')
+        .select('serial')
         .eq('pc_id', pcId)
         .eq('status', 'offline');
 
@@ -256,7 +256,7 @@ class DeviceWatchdog {
       for (let i = 0; i < offlineDevices.length; i += this.BATCH_SIZE) {
         const batch = offlineDevices.slice(i, i + this.BATCH_SIZE);
         for (const device of batch) {
-          await this._attemptRecovery(device.serial_number);
+          await this._attemptRecovery(device.serial);
         }
         // Wait between batches
         if (i + this.BATCH_SIZE < offlineDevices.length) {

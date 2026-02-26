@@ -87,7 +87,7 @@ interface DeviceRow {
   pc_id: string | null;
   proxy_id: string | null;
   management_code: string | null;
-  serial_number?: string | null;
+  serial?: string | null;
   name?: string | null;
 }
 
@@ -146,7 +146,7 @@ export default function ProxiesPage() {
     for (const d of devices) {
       const pc = workers.find((w) => w.id === d.pc_id);
       const pcNum = pc?.pc_number ?? "?";
-      const code = d.management_code ?? d.serial_number ?? d.id.slice(0, 8);
+      const code = d.management_code ?? d.serial ?? d.id.slice(0, 8);
       map.set(d.id, `${pcNum}-${code}`);
     }
     return map;
@@ -369,7 +369,7 @@ export default function ProxiesPage() {
               {devices.map((d) => {
                 const proxy = d.proxy_id ? proxies.find((p) => p.id === d.proxy_id) : null;
                 const pc = workers.find((w) => w.id === d.pc_id);
-                const label = deviceLabelMap.get(d.id) ?? d.management_code ?? d.serial_number ?? d.id.slice(0, 8);
+                const label = deviceLabelMap.get(d.id) ?? d.management_code ?? d.serial ?? d.id.slice(0, 8);
                 return (
                   <tr
                     key={d.id}

@@ -40,6 +40,7 @@ let staleTaskCleaner = null;
 let deviceWatchdog = null;
 let videoDispatcher = null;
 let deviceOrchestrator = null;
+let taskDevicesRunner = null;
 let shuttingDown = false;
 let healthServer = null;
 
@@ -54,13 +55,16 @@ function sleep(ms) {
  */
 async function selfTest(supabaseSync, xiaowei, config) {
   // 1. Verify Supabase connectivity (read settings table)
-  const { data: settingsRow, error: settingsError } = await supabaseSync.supabase
-    .from("settings")
-    .select("key")
-    .limit(1)
-    .maybeSingle();
+  const { data: settingsRow, error: settingsError } =
+    await supabaseSync.supabase
+      .from("settings")
+      .select("key")
+      .limit(1)
+      .maybeSingle();
   if (settingsError) {
-    throw new Error(`Supabase: settings table unreachable (${settingsError.message})`);
+    throw new Error(
+      `Supabase: settings table unreachable (${settingsError.message})`,
+    );
   }
 
   // 2. Verify Xiaowei connectivity (call list())
@@ -72,7 +76,11 @@ async function selfTest(supabaseSync, xiaowei, config) {
     const res = await xiaowei.list();
     if (Array.isArray(res)) {
       deviceList = res;
-    } else if (res && typeof res === "object" && (res.data || res.devices || res.list)) {
+    } else if (
+      res &&
+      typeof res === "object" &&
+      (res.data || res.devices || res.list)
+    ) {
       deviceList = res.data || res.devices || res.list || [];
     }
   } catch (err) {
@@ -91,15 +99,23 @@ async function selfTest(supabaseSync, xiaowei, config) {
     .eq("id", supabaseSync.pcId)
     .maybeSingle();
   if (pcError || !pcRow) {
-    throw new Error(`Supabase: pcs row not found (${pcError?.message || "no row"})`);
+    throw new Error(
+      `Supabase: pcs row not found (${pcError?.message || "no row"})`,
+    );
   }
-  const lastHb = pcRow.last_heartbeat ? new Date(pcRow.last_heartbeat).getTime() : 0;
+  const lastHb = pcRow.last_heartbeat
+    ? new Date(pcRow.last_heartbeat).getTime()
+    : 0;
   const twoMinAgo = Date.now() - 2 * 60 * 1000;
   if (lastHb < twoMinAgo) {
-    throw new Error("First heartbeat not yet recorded (last_heartbeat too old)");
+    throw new Error(
+      "First heartbeat not yet recorded (last_heartbeat too old)",
+    );
   }
 
-  log.info(`[Agent] Self-test passed: Supabase OK, Xiaowei OK (${deviceList.length} device(s)), PC ${config.pcNumber} registered, heartbeat OK`);
+  log.info(
+    `[Agent] Self-test passed: Supabase OK, Xiaowei OK (${deviceList.length} device(s)), PC ${config.pcNumber} registered, heartbeat OK`,
+  );
 }
 
 /**
@@ -143,7 +159,7 @@ async function main() {
   supabaseSync = new SupabaseSync(
     config.supabaseUrl,
     config.supabaseAnonKey,
-    config.supabaseServiceRoleKey
+    config.supabaseServiceRoleKey,
   );
 
   try {
@@ -203,16 +219,21 @@ async function main() {
   try {
     const recovered = await staleTaskCleaner.recoverStaleTasks();
     if (recovered > 0) {
-      log.info(`[Agent] ✓ Recovered ${recovered} stale tasks from previous crash`);
+      log.info(
+        `[Agent] ✓ Recovered ${recovered} stale tasks from previous crash`,
+      );
     }
     staleTaskCleaner.startPeriodicCheck();
-    log.info('[Agent] ✓ Stale task cleaner started');
+    log.info("[Agent] ✓ Stale task cleaner started");
   } catch (err) {
     log.warn(`[Agent] ✗ Stale task recovery failed: ${err.message}`);
   }
 
   // 6. Initialize dashboard broadcaster
-  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.pcId);
+  broadcaster = new DashboardBroadcaster(
+    supabaseSync.supabase,
+    supabaseSync.pcId,
+  );
   try {
     await broadcaster.init();
     log.info("[Agent] ✓ Dashboard broadcaster initialized");
@@ -222,10 +243,23 @@ async function main() {
   }
 
   // 7. Initialize ADB reconnect manager (needs to exist before heartbeat)
-  reconnectManager = new AdbReconnectManager(xiaowei, supabaseSync, broadcaster, config);
+  reconnectManager = new AdbReconnectManager(
+    xiaowei,
+    supabaseSync,
+    broadcaster,
+    config,
+  );
 
   // 8. Start heartbeat loop and wait for first beat
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
+  heartbeatHandle = startHeartbeat(
+    xiaowei,
+    supabaseSync,
+    config,
+    taskExecutor,
+    broadcaster,
+    reconnectManager,
+    () => deviceOrchestrator,
+  );
 
   // Wait briefly for first heartbeat to complete, then run self-test
   await sleep(2000);
@@ -265,7 +299,9 @@ async function main() {
       const count = await accountManager.loadAssignments(supabaseSync.pcId);
       if (count > 0) {
         const { verified, total } = await accountManager.verifyAll();
-        log.info(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
+        log.info(
+          `[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`,
+        );
       } else {
         log.info("[Agent] - Account check: no assignments (skipped)");
       }
@@ -282,14 +318,23 @@ async function main() {
     try {
       // Pick first known device serial for test run (if available)
       const testSerial = xiaowei.connected
-        ? [...(proxyManager?.assignments?.keys() || accountManager?.assignments?.keys() || [])][0] || null
+        ? [
+            ...(proxyManager?.assignments?.keys() ||
+              accountManager?.assignments?.keys() ||
+              []),
+          ][0] || null
         : null;
-      const { dirOk, requiredOk, testOk } = await scriptVerifier.verifyAll(testSerial);
+      const { dirOk, requiredOk, testOk } =
+        await scriptVerifier.verifyAll(testSerial);
 
       if (dirOk && requiredOk) {
-        log.info(`[Agent] ✓ Script check: ${scriptVerifier.availableScripts.length} scripts, required OK`);
+        log.info(
+          `[Agent] ✓ Script check: ${scriptVerifier.availableScripts.length} scripts, required OK`,
+        );
       } else if (dirOk) {
-        log.warn("[Agent] ⚠ Script check: directory OK but missing required scripts");
+        log.warn(
+          "[Agent] ⚠ Script check: directory OK but missing required scripts",
+        );
       } else {
         log.warn("[Agent] ✗ Script check: SCRIPTS_DIR not accessible");
       }
@@ -300,65 +345,93 @@ async function main() {
     log.info("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
-  const taskCallback = (task) => {
-    if (task.status === "pending") {
-      taskExecutor.execute(task);
-    }
-  };
-
-  // Primary: Broadcast channel (room:tasks) — lower latency
-  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.pcId, taskCallback);
-  if (broadcastResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ Broadcast room:tasks 구독 완료");
-  } else {
-    log.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
-  }
-
-  // Fallback: postgres_changes — in case Broadcast is not configured
-  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.pcId, taskCallback);
-  if (pgResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ postgres_changes 구독 완료");
-  } else {
-    log.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
-  }
-
-  // 12b. 명세 4.4: task_queue + commands Realtime 구독
-  const workerChannelResult = await supabaseSync.subscribeToTaskQueueAndCommands(
-    config.pcNumber,
-    {
-      onTaskQueue: async (queueRow) => {
-        if (queueRow.status !== "queued") return;
-        const task = await supabaseSync.createTaskFromQueueItem(queueRow, supabaseSync.pcId);
-        if (task) taskExecutor.execute(task);
-      },
-      onCommand: async (cmdRow) => {
-        if (cmdRow.status !== "pending") return;
-        try {
-          await supabaseSync.supabase.from("commands").update({ status: "running" }).eq("id", cmdRow.id);
-          // 기본 처리: payload에 따라 실행 (추후 확장). 여기서는 완료만 표시
-          await supabaseSync.supabase.from("commands").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", cmdRow.id);
-          log.info(`[Agent] Command ${cmdRow.id} completed`);
-        } catch (err) {
-          log.error(`[Agent] Command ${cmdRow.id} failed: ${err.message}`);
-          await supabaseSync.supabase.from("commands").update({ status: "failed", completed_at: new Date().toISOString(), result: { error: err.message } }).eq("id", cmdRow.id);
-        }
-      },
-    }
-  );
+  // 12. Task-devices only: task_queue → create task + fan-out; commands → absorb into task + task_devices (no TaskExecutor/tasks/job_assignments execution)
+  const workerChannelResult =
+    await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
+        onTaskQueue: async (queueRow) => {
+          if (queueRow.status !== "queued") return;
+          const task = await supabaseSync.createTaskFromQueueItem(
+            queueRow,
+            supabaseSync.pcId,
+          );
+          if (task) {
+            const n = await supabaseSync.fanOutTaskDevicesForTask(
+              task.id,
+              supabaseSync.pcId,
+              { taskConfig: queueRow.task_config },
+            );
+            log.info(
+              `[Agent] task_queue → task ${task.id} + ${n} task_devices (runner will claim)`,
+            );
+          }
+        },
+        onCommand: async (cmdRow) => {
+          if (cmdRow.status !== "pending") return;
+          try {
+            await supabaseSync.supabase
+              .from("commands")
+              .update({ status: "running" })
+              .eq("id", cmdRow.id);
+            const task = await supabaseSync.createTaskAndTaskDevicesFromCommand(
+              cmdRow,
+              supabaseSync.pcId,
+            );
+            if (task) {
+              await supabaseSync.supabase
+                .from("commands")
+                .update({
+                  status: "completed",
+                  completed_at: new Date().toISOString(),
+                  result: { task_id: task.id },
+                })
+                .eq("id", cmdRow.id);
+              log.info(
+                `[Agent] Command ${cmdRow.id} absorbed → task ${task.id} + task_devices`,
+              );
+            } else {
+              await supabaseSync.supabase
+                .from("commands")
+                .update({
+                  status: "failed",
+                  completed_at: new Date().toISOString(),
+                  result: { error: "createTaskAndTaskDevicesFromCommand failed" },
+                })
+                .eq("id", cmdRow.id);
+            }
+          } catch (err) {
+            log.error(`[Agent] Command ${cmdRow.id} absorb failed: ${err.message}`);
+            await supabaseSync.supabase
+              .from("commands")
+              .update({
+                status: "failed",
+                completed_at: new Date().toISOString(),
+                result: { error: err.message },
+              })
+              .eq("id", cmdRow.id);
+          }
+        },
+      });
   if (workerChannelResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ task_queue + commands 구독 완료");
+    log.info("[Agent] ✓ task_queue + commands 구독 (task_devices fan-out/absorb)");
   } else {
-    log.warn(`[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`);
+    log.warn(
+      `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
+    );
   }
 
-  // 12c. 명세 4.4: task_queue 보완 폴링 60초
   const processTaskQueuePending = async () => {
     try {
       const items = await supabaseSync.getPendingTaskQueueItems(config.pcNumber);
       for (const row of items) {
-        const task = await supabaseSync.createTaskFromQueueItem(row, supabaseSync.pcId);
-        if (task) taskExecutor.execute(task);
+        const task = await supabaseSync.createTaskFromQueueItem(
+          row,
+          supabaseSync.pcId,
+        );
+        if (task) {
+          await supabaseSync.fanOutTaskDevicesForTask(task.id, supabaseSync.pcId, {
+            taskConfig: row.task_config,
+          });
+        }
       }
     } catch (err) {
       log.error(`[Agent] Task queue poll error: ${err.message}`);
@@ -367,43 +440,25 @@ async function main() {
   taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
   processTaskQueuePending();
 
-  // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
-  taskPollHandle = setInterval(async () => {
-    try {
-      const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
-      }
-    } catch (err) {
-      log.error(`[Agent] Task poll error: ${err.message}`);
-    }
-  }, config.taskPollInterval);
-
-  // Run an initial poll immediately
-  try {
-    const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-    if (tasks.length > 0) {
-      log.info(`[Agent] Found ${tasks.length} pending task(s)`);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
-      }
-    }
-  } catch (err) {
-    log.error(`[Agent] Initial task poll error: ${err.message}`);
-  }
-
   // 14. Start ADB reconnect monitoring (manager already initialized above)
   if (xiaowei.connected) {
     reconnectManager.start();
     log.info("[Agent] ✓ ADB reconnect manager started");
   } else {
-    log.info("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
+    log.info(
+      "[Agent] - ADB reconnect: Xiaowei offline (will start when connected)",
+    );
   }
 
   // 14a. Start device watchdog
-  deviceWatchdog = new DeviceWatchdog(xiaowei, supabaseSync, config, broadcaster);
+  deviceWatchdog = new DeviceWatchdog(
+    xiaowei,
+    supabaseSync,
+    config,
+    broadcaster,
+  );
   deviceWatchdog.start();
-  log.info('[Agent] ✓ Device watchdog started');
+  log.info("[Agent] ✓ Device watchdog started");
 
   // 15. Start queue dispatcher and schedule evaluator
   queueDispatcher = new QueueDispatcher(supabaseSync, config, broadcaster);
@@ -414,44 +469,37 @@ async function main() {
   scheduleEvaluator.start();
   log.info("[Agent] ✓ Schedule evaluator started");
 
-  // 15b. Start device orchestrator (before VideoDispatcher so nudge target exists)
-  deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
-    pcId: supabaseSync.pcId,
-    maxConcurrent: config.maxConcurrentTasks || 10,
-  });
-  log.info(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`);
-  deviceOrchestrator.start();
-  log.info("[Agent] ✓ Device orchestrator started (Realtime push + 3s fallback)");
+  // 15b. DeviceOrchestrator not started (execution = task_devices only, no job_assignments)
+  log.info("[Agent] - Device orchestrator skipped (task_devices SSOT)");
+
+  // 15c. Task-devices SSOT runner (only execution path: claim_task_devices → scriptRef steps)
+  const { TaskDevicesRunner } = require("./task-devices-runner");
+  taskDevicesRunner = new TaskDevicesRunner(supabaseSync, xiaowei, config);
+  taskDevicesRunner.start();
+  log.info("[Agent] ✓ Task-devices runner started (SSOT engine)");
 
   videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  if (config.isPrimaryPc) {
-    // Wire push: VideoDispatcher creates assignments → immediately nudge DeviceOrchestrator
-    videoDispatcher.on("nudge", () => {
-      if (deviceOrchestrator) {
-        log.info("[Agent] ⚡ VideoDispatcher → nudge → DeviceOrchestrator");
-        deviceOrchestrator.nudge();
-      }
-    });
-    videoDispatcher.start();
-    log.info("[Agent] ✓ Video dispatcher started (Realtime push + 60s fallback)");
-  } else {
-    log.info("[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.");
-  }
+  log.info(
+    "[Agent] - Video dispatcher skipped (execution = task_devices only, no job_assignments)",
+  );
 
-  // 13a. Poll pending job_assignments only when not using DeviceOrchestrator (orchestrator handles claim_next_assignment)
-  if (!deviceOrchestrator) {
-    taskExecutor.startJobAssignmentPolling(15000);
-    log.info("[Agent] ✓ Job assignment polling started");
-  } else {
-    log.info("[Agent] - Job assignment polling skipped (DeviceOrchestrator active)");
-  }
+  // 13a. Job assignment polling removed (execution = task_devices only)
+  log.info("[Agent] - Job assignment polling skipped (task_devices SSOT)");
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
     // heartbeat_interval → restart heartbeat loop
     if (key === "heartbeat_interval" && heartbeatHandle) {
       clearInterval(heartbeatHandle);
-      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
+      heartbeatHandle = startHeartbeat(
+        xiaowei,
+        supabaseSync,
+        config,
+        taskExecutor,
+        broadcaster,
+        reconnectManager,
+        () => deviceOrchestrator,
+      );
       log.info(`[Agent] Heartbeat restarted with interval ${newValue}ms`);
     }
 
@@ -464,7 +512,10 @@ async function main() {
     }
 
     // proxy_check_interval or proxy_policy → restart proxy check loop
-    if ((key === "proxy_check_interval" || key === "proxy_policy") && proxyManager) {
+    if (
+      (key === "proxy_check_interval" || key === "proxy_policy") &&
+      proxyManager
+    ) {
       proxyManager.applyConfigChange(key, newValue);
     }
 
@@ -501,12 +552,17 @@ async function main() {
           .maybeSingle();
         if (row && row.last_heartbeat) {
           lastHeartbeatAt = row.last_heartbeat;
-          lastHeartbeatAgeSec = Math.round((Date.now() - new Date(row.last_heartbeat).getTime()) / 1000);
+          lastHeartbeatAgeSec = Math.round(
+            (Date.now() - new Date(row.last_heartbeat).getTime()) / 1000,
+          );
         }
       } catch (_) {}
     }
     const xiaoweiConnected = xiaowei ? xiaowei.connected : false;
-    const ok = xiaoweiConnected && lastHeartbeatAgeSec !== null && lastHeartbeatAgeSec < 120;
+    const ok =
+      xiaoweiConnected &&
+      lastHeartbeatAgeSec !== null &&
+      lastHeartbeatAgeSec < 120;
     res.writeHead(ok ? 200 : 503, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -514,11 +570,13 @@ async function main() {
         xiaowei: xiaoweiConnected,
         lastHeartbeatAt,
         lastHeartbeatAgeSec,
-      })
+      }),
     );
   });
   healthServer.listen(healthPort, "127.0.0.1", () => {
-    log.info(`[Agent] Health check listening on http://127.0.0.1:${healthPort}/`);
+    log.info(
+      `[Agent] Health check listening on http://127.0.0.1:${healthPort}/`,
+    );
   });
 
   log.info("[Agent] Ready and listening for tasks");
@@ -540,9 +598,13 @@ async function shutdown() {
     staleTaskCleaner.stop();
   }
 
-  // Stop device orchestrator
   if (deviceOrchestrator) {
     deviceOrchestrator.stop();
+    deviceOrchestrator = null;
+  }
+  if (taskDevicesRunner) {
+    taskDevicesRunner.stop();
+    taskDevicesRunner = null;
   }
 
   // Stop device watchdog
@@ -637,7 +699,9 @@ process.on("uncaughtException", (err) => {
   log.error(`[Agent] Uncaught exception: ${err.message}`);
   log.error(err.stack);
   if (supabaseSync && typeof supabaseSync.insertAgentErrorLog === "function") {
-    supabaseSync.insertAgentErrorLog(err.message, { stack: err.stack }).catch(() => {});
+    supabaseSync
+      .insertAgentErrorLog(err.message, { stack: err.stack })
+      .catch(() => {});
   }
 });
 
@@ -645,7 +709,9 @@ process.on("unhandledRejection", (reason) => {
   log.error(`[Agent] Unhandled rejection: ${reason}`);
   if (supabaseSync && typeof supabaseSync.insertAgentErrorLog === "function") {
     const msg = reason instanceof Error ? reason.message : String(reason);
-    supabaseSync.insertAgentErrorLog(msg, { type: "unhandledRejection" }).catch(() => {});
+    supabaseSync
+      .insertAgentErrorLog(msg, { type: "unhandledRejection" })
+      .catch(() => {});
   }
 });
 

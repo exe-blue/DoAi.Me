@@ -3,6 +3,8 @@
  *
  * 기존 'upload_file' case 아래에 추가
  * xiaowei-client.js에 autojsCreate / autojsRemove 메서드도 추가
+ *
+ * 운영: devices="all" 사용 금지. target_devices 없으면 해당 PC 디바이스 목록으로 자동 채움.
  */
 
 // ═══════════════════════════════════════════════════════════
@@ -13,7 +15,7 @@ case 'run_script': {
   /**
    * payload 예시:
    * {
-   *   devices: "all" | "serial1,serial2",
+   *   devices: "serial1,serial2" (운영 금지: "all"),
    *   script_path: "D:\\scripts\\youtube_commander.js",  // Node PC 절대경로
    *   cmd: { action: "search", params: { query: "BTS" } },  // 단일 커맨드
    *   // 또는
@@ -25,7 +27,7 @@ case 'run_script': {
    * }
    */
   const {
-    devices = 'all',
+    devices,  // no default "all"; filled from task.target_devices / PC devices
     script_path,
     cmd,
     commands,
@@ -101,9 +103,9 @@ case 'run_script': {
 
 case 'stop_script': {
   /**
-   * payload: { devices: "all", script_name: "youtube_commander.js" }
+   * payload: { devices: "serial1,serial2" (no "all"), script_name: "youtube_commander.js" }
    */
-  const { devices = 'all', script_name } = payload;
+  const { devices, script_name } = payload;  // devices from task.target_devices / PC list, no "all"
   if (!script_name) throw new Error('payload.script_name required');
 
   const result = await xiaowei.autojsRemove(devices, script_name);
@@ -165,8 +167,7 @@ async pullFile(deviceSerial, remotePath, localPath) {
 // 검색 실행
 POST /api/youtube/command
 {
-  "devices": "all",
-  "pc_id": "PC01",
+  "pc_id": "<uuid>",
   "command": {
     "action": "search",
     "params": { "query": "BTS Dynamite" }
@@ -178,7 +179,7 @@ POST /api/youtube/command
   type: "youtube",
   task_type: "run_script",
   payload: {
-    devices: "all",
+    devices: "<resolved by server>",
     script_path: "C:\\scripts\\youtube_commander.js",
     cmd: { action: "search", params: { query: "BTS Dynamite" } }
   }
@@ -187,7 +188,6 @@ POST /api/youtube/command
 // 파이프라인 실행 (검색 → 클릭 → 좋아요)
 POST /api/youtube/pipeline
 {
-  "devices": "all",
   "commands": [
     { "action": "launch", "params": { "fromScratch": true } },
     { "action": "search", "params": { "query": "BTS Dynamite" } },

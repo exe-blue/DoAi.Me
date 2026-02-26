@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     type PcRow = { id: string; pc_number: string | null; hostname: string | null; status: string | null; last_heartbeat: string | null };
     let workersList: Array<{ id: string; name: string; status: string; last_heartbeat: string | null }> = [];

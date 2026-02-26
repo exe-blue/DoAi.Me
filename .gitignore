@@ -17,6 +17,7 @@ tsconfig.tsbuildinfo
 .env.development.local
 .env.test.local
 .env.production.local
+.env.sentry
 agent/.env
 agent/.env*
 
@@ -69,3 +70,4 @@ yarn-error.log*
 _archive/migration-scripts/update_agent_v3.sh
 agent/logs/
 agent/farm_logs/
+agent/.script-cache/

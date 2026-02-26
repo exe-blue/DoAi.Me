@@ -3,6 +3,7 @@
  * Periodically syncs device status and worker health to Supabase (명세 4.3 포맷)
  */
 const os = require("os");
+const { resolveHardwareSerialsForList } = require("./device-serial-resolver");
 
 /**
  * Parse device list from Xiaowei response
@@ -27,7 +28,7 @@ function parseDeviceList(response) {
   // If response contains a device map (serial -> info)
   if (typeof response === "object" && !Array.isArray(response)) {
     const entries = Object.entries(response).filter(
-      ([key]) => !["action", "status", "code", "msg"].includes(key)
+      ([key]) => !["action", "status", "code", "msg"].includes(key),
     );
     if (entries.length > 0) {
       return entries.map(([serial, info]) => ({
@@ -44,12 +45,13 @@ function parseDeviceList(response) {
 }
 
 function normalizeDevice(d) {
+  const connectionId = d.onlySerial || d.serial || d.id || d.deviceId || "";
   return {
-    serial: d.serial || d.id || d.deviceId || "",
+    serial: connectionId,
     model: d.model || d.name || "",
     status: "online",
     battery: d.battery || null,
-    ipIntranet: d.ip || d.ipIntranet || null,
+    ipIntranet: d.ip || d.ipIntranet || d.intranetIp || null,
   };
 }
 
@@ -64,13 +66,21 @@ function normalizeDevice(d) {
  * @param {() => import('./device-orchestrator')|null} getDeviceOrchestrator - optional getter for device orchestrator (task_status sync)
  * @returns {NodeJS.Timeout} interval handle
  */
-function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, getDeviceOrchestrator) {
+function startHeartbeat(
+  xiaowei,
+  supabaseSync,
+  config,
+  taskExecutor,
+  broadcaster,
+  reconnectManager,
+  getDeviceOrchestrator,
+) {
   const pcId = supabaseSync.pcId;
   const interval = config.heartbeatInterval || 30000;
   const startedAt = new Date().toISOString();
 
   console.log(
-    `[Heartbeat] Starting (every ${interval / 1000}s) for PC ${pcId}`
+    `[Heartbeat] Starting (every ${interval / 1000}s) for PC ${pcId}`,
   );
 
   async function beat() {
@@ -81,14 +91,19 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
         try {
           const response = await xiaowei.list();
           devices = parseDeviceList(response);
+          // Resolve hardware serial for TCP/IP (IP:5555) devices via getprop ro.serialno
+          devices = await resolveHardwareSerialsForList(xiaowei, devices);
         } catch (err) {
           console.error(`[Heartbeat] Failed to list devices: ${err.message}`);
         }
       }
 
       // 2. Update PC status (명세 4.3: agent_version, status, system)
-      const uptimeSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
-      const agentVersion = config.agentVersion || process.env.AGENT_VERSION || "0.1.0-alpha";
+      const uptimeSec = Math.round(
+        (Date.now() - new Date(startedAt).getTime()) / 1000,
+      );
+      const agentVersion =
+        config.agentVersion || process.env.AGENT_VERSION || "0.1.0-alpha";
       const system = {
         cpu_usage: Math.min(100, Math.round((os.loadavg()[0] || 0) * 25)) || 0,
         memory_free_mb: Math.round(os.freemem() / (1024 * 1024)),
@@ -96,19 +111,30 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
         usb_devices_count: devices.length,
         uptime_seconds: uptimeSec,
       };
-      await supabaseSync.updatePcStatus(pcId, "online", { agent_version: agentVersion, system });
+      await supabaseSync.updatePcStatus(pcId, "online", {
+        agent_version: agentVersion,
+        system,
+      });
 
       // 3. Batch upsert all devices (명세 4.3: device_code PC01-001 형식)
       const devicesWithCode = devices.map((d, i) => ({
         ...d,
         device_code: `${config.pcNumber}-${String(i + 1).padStart(3, "0")}`,
       }));
-      const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
+      const activeSerials = devices
+        .filter((d) => d.serial)
+        .map((d) => d.serial);
       await supabaseSync.batchUpsertDevices(devicesWithCode, pcId);
 
       // 4. Sync device task states from orchestrator (task_status, watch_progress, etc.)
-      const orchestrator = typeof getDeviceOrchestrator === "function" ? getDeviceOrchestrator() : null;
-      if (orchestrator && typeof orchestrator.getDeviceStatesForSync === "function") {
+      const orchestrator =
+        typeof getDeviceOrchestrator === "function"
+          ? getDeviceOrchestrator()
+          : null;
+      if (
+        orchestrator &&
+        typeof orchestrator.getDeviceStatesForSync === "function"
+      ) {
         const stateMap = orchestrator.getDeviceStatesForSync();
         const states = Object.entries(stateMap).map(([serial, s]) => ({
           serial,
@@ -143,18 +169,18 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
 
           // Build and publish dashboard snapshot
           await broadcaster.publishDashboardSnapshot({
-            type: 'dashboard_snapshot',
+            type: "dashboard_snapshot",
             worker: {
               id: pcId,
               name: config.pcNumber,
-              status: 'online',
+              status: "online",
               uptime_seconds: uptimeSec,
-              last_heartbeat: new Date().toISOString()
+              last_heartbeat: new Date().toISOString(),
             },
             devices: deviceCounts,
             tasks: taskCounts,
             proxies: proxyCounts,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
           });
         } catch (err) {
           console.error(`[Heartbeat] Broadcaster error: ${err.message}`);
@@ -162,7 +188,7 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
       }
 
       console.log(
-        `[Heartbeat] heartbeat OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
+        `[Heartbeat] heartbeat OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`,
       );
     } catch (err) {
       console.error(`[Heartbeat] Error: ${err.message}`);

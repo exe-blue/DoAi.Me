@@ -84,10 +84,10 @@ function buildDevicesKey(workerId: string, status: string) {
 function DevicesPageInner() {
   const searchParams = useSearchParams();
   const [workerFilter, setWorkerFilter] = useState(
-    searchParams.get("worker_id") || "all"
+    searchParams.get("worker_id") || "all",
   );
   const [statusFilter, setStatusFilter] = useState(
-    searchParams.get("status") || "all"
+    searchParams.get("status") || "all",
   );
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -104,7 +104,7 @@ function DevicesPageInner() {
 
   const { data: workersData } = useSWR<{ workers: Worker[] }>(
     "/api/workers",
-    fetcher
+    fetcher,
   );
 
   const devices = devicesData?.devices ?? [];
@@ -118,10 +118,7 @@ function DevicesPageInner() {
 
   const filtered = useMemo(() => {
     return devices.filter((d) => {
-      if (
-        statusFilter !== "all" &&
-        (d.status ?? "") !== statusFilter
-      )
+      if (statusFilter !== "all" && (d.status ?? "") !== statusFilter)
         return false;
       if (workerFilter !== "all" && d.worker_id !== workerFilter) return false;
       if (search) {
@@ -146,7 +143,7 @@ function DevicesPageInner() {
       offline: devices.filter((d) => d.status === "offline").length,
       error: devices.filter((d) => d.status === "error").length,
     }),
-    [devices]
+    [devices],
   );
 
   return (
@@ -162,9 +159,7 @@ function DevicesPageInner() {
               key={k}
               className="flex items-center gap-1 rounded-full border border-[#1e2130] bg-[#12141d] px-2.5 py-1 text-[10px]"
             >
-              <span
-                className={cn("h-1.5 w-1.5 rounded-full", v.color)}
-              />
+              <span className={cn("h-1.5 w-1.5 rounded-full", v.color)} />
               <span className="text-slate-500">{v.label}</span>
               <span className="font-mono text-slate-300">
                 {counts[k as keyof typeof counts] ?? 0}
@@ -184,10 +179,7 @@ function DevicesPageInner() {
             className="border-[#1e2130] bg-[#12141d] pl-9 text-sm text-slate-300 placeholder:text-slate-600"
           />
         </div>
-        <Select
-          value={workerFilter}
-          onValueChange={(v) => setWorkerFilter(v)}
-        >
+        <Select value={workerFilter} onValueChange={(v) => setWorkerFilter(v)}>
           <SelectTrigger className="w-32 border-[#1e2130] bg-[#12141d] text-sm text-slate-300">
             <SelectValue placeholder="PC" />
           </SelectTrigger>
@@ -200,10 +192,7 @@ function DevicesPageInner() {
             ))}
           </SelectContent>
         </Select>
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v)}
-        >
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
           <SelectTrigger className="w-28 border-[#1e2130] bg-[#12141d] text-sm text-slate-300">
             <SelectValue />
           </SelectTrigger>
@@ -253,11 +242,10 @@ function DevicesPageInner() {
             </thead>
             <tbody>
               {filtered.map((d) => {
-                const st =
-                  STATUS[d.status ?? ""] ?? {
-                    color: "bg-slate-600",
-                    label: d.status ?? "—",
-                  };
+                const st = STATUS[d.status ?? ""] ?? {
+                  color: "bg-slate-600",
+                  label: d.status ?? "—",
+                };
                 return (
                   <tr
                     key={d.id}
@@ -299,7 +287,7 @@ function DevicesPageInner() {
                             "flex items-center gap-1 text-xs",
                             d.battery_level < 20
                               ? "text-red-400"
-                              : "text-slate-400"
+                              : "text-slate-400",
                           )}
                         >
                           <Battery className="h-3 w-3" />
@@ -365,7 +353,7 @@ function DeviceDetailSheet({
 }) {
   const { data, error, isLoading, mutate } = useSWR<{ device: Device }>(
     deviceId ? `/api/devices/${deviceId}` : null,
-    fetcher
+    fetcher,
   );
   const device = data?.device;
   const pcName = (workerId: string | null) => {
@@ -396,7 +384,7 @@ function DeviceDetailSheet({
                   ? "로딩..."
                   : error
                     ? "오류"
-                    : device?.serial ?? deviceId.slice(0, 8)}
+                    : (device?.serial ?? deviceId.slice(0, 8))}
               </SheetTitle>
             </SheetHeader>
             <div className="mt-6 space-y-4">
@@ -428,10 +416,13 @@ function DeviceDetailSheet({
                         <span
                           className={cn(
                             "h-2 w-2 rounded-full",
-                            STATUS[device.status ?? ""]?.color ?? "bg-slate-600"
+                            STATUS[device.status ?? ""]?.color ??
+                              "bg-slate-600",
                           )}
                         />
-                        {STATUS[device.status ?? ""]?.label ?? device.status ?? "—"}
+                        {STATUS[device.status ?? ""]?.label ??
+                          device.status ??
+                          "—"}
                       </span>
                     }
                   />

@@ -15,7 +15,7 @@ export interface PcDto {
 /** Device row (devices table) */
 export interface DeviceDto {
   id?: string;
-  serial_number?: string;
+  serial?: string;
   pc_id?: string;
   status?: string;
   model?: string | null;

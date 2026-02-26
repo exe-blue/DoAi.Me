@@ -18,8 +18,9 @@
 // ─── switch(task.task_type) 안에 추가 ──────────────────────────
 
 case 'run_script': {
+  // devices: from task.target_devices (connection_id ?? serial). 운영 금지: "all"
   const {
-    devices = 'all',
+    devices,
     script_path = SCRIPT_PATH,          // 기본값: SCRIPTS_DIR/youtube_commander.js
     cmd,                                // 단일 커맨드
     commands,                           // 파이프라인
@@ -67,8 +68,8 @@ case 'run_script': {
   console.log(`[run_script] autojsCreate 응답:`, autojsRes);
 
   // ── Step 3: result.json 폴링 (최대 90초) ─────────────────────
-  // 첫 번째 시리얼만 대표로 결과 수집
-  const firstSerial = devices === 'all' ? null : devices.split(',')[0].trim();
+  // 첫 번째 타겟만 대표로 결과 수집
+  const firstSerial = devices ? devices.split(',')[0].trim() : null;
   let scriptResult  = null;
 
   if (firstSerial) {
@@ -95,9 +96,8 @@ case 'run_script': {
       console.warn('[run_script] result.json 타임아웃 — 스크립트가 완료되지 않았거나 결과 없음');
     }
   } else {
-    // devices="all" 이면 결과 개별 수집 생략 (필요 시 확장)
-    console.log('[run_script] devices=all: 결과 폴링 생략');
-    await new Promise(r => setTimeout(r, 5000)); // 실행 시작 대기만
+    console.log('[run_script] No representative device: result polling skipped');
+    await new Promise(r => setTimeout(r, 5000));
   }
 
   return {
@@ -112,7 +112,7 @@ case 'run_script': {
 }
 
 case 'stop_script': {
-  const { devices = 'all', script_name = 'youtube_commander.js' } = task.payload;
+  const { devices, script_name = 'youtube_commander.js' } = task.payload;  // devices from task.target_devices
   const res = await xiaowei.autojsRemove(devices, script_name);
   console.log(`[stop_script] autojsRemove:`, res);
   return { success: true, task_type: 'stop_script', devices, script_name, res };
