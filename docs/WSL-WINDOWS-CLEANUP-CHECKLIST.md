@@ -67,6 +67,27 @@ rebase를 이미 했다면 반드시 `--force-with-lease`로 push 한다.
 - **Files changed**: 로그/아카이브/`.bak`/`C:scriptscmd.json`/`.devcontainer` 등 **제외했어야 할 항목이 포함되지 않았는지** 확인.
 - **Commits 탭**: 커밋 순서와 메시지가 의도한 대로인지 확인 (chore → feat/fix → docs).
 
+## 7. Windows에서 최소 검증 명령 (삭제/정리 후)
+
+정리로 제거한 항목(`agent/*.backup`, `*.bak`, `C:scriptscmd.json` 등)이 빌드/실행에 필요하지 않음을 확인하려면, **Windows**에서 레포 루트로 이동한 뒤 아래만 실행하면 된다.
+
+```powershell
+# PowerShell (경로는 본인 환경에 맞게)
+cd C:\Users\choi\dev\DoAi.Me
+npm ci
+npm run build
+```
+
+```bash
+# Git Bash
+cd /c/Users/choi/dev/DoAi.Me
+npm ci
+npm run build
+```
+
+- `npm run build`가 스키마/타입 이슈(예: `pc_id` 등)로 실패할 수 있으나, 그 경우는 **삭제한 백업/아티팩트와 무관**한 기존 코드·DB 타입 문제이다.
+- Agent 단위 테스트: `cd agent && npm ci && npx tsc --noEmit` (Windows에서 Agent 경로가 있는 경우).
+
 ---
 
 _이 문서는 WSL→Windows 정리 자동화 후 재발 방지를 위해 추가됨._
