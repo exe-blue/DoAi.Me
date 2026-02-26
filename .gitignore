@@ -55,9 +55,8 @@ Thumbs.db
 # Vercel
 .vercel
 
-# WSL/Windows path artifacts (do not re-add)
+# WSL/Windows path artifact at repo root only (do not re-add)
 C:scriptscmd.json
-*scriptscmd.json
 
 # Debug
 npm-debug.log*

@@ -13,7 +13,7 @@ WSL/DevContainer에서 작업 후 Windows로 복귀할 때 PR에 섞이기 쉬�
 ## 2. 레포 정책 (이미 반영된 것)
 
 - **`.gitattributes`**: 소스코드 LF 고정 (`* text=auto eol=lf` 등)
-- **`.gitignore`**: `C:scriptscmd.json`, `*scriptscmd.json`, `agent/logs/`, `.cursor/` 등
+- **`.gitignore`**: `C:scriptscmd.json`(루트만), `agent/logs/`, `.cursor/` 등
 
 ## 3. Windows에서 Git 권장 설정 (로컬만)
 
