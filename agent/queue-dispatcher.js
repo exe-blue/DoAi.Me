@@ -1,24 +1,13 @@
 /**
- * QueueDispatcher — Dispatches queued tasks to the system
+ * QueueDispatcher — Dispatches queued tasks to the system (Push-based)
  *
- * Runs a 10-second dispatch loop that:
- * 1. Counts currently running tasks
- * 2. If running < max_concurrent_tasks, dequeues highest-priority items
- * 3. Creates real tasks from task_config (via POST /api/tasks logic)
- * 4. Updates queue entry with dispatched_task_id + status
- * 5. Publishes system events for dashboard
- *
- * Respects config changes dynamically. Never cancels running tasks.
+ * Primary: Supabase Realtime on task_queue INSERT → immediate dispatch.
+ * Fallback: 10-second poll for any missed events.
  */
 
-const DEFAULT_DISPATCH_INTERVAL = 10000; // 10 seconds
+const DEFAULT_DISPATCH_INTERVAL = 10000;
 
 class QueueDispatcher {
-  /**
-   * @param {object} supabaseSync - SupabaseSync instance
-   * @param {object} config - AgentConfig instance
-   * @param {object} broadcaster - DashboardBroadcaster instance (nullable)
-   */
   constructor(supabaseSync, config, broadcaster) {
     this.supabaseSync = supabaseSync;
     this.config = config;
@@ -27,33 +16,51 @@ class QueueDispatcher {
 
     this._dispatchInterval = null;
     this._running = false;
-    this._lastQueueSize = -1; // Track for state-transition logging
+    this._lastQueueSize = -1;
+    this._queueChannel = null;
   }
 
-  /**
-   * Start the dispatch loop
-   */
   start() {
     if (this._dispatchInterval) return;
 
     const interval = DEFAULT_DISPATCH_INTERVAL;
     this._dispatchInterval = setInterval(() => this._tick(), interval);
-
-    // Run first tick immediately
     this._tick();
+    this._subscribeToQueue();
 
-    console.log(`[QueueDispatcher] Started (interval: ${interval}ms)`);
+    console.log(`[QueueDispatcher] Started (Realtime push + ${interval / 1000}s fallback)`);
   }
 
-  /**
-   * Stop the dispatch loop
-   */
   stop() {
     if (this._dispatchInterval) {
       clearInterval(this._dispatchInterval);
       this._dispatchInterval = null;
     }
+    if (this._queueChannel) {
+      this.supabase.removeChannel(this._queueChannel);
+      this._queueChannel = null;
+    }
     console.log("[QueueDispatcher] Stopped");
+  }
+
+  /**
+   * Realtime: task_queue INSERT with status='queued' → immediate dispatch
+   */
+  _subscribeToQueue() {
+    this._queueChannel = this.supabase
+      .channel("qd-queue-push")
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "task_queue",
+        filter: "status=eq.queued",
+      }, () => {
+        console.log("[QueueDispatcher] ⚡ Realtime: new queue item → immediate dispatch");
+        this._tick();
+      })
+      .subscribe((status) => {
+        console.log(`[QueueDispatcher] task_queue Realtime: ${status}`);
+      });
   }
 
   /**

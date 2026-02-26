@@ -1013,7 +1013,7 @@ export default function ContentPage() {
                 </Button>
               </DialogFooter>
             </div>
-          ) : null}
+          )}
         </DialogContent>
       </Dialog>
 

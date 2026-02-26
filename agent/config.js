@@ -40,7 +40,7 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.pcNumber = process.env.PC_NUMBER || "PC00";  // ^PC[0-9]{2}$ format (DB constraint)
+    this.pcNumber = process.env.PC_NUMBER || "PC-00";
     this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;

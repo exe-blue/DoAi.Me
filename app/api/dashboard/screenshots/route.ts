@@ -17,7 +17,9 @@ export async function GET(request: Request) {
     const startOfDay = `${date}T00:00:00.000Z`;
     const endOfDay = `${date}T23:59:59.999Z`;
 
-    let query = supabase
+    // job_assignments not in generated DB types
+    const sb = supabase as { from: (t: string) => ReturnType<typeof supabase.from> };
+    let query = sb
       .from("job_assignments")
       .select(`
         id, job_id, device_serial, status, progress_pct,
@@ -40,8 +42,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    type JobAssignmentRow = {
+      id: string; job_id: string; device_serial: string | null; status: string; progress_pct?: number;
+      final_duration_sec?: number; watch_percentage?: number;
+      did_like?: boolean; did_comment?: boolean; did_playlist?: boolean;
+      error_log?: string | null; created_at?: string | null; started_at?: string | null; completed_at?: string | null;
+      screenshot_path?: string | null;
+    };
+    const rows: JobAssignmentRow[] = (data || []) as unknown as JobAssignmentRow[];
+
     // 작업을 타임라인 형태로 포맷
-    const timeline = (data || []).map((row) => ({
+    const timeline = rows.map((row) => ({
       id: row.id,
       jobId: row.job_id,
       serial: row.device_serial,

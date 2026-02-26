@@ -29,21 +29,22 @@ export async function GET() {
     // 오늘 통계
     const today = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
 
+    const sb = supabase as { from: (t: string) => ReturnType<typeof supabase.from> };
     const [
       { count: views },
       { count: errors },
       { count: activeMissions },
     ] = await Promise.all([
-      supabase.from("job_assignments").select("*", { count: "exact", head: true })
+      sb.from("job_assignments").select("*", { count: "exact", head: true })
         .eq("status", "completed").gte("completed_at", today),
-      supabase.from("job_assignments").select("*", { count: "exact", head: true })
+      sb.from("job_assignments").select("*", { count: "exact", head: true })
         .eq("status", "failed").gte("created_at", today),
       supabase.from("videos").select("*", { count: "exact", head: true })
         .eq("status", "active"),
     ]);
 
-    // PC별 요약
-    const { data: pcs } = await supabase.from("pcs").select("id, pc_number, status, last_heartbeat");
+    // PC별 요약 (pcs not in generated DB types)
+    const { data: pcs } = await sb.from("pcs").select("id, pc_number, status, last_heartbeat");
 
     return NextResponse.json({
       success: true,

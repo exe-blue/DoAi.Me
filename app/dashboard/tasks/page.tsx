@@ -89,6 +89,7 @@ export default function TasksPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [taskDevices, setTaskDevices] = useState<Record<string, TaskDevice[]>>({});
 
+  const [dispatching, setDispatching] = useState(false);
   const {
     data,
     error,
@@ -150,6 +151,26 @@ export default function TasksPage() {
     }
   };
 
+  const handleDispatch = async () => {
+    setDispatching(true);
+    try {
+      const res = await apiClient.post<{ ok: boolean; dispatched?: number; message?: string; error?: string }>(
+        "/api/dispatch-queue",
+        { body: {} }
+      );
+      if (res.success && res.data?.dispatched === 1) {
+        toast.success("대기열 1건 디스패치됨 → PC별 기기에서 영상 시청 시작");
+        mutate();
+      } else if (res.success && res.data?.dispatched === 0) {
+        toast.info(res.data?.message ?? "대기열에 항목이 없습니다");
+      } else {
+        toast.error((res.data as { error?: string })?.error ?? res.error ?? "디스패치 실패");
+      }
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -157,14 +178,25 @@ export default function TasksPage() {
           <h1 className="text-2xl font-bold text-white">대기열</h1>
           <p className="text-sm text-slate-500">{tasks.length}개 태스크</p>
         </div>
-        <Button
-          onClick={() => mutate()}
-          variant="outline"
-          size="sm"
-          className="border-[#1e2130] bg-[#12141d] text-slate-300 hover:text-white"
-        >
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> 새로고침
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleDispatch}
+            disabled={dispatching}
+            size="sm"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Play className="mr-1.5 h-3.5 w-3.5" />
+            {dispatching ? "디스패치 중…" : "지금 디스패치"}
+          </Button>
+          <Button
+            onClick={() => mutate()}
+            variant="outline"
+            size="sm"
+            className="border-[#1e2130] bg-[#12141d] text-slate-300 hover:text-white"
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> 새로고침
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-1 rounded-lg border border-[#1e2130] bg-[#0d1117] p-1">

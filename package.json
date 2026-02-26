@@ -18,6 +18,7 @@
     "agent:dev": "cd agent && npm run dev",
     "agent:start": "cd agent && npm start",
     "db:link": "npx supabase link --project-ref vyfxrplzhskncigyfkaz",
+    "db:push": "npx supabase db push",
     "db:verify": "npx supabase db execute --file supabase/verify_schema.sql",
     "clean": "rm -rf .next",
     "clean:cache": "rm -rf .next/cache",

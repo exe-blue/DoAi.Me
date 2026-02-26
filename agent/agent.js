@@ -414,22 +414,29 @@ async function main() {
   scheduleEvaluator.start();
   log.info("[Agent] ✓ Schedule evaluator started");
 
-  videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  if (config.isPrimaryPc) {
-    videoDispatcher.start();
-    log.info("[Agent] ✓ Video dispatcher started (primary PC)");
-  } else {
-    log.info("[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.");
-  }
-
-  // 15b. Start device orchestrator
+  // 15b. Start device orchestrator (before VideoDispatcher so nudge target exists)
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
     maxConcurrent: config.maxConcurrentTasks || 10,
   });
   log.info(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`);
   deviceOrchestrator.start();
-  log.info("[Agent] ✓ Device orchestrator started");
+  log.info("[Agent] ✓ Device orchestrator started (Realtime push + 3s fallback)");
+
+  videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
+  if (config.isPrimaryPc) {
+    // Wire push: VideoDispatcher creates assignments → immediately nudge DeviceOrchestrator
+    videoDispatcher.on("nudge", () => {
+      if (deviceOrchestrator) {
+        log.info("[Agent] ⚡ VideoDispatcher → nudge → DeviceOrchestrator");
+        deviceOrchestrator.nudge();
+      }
+    });
+    videoDispatcher.start();
+    log.info("[Agent] ✓ Video dispatcher started (Realtime push + 60s fallback)");
+  } else {
+    log.info("[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.");
+  }
 
   // 13a. Poll pending job_assignments only when not using DeviceOrchestrator (orchestrator handles claim_next_assignment)
   if (!deviceOrchestrator) {

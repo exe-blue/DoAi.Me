@@ -16,13 +16,15 @@ export async function GET(request: Request) {
     const startOfDay = `${date}T00:00:00.000Z`;
     const endOfDay = `${date}T23:59:59.999Z`;
 
-    const { data: assignments } = await supabase
+    // job_assignments not in generated DB types (schema exists in DB)
+    const { data: raw } = await (supabase as { from: (t: string) => ReturnType<typeof supabase.from> })
       .from("job_assignments")
       .select("job_id, status, final_duration_sec, watch_percentage, did_like, did_comment, did_playlist")
       .gte("completed_at", startOfDay)
       .lte("completed_at", endOfDay);
 
-    const rows = assignments || [];
+    type Row = { job_id: string; status: string; final_duration_sec?: number; watch_percentage?: number; did_like?: boolean; did_comment?: boolean; did_playlist?: boolean };
+    const rows: Row[] = (raw || []) as unknown as Row[];
     const completed = rows.filter((r) => r.status === "completed");
 
     // 영상별 집계

@@ -17,8 +17,8 @@ export async function GET(request: Request) {
 
     const { data } = await supabase
       .from("task_logs")
-      .select("message, status, created_at")
-      .in("status", ["error", "failed"])
+      .select("message, level, created_at")
+      .in("level", ["error", "fatal"])
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(500);
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     for (const row of data || []) {
       const type = classifyError(row.message || "");
       if (!typeMap[type]) {
-        typeMap[type] = { count: 0, severity: row.status || "error", lastOccurred: row.created_at ?? "" };
+        typeMap[type] = { count: 0, severity: row.level || "error", lastOccurred: row.created_at ?? "" };
       }
       typeMap[type].count++;
     }
