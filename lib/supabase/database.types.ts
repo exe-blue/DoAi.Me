@@ -1240,6 +1240,48 @@ export type Database = {
         }
         Relationships: []
       }
+      scripts: {
+        Row: {
+          id: string
+          name: string
+          version: number
+          status: string
+          type: string
+          content: string
+          timeout_ms: number
+          params_schema: Json
+          default_params: Json
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          version: number
+          status?: string
+          type?: string
+          content: string
+          timeout_ms?: number
+          params_schema?: Json
+          default_params?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          version?: number
+          status?: string
+          type?: string
+          content?: string
+          timeout_ms?: number
+          params_schema?: Json
+          default_params?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       v_dashboard_stats: {

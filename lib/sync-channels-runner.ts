@@ -1,12 +1,18 @@
 /**
  * 공통 채널 동기화 로직: YouTube Data API로 최근 영상 조회 → videos upsert → auto_collect 채널의 active 영상 task_queue enqueue.
  * /api/cron/sync-channels 와 /api/sync-channels 에서 사용.
+ * task_queue.task_config는 buildConfigFromWorkflow로 생성 (config.snapshot.steps 포함).
  */
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchRecentVideos } from "@/lib/youtube";
 import { getAllChannels } from "@/lib/db/channels";
 import { upsertVideo, getVideosByChannelIdWithFilters } from "@/lib/db/videos";
 import { getTaskByVideoId } from "@/lib/db/tasks";
+import {
+  buildConfigFromWorkflow,
+  DEFAULT_WATCH_WORKFLOW_ID,
+  DEFAULT_WATCH_WORKFLOW_VERSION,
+} from "@/lib/workflow-snapshot";
 import type { ChannelRow } from "@/lib/supabase/types";
 
 // task_queue is used by legacy agent; may be missing from generated DB types
@@ -150,10 +156,20 @@ export async function runSyncChannels(): Promise<
           const hasTask = await getTaskByVideoId(v.id);
           if (hasTask) continue;
           if (queuedVideoIds.includes(v.id)) continue;
+          const inputs = {
+            videoId: v.id,
+            channelId: channel.id,
+            keyword: (v as { title?: string }).title ?? v.id,
+            video_url: `https://www.youtube.com/watch?v=${v.id}`,
+          };
+          const workflowConfig = await buildConfigFromWorkflow(
+            DEFAULT_WATCH_WORKFLOW_ID,
+            DEFAULT_WATCH_WORKFLOW_VERSION,
+            inputs,
+          );
           const insertRow: Record<string, unknown> = {
             task_config: {
-              workflow_ref: { id: "WATCH_MAIN", version: 1 },
-              inputs: { videoId: v.id, channelId: channel.id },
+              ...workflowConfig,
               contentMode: "single",
               videoId: v.id,
               channelId: channel.id,

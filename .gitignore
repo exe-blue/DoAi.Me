@@ -71,3 +71,4 @@ _archive/migration-scripts/update_agent_v3.sh
 agent/logs/
 agent/farm_logs/
 agent/.script-cache/
+agent/cache/

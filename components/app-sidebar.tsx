@@ -1,16 +1,22 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
-  Monitor,
-  Terminal,
-  ListTodo,
-  Tv,
-  ScrollText,
+  LayoutDashboard,
+  Server,
   Smartphone,
-  Settings,
-  Wifi,
-  WifiOff,
   Shield,
+  Globe,
+  Tv,
+  Upload,
+  ListOrdered,
+  Zap,
+  Terminal,
+  Settings,
+  FileText,
+  AlertTriangle,
+  PanelLeft,
 } from "lucide-react";
 import {
   Sidebar,
@@ -24,145 +30,108 @@ import {
   SidebarMenuItem,
   SidebarFooter,
   SidebarSeparator,
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Badge } from "@/components/ui/badge";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
-const navItems = [
-  { id: "devices", label: "디바이스", icon: Monitor },
-  { id: "proxies", label: "프록시 설정", icon: Shield },
-  { id: "presets", label: "명령 프리셋", icon: Terminal },
-  { id: "tasks", label: "작업 관리", icon: ListTodo },
-  { id: "channels", label: "채널 및 컨텐츠", icon: Tv },
-  { id: "logs", label: "실행내역", icon: ScrollText },
+const navGroups = [
+  {
+    label: null,
+    items: [
+      { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "INFRASTRUCTURE",
+    items: [
+      { href: "/infrastructure/pcs", label: "PC 관리", icon: Server },
+      { href: "/infrastructure/devices", label: "디바이스", icon: Smartphone },
+      { href: "/infrastructure/proxies", label: "프록시", icon: Shield },
+      { href: "/infrastructure/network", label: "네트워크", icon: Globe },
+    ],
+  },
+  {
+    label: "CONTENT",
+    items: [
+      { href: "/content/channels", label: "채널 관리", icon: Tv },
+      { href: "/content/content", label: "콘텐츠 등록", icon: Upload },
+      { href: "/content/tasks", label: "작업", icon: ListOrdered },
+      { href: "/content/tasks?tab=queue", label: "대기열", icon: ListOrdered },
+    ],
+  },
+  {
+    label: "AUTOMATION",
+    items: [
+      { href: "/automation/presets", label: "프리셋", icon: Zap },
+      { href: "/automation/adb", label: "ADB 콘솔", icon: Terminal },
+    ],
+  },
+  {
+    label: "SYSTEM",
+    items: [
+      { href: "/system/settings", label: "설정", icon: Settings },
+      { href: "/system/logs", label: "로그", icon: FileText },
+      { href: "/system/errors", label: "에러", icon: AlertTriangle },
+    ],
+  },
 ];
 
-interface AppSidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-  nodeStatus: { connected: number; total: number };
-  deviceStatus: { online: number; running: number; total: number };
-}
-
-export function AppSidebar({
-  activeTab,
-  onTabChange,
-  nodeStatus,
-  deviceStatus,
-}: AppSidebarProps) {
+export function AppSidebar() {
+  const pathname = usePathname();
   return (
     <Sidebar>
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-            <Smartphone className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-sidebar-accent-foreground">
-              DoAi.Me
-            </h2>
-            <p className="text-sm text-muted-foreground">Fleet Console</p>
-          </div>
-        </div>
+      <SidebarHeader className="border-b px-4 py-3">
+        <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+          <PanelLeft className="h-5 w-5" />
+          DoAi.Me
+        </Link>
       </SidebarHeader>
-
-      <SidebarSeparator />
-
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>관제</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={activeTab === item.id}
-                    onClick={() => onTabChange(item.id)}
-                    tooltip={item.label}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>시스템 상태</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <div className="flex flex-col gap-3 px-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {nodeStatus.connected === nodeStatus.total ? (
-                    <Wifi className="h-3.5 w-3.5 text-status-success" />
-                  ) : (
-                    <WifiOff className="h-3.5 w-3.5 text-status-warning" />
-                  )}
-                  <span>노드 PC</span>
-                </div>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-status-success/30 text-status-success"
-                >
-                  {nodeStatus.connected}/{nodeStatus.total}
-                </Badge>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  온라인 기기
-                </span>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-status-success/30 text-status-success"
-                >
-                  {deviceStatus.online}
-                </Badge>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  실행 중 기기
-                </span>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-status-warning/30 text-status-warning"
-                >
-                  {deviceStatus.running}
-                </Badge>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  총 기기
-                </span>
-                <Badge variant="outline" className="text-xs">
-                  {deviceStatus.total}
-                </Badge>
-              </div>
-            </div>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label ?? "main"}>
+            {group.label && (
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === item.href}
+                      className={cn(pathname === item.href && "bg-sidebar-accent")}
+                    >
+                      <Link href={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="설정">
-              <Settings className="h-4 w-4" />
-              <span>설정</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div className="px-2 pb-2">
-          <p className="text-[11px] text-muted-foreground">
-            DoAi.Me Fleet Console v1.0
-          </p>
-        </div>
-      </SidebarFooter>
+      <SidebarFooter className="border-t p-2" />
     </Sidebar>
+  );
+}
+
+export function AppSidebarLayout({ children }: { children: React.ReactNode }) {
+  const isMobile = useIsMobile();
+  return (
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+        </header>
+        <main className="flex-1 overflow-auto p-4">{children}</main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

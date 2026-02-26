@@ -1,38 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { NextRequest } from "next/server";
+import { getServerClient } from "@/lib/supabase/server";
 import type { DeviceRow } from "@/lib/supabase/types";
+import { okList, errFrom, parseListParams } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
+const SORT_COLUMNS = new Set(["created_at", "last_seen", "serial", "status", "updated_at"]);
+
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
     const { searchParams } = new URL(request.url);
-    const workerId = searchParams.get("worker_id");
-    const status = searchParams.get("status");
+    const { page, pageSize, sortBy, sortOrder, q } = parseListParams(searchParams);
+    const status = searchParams.get("status") || undefined;
+    const pc_id = searchParams.get("pc_id") || searchParams.get("worker_id") || undefined;
 
-    let query = supabase
-      .from("devices")
-      .select("*")
-      .order("last_seen", { ascending: false });
+    let query = supabase.from("devices").select("*", { count: "exact" });
 
-    if (workerId) {
-      query = query.eq("pc_id", workerId);
-    }
-    if (status) {
-      query = query.eq("status", status as any);
+    if (status) query = query.eq("status", status);
+    if (pc_id) query = query.eq("worker_id", pc_id);
+    if (q) {
+      query = query.or(`serial.ilike.%${q}%,connection_id.ilike.%${q}%,nickname.ilike.%${q}%`);
     }
 
-    const { data, error } = await query.returns<DeviceRow[]>();
+    const orderBy = sortBy && SORT_COLUMNS.has(sortBy) ? sortBy : "last_seen";
+    query = query.order(orderBy, { ascending: sortOrder === "asc" });
+
+    const from = (page - 1) * pageSize;
+    query = query.range(from, from + pageSize - 1);
+
+    const { data, error, count } = await query.returns<DeviceRow[]>();
 
     if (error) throw error;
 
-    return NextResponse.json({ devices: data ?? [] });
-  } catch (error) {
-    console.error("Error fetching devices:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch devices" },
-      { status: 500 }
-    );
+    return okList(data ?? [], { page, pageSize, total: count ?? data?.length ?? 0 });
+  } catch (e) {
+    console.error("Error fetching devices:", e);
+    return errFrom(e, "DEVICES_ERROR", 500);
   }
 }

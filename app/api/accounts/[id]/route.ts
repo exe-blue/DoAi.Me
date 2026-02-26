@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AccountRow } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const supabase = createSupabaseServerClient();
@@ -25,15 +25,18 @@ export async function GET(
   } catch (error) {
     console.error("Error fetching account:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch account" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to fetch account",
+      },
+      { status: 500 },
     );
   }
 }
 
 export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const supabase = createSupabaseServerClient();
@@ -70,8 +73,11 @@ export async function PUT(
   } catch (error) {
     console.error("Error updating account:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update account" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to update account",
+      },
+      { status: 500 },
     );
   }
 }
