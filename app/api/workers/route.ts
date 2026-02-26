@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const supabase = createServerClient();
+    const sb = supabase as { from: (t: string) => ReturnType<typeof supabase.from> };
 
-    const { data: pcs, error: pcsErr } = await supabase
+    const { data: pcs, error: pcsErr } = await sb
       .from("pcs")
       .select("id, pc_number, hostname, status, last_heartbeat, max_devices")
       .order("pc_number", { ascending: true });

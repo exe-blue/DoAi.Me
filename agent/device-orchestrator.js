@@ -43,12 +43,15 @@ class DeviceOrchestrator {
     this.deviceStates = new Map();
     this._pollTimer = null;
     this._runningAssignments = new Set(); // assignment id
+    this._assignChannel = null;
+    this._nudgeDebounce = null;
   }
 
   start() {
     if (this._pollTimer) return;
-    log.info(`[DeviceOrchestrator] Starting (every ${ORCHESTRATE_INTERVAL_MS / 1000}s, maxConcurrent=${this.maxConcurrent})`);
+    log.info(`[DeviceOrchestrator] Starting (Realtime push + ${ORCHESTRATE_INTERVAL_MS / 1000}s fallback, maxConcurrent=${this.maxConcurrent})`);
     this._pollTimer = setInterval(() => this._orchestrate().catch((e) => log.error("[DeviceOrchestrator]", e)), ORCHESTRATE_INTERVAL_MS);
+    this._subscribeToNewAssignments();
   }
 
   stop() {
@@ -56,7 +59,51 @@ class DeviceOrchestrator {
       clearInterval(this._pollTimer);
       this._pollTimer = null;
     }
+    if (this._assignChannel) {
+      this.supabase.removeChannel(this._assignChannel);
+      this._assignChannel = null;
+    }
+    if (this._nudgeDebounce) {
+      clearTimeout(this._nudgeDebounce);
+      this._nudgeDebounce = null;
+    }
     log.info("[DeviceOrchestrator] Stopped");
+  }
+
+  /**
+   * Immediate orchestration trigger. Called by:
+   * - VideoDispatcher (new assignments created)
+   * - Realtime subscription (new assignment INSERT)
+   * - Self (after device finishes watching → pick up next immediately)
+   * Debounced to 500ms to batch rapid events.
+   */
+  nudge() {
+    if (!this._pollTimer) return;
+    if (this._nudgeDebounce) return;
+    this._nudgeDebounce = setTimeout(() => {
+      this._nudgeDebounce = null;
+      this._orchestrate().catch((e) => log.error("[DeviceOrchestrator] nudge:", e));
+    }, 500);
+  }
+
+  /**
+   * Realtime: new job_assignments INSERT for this PC → immediate claim
+   */
+  _subscribeToNewAssignments() {
+    this._assignChannel = this.supabase
+      .channel("orch-assign-push")
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "job_assignments",
+        filter: `pc_id=eq.${this.pcId}`,
+      }, () => {
+        log.info("[DeviceOrchestrator] ⚡ Realtime: new assignment → nudge");
+        this.nudge();
+      })
+      .subscribe((status) => {
+        log.info(`[DeviceOrchestrator] assignments Realtime: ${status}`);
+      });
   }
 
   /**
@@ -268,7 +315,7 @@ class DeviceOrchestrator {
   }
 
   /**
-   * device-presets warmup → 완료 후 idle
+   * device-presets warmup → 완료 후 idle → nudge (즉시 대기열 확인)
    */
   async _executeFreeWatch(serial) {
     const state = this.deviceStates.get(serial);
@@ -283,6 +330,7 @@ class DeviceOrchestrator {
         s.dailyWatchSeconds = (s.dailyWatchSeconds || 0) + 120;
         s.lastTaskAt = new Date().toISOString();
       }
+      setImmediate(() => this.nudge());
     } catch (err) {
       this._setState(serial, STATUS.idle);
       throw err;
@@ -290,7 +338,7 @@ class DeviceOrchestrator {
   }
 
   /**
-   * TaskExecutor로 검색+시청 실행. searching → watching → completing → idle / error
+   * TaskExecutor로 검색+시청 실행. searching → watching → completing → idle → nudge (즉시 다음 작업)
    */
   async _executeTargetWatch(serial, assignment) {
     this._runningAssignments.add(assignment.id);
@@ -322,6 +370,9 @@ class DeviceOrchestrator {
     s.consecutiveFailures = 0;
     s.circuitBreakerUntil = null;
     s.status = STATUS.idle;
+
+    // Immediately try to pick up next assignment (no 3s wait)
+    setImmediate(() => this.nudge());
   }
 
   /**
