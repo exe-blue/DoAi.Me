@@ -51,7 +51,7 @@ export async function loadWorkflowDefinition(
   workflowVersion: number,
 ): Promise<WorkflowRow | null> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as { from: (relation: string) => ReturnType<typeof supabase.from> })
     .from("workflows")
     .select("id, version, kind, name, is_active, steps")
     .eq("id", workflowId)
