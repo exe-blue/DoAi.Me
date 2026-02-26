@@ -345,126 +345,123 @@ async function main() {
     log.info("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
-  const taskCallback = (task) => {
-    if (task.status === "pending") {
-      taskExecutor.execute(task);
-    }
-  };
-
-  // Primary: Broadcast channel (room:tasks) — lower latency
-  const broadcastResult = await supabaseSync.subscribeToBroadcast(
-    supabaseSync.pcId,
-    taskCallback,
-  );
-  if (broadcastResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ Broadcast room:tasks 구독 완료");
-  } else {
-    log.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
-  }
-
-  // Fallback: postgres_changes — in case Broadcast is not configured
-  const pgResult = await supabaseSync.subscribeToTasks(
-    supabaseSync.pcId,
-    taskCallback,
-  );
-  if (pgResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ postgres_changes 구독 완료");
-  } else {
-    log.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
-  }
-
-  // 12b. 명세 4.4: task_queue + commands Realtime 구독
-  const workerChannelResult =
-    await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
-      onTaskQueue: async (queueRow) => {
-        if (queueRow.status !== "queued") return;
-        const task = await supabaseSync.createTaskFromQueueItem(
-          queueRow,
-          supabaseSync.pcId,
-        );
-        if (task) taskExecutor.execute(task);
-      },
-      onCommand: async (cmdRow) => {
-        if (cmdRow.status !== "pending") return;
-        try {
-          await supabaseSync.supabase
-            .from("commands")
-            .update({ status: "running" })
-            .eq("id", cmdRow.id);
-          // 기본 처리: payload에 따라 실행 (추후 확장). 여기서는 완료만 표시
-          await supabaseSync.supabase
-            .from("commands")
-            .update({
-              status: "completed",
-              completed_at: new Date().toISOString(),
-            })
-            .eq("id", cmdRow.id);
-          log.info(`[Agent] Command ${cmdRow.id} completed`);
-        } catch (err) {
-          log.error(`[Agent] Command ${cmdRow.id} failed: ${err.message}`);
-          await supabaseSync.supabase
-            .from("commands")
-            .update({
-              status: "failed",
-              completed_at: new Date().toISOString(),
-              result: { error: err.message },
-            })
-            .eq("id", cmdRow.id);
-        }
-      },
-    });
-  if (workerChannelResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ task_queue + commands 구독 완료");
-  } else {
-    log.warn(
-      `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
-    );
-  }
-
-  // 12c. 명세 4.4: task_queue 보완 폴링 60초
-  const processTaskQueuePending = async () => {
-    try {
-      const items = await supabaseSync.getPendingTaskQueueItems(
-        config.pcNumber,
-      );
-      for (const row of items) {
-        const task = await supabaseSync.createTaskFromQueueItem(
-          row,
-          supabaseSync.pcId,
-        );
-        if (task) taskExecutor.execute(task);
+  // 12. Legacy tasks path: Broadcast + postgres_changes + task_queue + poll (only when NOT using task_devices engine)
+  if (!config.useTaskDevicesEngine) {
+    const taskCallback = (task) => {
+      if (task.status === "pending") {
+        taskExecutor.execute(task);
       }
-    } catch (err) {
-      log.error(`[Agent] Task queue poll error: ${err.message}`);
-    }
-  };
-  taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
-  processTaskQueuePending();
+    };
 
-  // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
-  taskPollHandle = setInterval(async () => {
+    const broadcastResult = await supabaseSync.subscribeToBroadcast(
+      supabaseSync.pcId,
+      taskCallback,
+    );
+    if (broadcastResult.status === "SUBSCRIBED") {
+      log.info("[Agent] ✓ Broadcast room:tasks 구독 완료");
+    } else {
+      log.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
+    }
+
+    const pgResult = await supabaseSync.subscribeToTasks(
+      supabaseSync.pcId,
+      taskCallback,
+    );
+    if (pgResult.status === "SUBSCRIBED") {
+      log.info("[Agent] ✓ postgres_changes 구독 완료");
+    } else {
+      log.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
+    }
+
+    const workerChannelResult =
+      await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
+        onTaskQueue: async (queueRow) => {
+          if (queueRow.status !== "queued") return;
+          const task = await supabaseSync.createTaskFromQueueItem(
+            queueRow,
+            supabaseSync.pcId,
+          );
+          if (task) taskExecutor.execute(task);
+        },
+        onCommand: async (cmdRow) => {
+          if (cmdRow.status !== "pending") return;
+          try {
+            await supabaseSync.supabase
+              .from("commands")
+              .update({ status: "running" })
+              .eq("id", cmdRow.id);
+            await supabaseSync.supabase
+              .from("commands")
+              .update({
+                status: "completed",
+                completed_at: new Date().toISOString(),
+              })
+              .eq("id", cmdRow.id);
+            log.info(`[Agent] Command ${cmdRow.id} completed`);
+          } catch (err) {
+            log.error(`[Agent] Command ${cmdRow.id} failed: ${err.message}`);
+            await supabaseSync.supabase
+              .from("commands")
+              .update({
+                status: "failed",
+                completed_at: new Date().toISOString(),
+                result: { error: err.message },
+              })
+              .eq("id", cmdRow.id);
+          }
+        },
+      });
+    if (workerChannelResult.status === "SUBSCRIBED") {
+      log.info("[Agent] ✓ task_queue + commands 구독 완료");
+    } else {
+      log.warn(
+        `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
+      );
+    }
+
+    const processTaskQueuePending = async () => {
+      try {
+        const items = await supabaseSync.getPendingTaskQueueItems(
+          config.pcNumber,
+        );
+        for (const row of items) {
+          const task = await supabaseSync.createTaskFromQueueItem(
+            row,
+            supabaseSync.pcId,
+          );
+          if (task) taskExecutor.execute(task);
+        }
+      } catch (err) {
+        log.error(`[Agent] Task queue poll error: ${err.message}`);
+      }
+    };
+    taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
+    processTaskQueuePending();
+
+    taskPollHandle = setInterval(async () => {
+      try {
+        const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
+        for (const task of tasks) {
+          taskExecutor.execute(task);
+        }
+      } catch (err) {
+        log.error(`[Agent] Task poll error: ${err.message}`);
+      }
+    }, config.taskPollInterval);
+
     try {
       const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
+      if (tasks.length > 0) {
+        log.info(`[Agent] Found ${tasks.length} pending task(s)`);
+        for (const task of tasks) {
+          taskExecutor.execute(task);
+        }
       }
     } catch (err) {
-      log.error(`[Agent] Task poll error: ${err.message}`);
+      log.error(`[Agent] Initial task poll error: ${err.message}`);
     }
-  }, config.taskPollInterval);
-
-  // Run an initial poll immediately
-  try {
-    const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-    if (tasks.length > 0) {
-      log.info(`[Agent] Found ${tasks.length} pending task(s)`);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
-      }
-    }
-  } catch (err) {
-    log.error(`[Agent] Initial task poll error: ${err.message}`);
+  } else {
+    log.info("[Agent] Legacy tasks path skipped (USE_TASK_DEVICES_ENGINE=true)");
   }
 
   // 14. Start ADB reconnect monitoring (manager already initialized above)
