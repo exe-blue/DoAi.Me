@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ const tq = (sb: any) => sb.from("task_queue");
  * Update priority or task_config (only if status='queued').
  */
 export async function PUT(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -61,7 +61,7 @@ export async function PUT(
  * Cancel a single queued item.
  */
 export async function DELETE(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

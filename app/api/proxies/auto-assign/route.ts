@@ -116,6 +116,8 @@ async function pairAssignAndEnqueue(
         username: proxy.username ?? undefined,
         password: proxy.password ?? undefined,
       },
+      apply_mode: "auto",
+      scope: "all_connections",
     };
 
     const { error: logErr } = await supabase.from("command_logs").insert({

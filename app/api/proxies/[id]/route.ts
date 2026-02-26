@@ -1,11 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/supabase/server";
 import { ok, err, errFrom } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
 export async function PUT(
-  _request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -53,7 +53,7 @@ export async function PUT(
 
 /** DELETE /api/proxies/[id]. Assigned proxies cannot be deleted (unassign first). */
 export async function DELETE(
-  _request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {

@@ -83,8 +83,8 @@ spec:
 
       containers:
         - name: app
-          image: doai-me:latest
-          imagePullPolicy: Never
+          image: ghcr.io/choichoikule/doai-me:v1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
               name: http
@@ -142,22 +142,14 @@ spec:
                 - ALL
           
           # Volume mounts
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: cache
-              mountPath: /app/.next
+          volumeMounts: []
       
       # Pod-level security context
       securityContext:
         fsGroup: 1001
       
       # Volumes
-      volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: cache
-          emptyDir: {}
+      volumes: []
       
       # Restart policy
       restartPolicy: Always

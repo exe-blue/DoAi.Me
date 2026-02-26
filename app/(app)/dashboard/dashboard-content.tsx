@@ -4,6 +4,8 @@ import { useApi } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import Widget from "@/components/dashboard/widget";
+import SecurityStatus from "@/components/dashboard/security-status";
 
 type Overview = {
   worker?: { id: string; name: string; status: string; last_heartbeat: string | null } | null;
@@ -41,7 +43,7 @@ export function DashboardContent() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">디바이스</CardTitle>
@@ -77,7 +79,7 @@ export function DashboardContent() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">워커</CardTitle>
+            <CardTitle className="text-sm font-medium">PC</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{worker ? 1 : 0}</div>
@@ -92,6 +94,12 @@ export function DashboardContent() {
             </p>
           </CardContent>
         </Card>
+        <div className="min-h-[140px]">
+          <Widget />
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <SecurityStatus />
       </div>
     </div>
   );

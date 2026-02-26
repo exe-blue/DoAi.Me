@@ -10,6 +10,21 @@ This deployment pipeline provides a complete CI/CD setup for your Next.js applic
 - **Deployment**: Automated deployments to staging and production with health checks
 - **Infrastructure**: Nginx reverse proxy with SSL/TLS, caching, rate limiting
 
+## Release 1: DB 마이그레이션 (프로덕션/스테이징)
+
+프로덕션 DB에 `task_devices`·`scripts`가 없으면 먼저 마이그레이션 적용이 필요합니다.
+
+- **한 번에 적용**: [docs/RELEASE1_MIGRATION.md](docs/RELEASE1_MIGRATION.md) 참고
+- **파일**: `supabase/migrations/20260227000000_release1_task_devices_scripts.sql`
+- **적용 방법**: Supabase Dashboard SQL Editor에 붙여넣기 또는 `SUPABASE_DB_URL=... psql -f ...` / `./supabase/run_migrations.sh`
+
+## Dev Container (로컬 개발용 컨테이너 다시 만들기)
+
+Windows PowerShell에서 Docker로 이미지를 준비한 뒤, Cursor에서 Dev Container를 다시 띄우려면:
+
+- **문서**: [.devcontainer/REBUILD.md](.devcontainer/REBUILD.md)
+- **PowerShell 스크립트**: 프로젝트 루트에서 `.\.devcontainer\rebuild-from-host.ps1` 실행 후, Cursor에서 **Dev Containers: Rebuild and Reopen in Container** 실행
+
 ## Architecture
 
 ```
@@ -165,10 +180,10 @@ docker swarm init
 docker service create --name doai-me \
   --replicas 3 \
   -p 3000:3000 \
-  ghcr.io/yourusername/doai-me:latest
+  ghcr.io/exe-blue/doai-me:latest
 
 # Update service
-docker service update --image ghcr.io/yourusername/doai-me:latest doai-me
+docker service update --image ghcr.io/exe-blue/doai-me:latest doai-me
 ```
 
 ### Kubernetes Option

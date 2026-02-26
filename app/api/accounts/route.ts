@@ -20,8 +20,11 @@ export async function GET() {
   } catch (error) {
     console.error("Error fetching accounts:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch accounts" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to fetch accounts",
+      },
+      { status: 500 },
     );
   }
 }
@@ -33,10 +36,7 @@ export async function POST(request: Request) {
     // Validate request body
     const result = accountCreateSchema.safeParse(body);
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error.issues },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: result.error.issues }, { status: 400 });
     }
 
     const { email, status, device_id } = result.data;
@@ -59,8 +59,11 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Error creating account:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create account" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to create account",
+      },
+      { status: 500 },
     );
   }
 }

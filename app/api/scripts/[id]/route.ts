@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "../../../../lib/supabase/server";
 import { validateScriptName } from "../../../../lib/validate-script-name";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * Single script. If version omitted, returns latest version.
  */
 export async function GET(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -73,7 +73,7 @@ export async function GET(
  * Update script (content, timeout_ms, params_schema, default_params, name). version required.
  */
 export async function PATCH(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {

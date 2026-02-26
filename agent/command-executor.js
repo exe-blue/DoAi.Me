@@ -147,52 +147,58 @@ class CommandExecutor {
         `[CommandExecutor] Executing on ${targetSerials.length} devices`,
       );
 
-      // 2b. For set_proxy/clear_proxy, build ADB command from row.results
-      let shellCommand = row.command;
+      let results;
       if (row.command === "set_proxy") {
-        const proxy = row.results?.proxy || row.results;
-        const address = proxy?.address;
-        if (address) {
-          shellCommand = `settings put global http_proxy ${address}`;
-        } else {
-          shellCommand = "settings put global http_proxy :0";
-        }
+        results = await this._executeSetProxy(row, targetSerials);
       } else if (row.command === "clear_proxy") {
-        shellCommand = "settings put global http_proxy :0";
-      }
-
-      // 3. Execute command in batches
-      const results = [];
-      for (let i = 0; i < targetSerials.length; i += BATCH_SIZE) {
-        const batch = targetSerials.slice(i, i + BATCH_SIZE);
-        console.log(
-          `[CommandExecutor] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(targetSerials.length / BATCH_SIZE)}: ${batch.length} devices`,
-        );
-
-        const batchResults = await Promise.allSettled(
-          batch.map((serial) => this._executeOnDevice(serial, shellCommand)),
-        );
-
-        for (let j = 0; j < batch.length; j++) {
-          const r = batchResults[j];
+        results = [];
+        for (let i = 0; i < targetSerials.length; i++) {
+          const target = targetSerials[i];
+          const r1 = await this._executeOnDevice(
+            target,
+            "settings put global http_proxy :0",
+          );
+          const r2 = await this._executeOnDevice(
+            target,
+            "settings put global https_proxy :0",
+          );
           results.push({
-            device_serial: batch[j],
-            success: r.status === "fulfilled" && r.value.success,
-            output: r.status === "fulfilled" ? r.value.output : null,
-            error:
-              r.status === "rejected"
-                ? r.reason?.message
-                : r.value?.error || null,
-            duration_ms: r.status === "fulfilled" ? r.value.duration_ms : 0,
+            device_serial: target,
+            success: r1.success,
+            output: r1.output || r2.output,
+            error: r1.error || r2.error || null,
+            duration_ms: (r1.duration_ms || 0) + (r2.duration_ms || 0),
           });
         }
-
-        // Broadcast progress after each batch
-        await this._broadcastProgress(row.id, results, targetSerials.length);
-
-        // Wait between batches (except last)
-        if (i + BATCH_SIZE < targetSerials.length) {
-          await new Promise((resolve) => setTimeout(resolve, BATCH_GAP));
+      } else {
+        // 2b. Generic ADB command
+        const shellCommand = row.command;
+        results = [];
+        for (let i = 0; i < targetSerials.length; i += BATCH_SIZE) {
+          const batch = targetSerials.slice(i, i + BATCH_SIZE);
+          console.log(
+            `[CommandExecutor] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(targetSerials.length / BATCH_SIZE)}: ${batch.length} devices`,
+          );
+          const batchResults = await Promise.allSettled(
+            batch.map((target) => this._executeOnDevice(target, shellCommand)),
+          );
+          for (let j = 0; j < batch.length; j++) {
+            const r = batchResults[j];
+            results.push({
+              device_serial: batch[j],
+              success: r.status === "fulfilled" && r.value.success,
+              output: r.status === "fulfilled" ? r.value.output : null,
+              error:
+                r.status === "rejected"
+                  ? r.reason?.message
+                  : r.value?.error || null,
+              duration_ms: r.status === "fulfilled" ? r.value.duration_ms : 0,
+            });
+          }
+          await this._broadcastProgress(row.id, results, targetSerials.length);
+          if (i + BATCH_SIZE < targetSerials.length) {
+            await new Promise((resolve) => setTimeout(resolve, BATCH_GAP));
+          }
         }
       }
 
@@ -247,8 +253,131 @@ class CommandExecutor {
   }
 
   /**
+   * set_proxy: (A) system proxy first, (B) app fallback if auth or A failed.
+   * options: { proxy: { address, username?, password? }, apply_mode, scope }
+   * @param {object} row - command_logs row
+   * @param {string[]} targets - connection_id ?? serial per device
+   * @returns {Promise<Array>} results with device_serial, success, mode, address, appliedAt, notes, error?
+   */
+  async _executeSetProxy(row, targets) {
+    const options = row.results || {};
+    const proxy = options.proxy || {};
+    const address = proxy.address || "";
+    const hasAuth = !!(proxy.username || proxy.password);
+    const applyMode = options.apply_mode || "auto";
+    const results = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      const start = Date.now();
+      let outcome = {
+        device_serial: target,
+        success: false,
+        mode: null,
+        address: address || null,
+        appliedAt: new Date().toISOString(),
+        notes: "",
+        error: null,
+        duration_ms: 0,
+      };
+
+      try {
+        // (A) System proxy first only when no auth (system proxy does not reliably support user:pass)
+        if (address && !hasAuth) {
+          const httpRes = await this._runAdbAndCheck(
+            target,
+            `settings put global http_proxy ${address}`,
+          );
+          let httpsOk = true;
+          try {
+            const httpsRes = await this._runAdbAndCheck(
+              target,
+              `settings put global https_proxy ${address}`,
+            );
+            httpsOk = httpsRes.success;
+          } catch (_) {
+            httpsOk = false;
+          }
+          if (httpRes.success) {
+            outcome.success = true;
+            outcome.mode = "system";
+            outcome.notes = httpsOk
+              ? "http_proxy+https_proxy"
+              : "http_proxy only";
+          }
+        }
+
+        // (B) Auth present or A failed → app control (read proxy_app.package from settings)
+        if (
+          !outcome.success &&
+          (hasAuth || (address && applyMode === "auto"))
+        ) {
+          const appPkg = await this._getSetting("proxy_app.package");
+          if (appPkg) {
+            try {
+              await this.xiaowei.startApk(target, appPkg);
+              await new Promise((r) => setTimeout(r, 2000));
+              // Stub: real UI automation (inputText/pointerEvent) would go here
+              outcome.mode = "app";
+              outcome.success = true;
+              outcome.notes =
+                "app opened; UI flow stub (inputText/pointerEvent TBD)";
+            } catch (err) {
+              outcome.error = err.message;
+              outcome.notes = "app fallback failed: " + err.message;
+            }
+          } else {
+            if (!outcome.error)
+              outcome.error = "proxy_app.package not set; app fallback skipped";
+          }
+        }
+
+        if (!outcome.success && !outcome.error && address) {
+          outcome.error =
+            "system proxy set but auth required and no app fallback";
+        }
+      } catch (err) {
+        outcome.error = err.message;
+      }
+      outcome.duration_ms = Date.now() - start;
+      results.push(outcome);
+      await this._broadcastProgress(row.id, results, targets.length);
+    }
+    return results;
+  }
+
+  async _runAdbAndCheck(target, command) {
+    const response = await Promise.race([
+      this.xiaowei.adbShell(target, command),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("Timeout")), DEVICE_TIMEOUT),
+      ),
+    ]);
+    const out = _extractOutput(response);
+    const code = response && (response.code ?? response.status);
+    const success =
+      code === 10000 ||
+      code === 0 ||
+      (typeof code === "undefined" && !response?.error);
+    return { success: !!success, output: out };
+  }
+
+  async _getSetting(key) {
+    try {
+      const { data } = await this.supabaseSync.supabase
+        .from("settings")
+        .select("value")
+        .eq("key", key)
+        .maybeSingle();
+      return data?.value ?? null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Execute ADB command on a single device
-   * @param {string} serial - Device serial number
+   * @param {string} serial - Device serial or connection_id (target)
    * @param {string} command - ADB shell command
    * @returns {Promise<{success: boolean, output: string|null, error: string|null, duration_ms: number}>}
    */
@@ -304,7 +433,10 @@ class CommandExecutor {
           latest_results: latestBatch.map((r) => ({
             device_serial: r.device_serial,
             success: r.success,
-            output_preview: (r.output || r.error || "").substring(0, 200),
+            output_preview: (r.output || r.error || r.notes || "").substring(
+              0,
+              200,
+            ),
           })),
         },
       });
@@ -331,7 +463,7 @@ class CommandExecutor {
       return row.target_serials;
     }
 
-    // If target_ids (device UUIDs) is provided, resolve to serials
+    // If target_ids (device UUIDs) is provided, resolve to targets: connection_id ?? serial (all connection types)
     if (
       row.target_ids &&
       Array.isArray(row.target_ids) &&
@@ -340,7 +472,7 @@ class CommandExecutor {
       try {
         const { data, error } = await this.supabaseSync.supabase
           .from("devices")
-          .select("serial")
+          .select("connection_id, serial")
           .in("id", row.target_ids);
         if (error) {
           console.error(
@@ -348,11 +480,16 @@ class CommandExecutor {
           );
           return [];
         }
-        const serials = (data || []).map((d) => d.serial).filter(Boolean);
+        const targets = (data || [])
+          .map(
+            (d) =>
+              (d.connection_id && String(d.connection_id).trim()) || d.serial,
+          )
+          .filter(Boolean);
         console.log(
-          `[CommandExecutor] Resolved ${row.target_ids.length} target_ids → ${serials.length} serials`,
+          `[CommandExecutor] Resolved ${row.target_ids.length} target_ids → ${targets.length} targets (connection_id ?? serial)`,
         );
-        return serials;
+        return targets;
       } catch (err) {
         console.error(
           `[CommandExecutor] target_ids resolution error: ${err.message}`,
@@ -361,13 +498,13 @@ class CommandExecutor {
       }
     }
 
-    // If target_type is 'all', query all online devices
+    // If target_type is 'all', query all online devices; use connection_id ?? serial
     if (row.target_type === "all") {
       console.log("[CommandExecutor] Resolving all online devices from DB...");
       try {
         const { data, error } = await this.supabaseSync.supabase
           .from("devices")
-          .select("serial")
+          .select("connection_id, serial")
           .eq("status", "online");
 
         if (error) {
@@ -377,9 +514,16 @@ class CommandExecutor {
           return [];
         }
 
-        const serials = (data || []).map((d) => d.serial);
-        console.log(`[CommandExecutor] Found ${serials.length} online devices`);
-        return serials;
+        const targets = (data || [])
+          .map(
+            (d) =>
+              (d.connection_id && String(d.connection_id).trim()) || d.serial,
+          )
+          .filter(Boolean);
+        console.log(
+          `[CommandExecutor] Found ${targets.length} online device targets`,
+        );
+        return targets;
       } catch (err) {
         console.error(`[CommandExecutor] Device query error: ${err.message}`);
         return [];

@@ -1,5 +1,5 @@
 # Stage 1: Dependencies and Build
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN CI=true npm run build
 RUN npm prune --omit=dev
 
 # Stage 2: Runtime
-FROM node:20-alpine
+FROM node:25-alpine
 
 WORKDIR /app
 

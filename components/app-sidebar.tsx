@@ -17,6 +17,10 @@ import {
   FileText,
   AlertTriangle,
   PanelLeft,
+  Calendar,
+  GitBranch,
+  FileCode,
+  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -58,8 +62,8 @@ const navGroups = [
     items: [
       { href: "/content/channels", label: "채널 관리", icon: Tv },
       { href: "/content/content", label: "콘텐츠 등록", icon: Upload },
-      { href: "/content/tasks", label: "작업", icon: ListOrdered },
-      { href: "/content/tasks?tab=queue", label: "대기열", icon: ListOrdered },
+      { href: "/content/tasks", label: "작업 / 대기열", icon: ListOrdered },
+      { href: "/content/schedules", label: "스케줄", icon: Calendar },
     ],
   },
   {
@@ -67,6 +71,8 @@ const navGroups = [
     items: [
       { href: "/automation/presets", label: "프리셋", icon: Zap },
       { href: "/automation/adb", label: "ADB 콘솔", icon: Terminal },
+      { href: "/automation/workflows", label: "워크플로우", icon: GitBranch },
+      { href: "/automation/scripts", label: "스크립트", icon: FileCode },
     ],
   },
   {
@@ -75,6 +81,7 @@ const navGroups = [
       { href: "/system/settings", label: "설정", icon: Settings },
       { href: "/system/logs", label: "로그", icon: FileText },
       { href: "/system/errors", label: "에러", icon: AlertTriangle },
+      { href: "/system/accounts", label: "계정", icon: Users },
     ],
   },
 ];

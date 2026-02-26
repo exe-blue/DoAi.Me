@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { PresetRow } from "@/lib/supabase/types";
 import { presetUpdateSchema } from "@/lib/schemas";
@@ -6,7 +6,7 @@ import { presetUpdateSchema } from "@/lib/schemas";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -33,7 +33,7 @@ export async function GET(
 }
 
 export async function PUT(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -78,7 +78,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

@@ -11,10 +11,18 @@ export default async function LoginPage({
 }) {
   const supabase = await createAuthServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    redirect("/dashboard");
-  }
   const { returnTo, signup, error } = await searchParams;
+
+  if (user) {
+    // Same-origin path only to avoid open redirect
+    const safePath =
+      typeof returnTo === "string" &&
+      returnTo.startsWith("/") &&
+      !returnTo.startsWith("//")
+        ? returnTo
+        : "/dashboard";
+    redirect(safePath);
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background">

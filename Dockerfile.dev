@@ -1,0 +1,36 @@
+# Development Dockerfile - optimized for fast builds and hot reload
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001 -G nodejs
+
+# Copy package files
+COPY package*.json ./
+COPY packages/ packages/
+
+# Install dependencies (including dev dependencies for dev server)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Build the application for faster initial development server start
+RUN npm run build
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Use dumb-init as entrypoint
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the development server with hot reload
+CMD ["npm", "run", "dev"]
