@@ -503,12 +503,12 @@ class SupabaseSync {
    * @param {object} [result]
    * @param {number} [progress=100]
    */
-  async completeTaskDevice(taskDeviceId, pcId, result, progress = 100) {
-    const resultJson = result != null ? result : { progress: progress ?? 100 };
+  async completeTaskDevice(taskDeviceId, pcId, resultJson = null, _progress = 100) {
+    const payload = resultJson != null ? resultJson : { progress: _progress ?? 100 };
     const { error } = await this.supabase.rpc("complete_task_device", {
       task_device_id: taskDeviceId,
       runner_pc_id: pcId,
-      result_json: resultJson,
+      result_json: payload,
     });
     if (error) {
       console.error(
@@ -539,22 +539,40 @@ class SupabaseSync {
     }
     if (data && data.length > 0 && data[0]) {
       const row = data[0];
+      const retryCount = row.retry_count_out ?? row.retry_count;
       if (row.final_status === "queued") {
         console.log(
-          `[Supabase] task_device ${taskDeviceId} requeued (retry ${row.retry_count_out})`,
+          `[Supabase] task_device ${taskDeviceId} requeued (retry ${retryCount})`,
         );
       }
     }
   }
 
-  /** Alias: claimTaskDevicesForPc(pcId, limit) → RPC claim_task_devices_for_pc */
+  /** RPC claim_task_devices_for_pc. Returns claimed task_device rows. */
   async claimTaskDevicesForPc(pcId, limit = 10) {
-    return this.claimNextTaskDevices(pcId, limit, 5);
+    const leaseMin = 5;
+    const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
+      runner_pc_id: pcId,
+      max_to_claim: Math.min(Math.max(0, limit), 100),
+      lease_minutes: leaseMin,
+    });
+    if (error) {
+      console.error(`[Supabase] claim_task_devices_for_pc failed: ${error.message}`);
+      return [];
+    }
+    return Array.isArray(data) ? data : [];
   }
 
-  /** Alias: renewTaskDeviceLease(taskDeviceId, pcId, leaseMinutes?) → RPC renew_task_device_lease */
+  /** RPC renew_task_device_lease (30s heartbeat). */
   async renewTaskDeviceLease(taskDeviceId, pcId, leaseMinutes = 5) {
-    return this.heartbeatTaskDevice(taskDeviceId, pcId, leaseMinutes);
+    const { error } = await this.supabase.rpc("renew_task_device_lease", {
+      task_device_id: taskDeviceId,
+      runner_pc_id: pcId,
+      lease_minutes: leaseMinutes,
+    });
+    if (error) {
+      console.error(`[Supabase] renew_task_device_lease failed: ${error.message}`);
+    }
   }
 
   /**

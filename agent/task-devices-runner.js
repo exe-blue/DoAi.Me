@@ -67,7 +67,7 @@ class TaskDevicesRunner {
     const slots = this._maxConcurrent - this._running.size;
     if (slots <= 0) return;
 
-    const claimed = await this.supabaseSync.claimNextTaskDevices(pcId, slots, this._leaseMinutes);
+    const claimed = await this.supabaseSync.claimTaskDevicesForPc(pcId, slots);
     for (const row of claimed) {
       if (!row || !row.id) continue;
       this._runOne(row, pcId);
@@ -81,7 +81,7 @@ class TaskDevicesRunner {
 
     const startHeartbeat = () => {
       const t = setInterval(async () => {
-        await this.supabaseSync.heartbeatTaskDevice(id, pcId, this._leaseMinutes);
+        await this.supabaseSync.renewTaskDeviceLease(id, pcId, this._leaseMinutes);
       }, LEASE_HEARTBEAT_MS);
       if (t.unref) t.unref();
       this._leaseTimers.set(id, t);
