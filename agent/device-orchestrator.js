@@ -248,7 +248,7 @@ class DeviceOrchestrator {
         .from("devices")
         .select("id")
         .eq("pc_id", this.pcId)
-        .eq("serial_number", serial)
+        .eq("serial", serial)
         .limit(1);
       const deviceId = devRows && devRows[0] ? devRows[0].id : null;
 

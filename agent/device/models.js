@@ -3,7 +3,7 @@
  *
  * 실제 프로덕션 스키마 기반:
  *   pcs: { id, pc_number, status, last_heartbeat, created_at }
- *   devices: { id, serial_number, pc_id, status, model, battery_level, last_seen_at, ... }
+ *   devices: { id, serial, pc_id, status, model, battery_level, last_seen_at, ... }
  *
  * 사용법:
  *   const { pcModels, deviceModels } = require('./device/models');
@@ -114,12 +114,12 @@ const deviceModels = {
     return data;
   },
 
-  /** 디바이스 조회 by serial_number */
+  /** 디바이스 조회 by serial */
   async getBySerial(serial) {
     const { data, error } = await _db()
       .from('devices')
       .select('*')
-      .eq('serial_number', serial)
+      .eq('serial', serial)
       .maybeSingle();
     if (error) { log.error('device_get_failed', { serial, error: error.message }); return null; }
     return data;
@@ -133,15 +133,15 @@ const deviceModels = {
         ? query.in('status', statusFilter)
         : query.eq('status', statusFilter);
     }
-    const { data, error } = await query.order('serial_number');
+    const { data, error } = await query.order('serial');
     if (error) { log.error('device_list_failed', { pcId, error: error.message }); return []; }
     return data || [];
   },
 
-  /** 디바이스 upsert (serial_number 기준) */
+  /** 디바이스 upsert (serial 기준) */
   async upsert(serial, pcId, fields = {}) {
     const row = {
-      serial_number: serial,
+      serial,
       pc_id: pcId,
       status: fields.status || 'online',
       model: fields.model || null,
@@ -149,13 +149,13 @@ const deviceModels = {
       last_seen_at: new Date().toISOString(),
       ...fields,
     };
-    // serial_number, pc_id는 항상 포함
-    row.serial_number = serial;
+    // serial, pc_id는 항상 포함
+    row.serial = serial;
     row.pc_id = pcId;
 
     const { data, error } = await _db()
       .from('devices')
-      .upsert(row, { onConflict: 'serial_number' })
+      .upsert(row, { onConflict: 'serial' })
       .select('id')
       .maybeSingle();
 
@@ -170,18 +170,23 @@ const deviceModels = {
   async bulkUpsert(devices, pcId) {
     if (!devices || devices.length === 0) return { success: 0, failed: 0 };
 
-    const rows = devices.map(d => ({
-      serial_number: d.serial || d.serial_number,
-      pc_id: pcId,
-      status: d.status || 'online',
-      model: d.model || null,
-      battery_level: d.battery ?? d.battery_level ?? null,
-      last_seen_at: new Date().toISOString(),
-    }));
+    const rows = devices.map(d => {
+      const row = {
+        serial: d.serial,
+        pc_id: pcId,
+        status: d.status || 'online',
+        model: d.model || null,
+        battery_level: d.battery ?? d.battery_level ?? null,
+        last_seen_at: new Date().toISOString(),
+      };
+      const connId = d.connection_id ?? d.connectionId;
+      if (connId != null) row.connection_id = connId;
+      return row;
+    });
 
     const { error } = await _db()
       .from('devices')
-      .upsert(rows, { onConflict: 'serial_number' });
+      .upsert(rows, { onConflict: 'serial' });
 
     if (error) {
       log.error('device_bulk_upsert_failed', { count: rows.length, error: error.message });
@@ -234,7 +239,7 @@ const deviceModels = {
       .from('devices')
       .update({ status: 'offline', last_seen_at: new Date().toISOString() })
       .eq('pc_id', pcId)
-      .not('serial_number', 'in', `(${activeSerials.join(',')})`);
+      .not('serial', 'in', `(${activeSerials.join(',')})`);
 
     if (error) log.error('device_mark_offline_failed', { pcId, error: error.message });
   },

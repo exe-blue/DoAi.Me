@@ -5,7 +5,7 @@ import { Globe, RefreshCw, Shield, Smartphone, CheckCircle2, XCircle, Wifi, Wifi
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 
 interface ProxyHealth { total: number; active: number; invalid: number; unassigned: number; }
-interface Device { id: string; serial_number: string; status: string; pc_id: string; ip_intranet?: string|null; }
+interface Device { id: string; serial: string; status: string; pc_id: string; ip_intranet?: string|null; }
 interface Worker { id: string; pc_number?: string; hostname?: string; status: string; device_count?: number; online_count?: number; }
 
 function cn(...c: (string|false|undefined)[]) { return c.filter(Boolean).join(" "); }

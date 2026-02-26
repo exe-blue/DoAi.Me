@@ -604,13 +604,13 @@ async function init(xiaowei, serial, supabase, pcId) {
         .from("devices")
         .upsert(
           {
-            serial_number: serial,
+            serial,
             model: scanResult.model,
             pc_id: pcId,
             status: "initializing",
             battery_level: scanResult.battery_level,
           },
-          { onConflict: "serial_number" }
+          { onConflict: "serial" }
         );
     } catch (err) {
       console.warn(`[Preset:Init] DB upsert error: ${err.message}`);
@@ -629,7 +629,7 @@ async function init(xiaowei, serial, supabase, pcId) {
       const { data: deviceRow, error: devErr } = await supabase
         .from("devices")
         .select("id, proxy_id")
-        .eq("serial_number", serial)
+        .eq("serial", serial)
         .maybeSingle();
 
       if (!devErr && deviceRow && !deviceRow.proxy_id) {
@@ -672,7 +672,7 @@ async function init(xiaowei, serial, supabase, pcId) {
           status: finalStatus,
           last_heartbeat: new Date().toISOString(),
         })
-        .eq("serial_number", serial);
+        .eq("serial", serial);
     } catch (err) {
       console.warn(`[Preset:Init] DB update error: ${err.message}`);
     }

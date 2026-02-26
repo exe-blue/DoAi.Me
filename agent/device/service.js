@@ -14,6 +14,7 @@
 const { getLogger } = require('../common/logger');
 const { pcModels, deviceModels } = require('./models');
 const { ADBDevice } = require('../adb/client');
+const { resolveHardwareSerialsForList } = require('../device-serial-resolver');
 const { dumpUI, getForegroundApp } = require('../adb/screen');
 const { sleep } = require('../adb/helpers');
 
@@ -144,24 +145,32 @@ class DeviceService {
       return { registered: 0, updated: 0, errors: 0, devices: [] };
     }
 
-    // 기기 정보 수집
+    // OTG(IP:5555): resolve hardware serial, keep connectionId for device_target
+    const normalized = discovered.map((d) => ({ serial: typeof d === 'string' ? d : (d.serial || d.id || d.deviceId || '') }));
+    const resolved = await resolveHardwareSerialsForList(this.xiaowei, normalized);
+
     const deviceRows = [];
     let errors = 0;
-
-    for (const d of discovered) {
-      const serial = d.serial || d;
+    for (const d of resolved) {
+      const target = d.connectionId || d.serial;
+      const serial = d.serial;
       try {
-        const dev = new ADBDevice(this.xiaowei, serial);
+        const dev = new ADBDevice(this.xiaowei, target);
         const info = await dev.getDeviceInfo();
         deviceRows.push({
-          serial: serial,
+          serial,
+          connection_id: d.connectionId || null,
           status: 'online',
           model: info.model || null,
           battery_level: info.battery >= 0 ? info.battery : null,
         });
       } catch (err) {
-        log.warn('device_info_failed', { serial, error: err.message });
-        deviceRows.push({ serial, status: 'online' });
+        log.warn('device_info_failed', { serial, target, error: err.message });
+        deviceRows.push({
+          serial,
+          connection_id: d.connectionId || null,
+          status: 'online',
+        });
         errors++;
       }
     }
@@ -282,7 +291,7 @@ class DeviceService {
     log.info('optimize_all_start', { count: devices.length });
 
     for (const d of devices) {
-      const serial = d.serial_number;
+      const serial = d.serial;
       try {
         await this.optimizeDevice(serial);
         success++;
@@ -311,7 +320,7 @@ class DeviceService {
   async getOnlineSerials() {
     if (!this.pcId) return [];
     const devices = await deviceModels.listByPc(this.pcId, ['online', 'busy']);
-    return devices.map(d => d.serial_number);
+    return devices.map(d => d.serial);
   }
 }
 

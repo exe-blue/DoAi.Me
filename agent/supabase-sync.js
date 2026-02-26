@@ -119,7 +119,7 @@ class SupabaseSync {
   }
 
   /**
-   * Upsert device record by serial_number
+   * Upsert device record by serial
    * @param {string} serial
    * @param {string} pcId
    * @param {string} status
@@ -131,14 +131,14 @@ class SupabaseSync {
       .from("devices")
       .upsert(
         {
-          serial_number: serial,
+          serial,
           pc_id: pcId,
           status,
           model: model || null,
           battery_level: battery || null,
           last_seen_at: new Date().toISOString(),
         },
-        { onConflict: "serial_number" }
+        { onConflict: "serial" }
       );
 
     if (error) {
@@ -163,7 +163,7 @@ class SupabaseSync {
     const now = new Date().toISOString();
     const rows = devices.map(d => {
       const row = {
-        serial_number: d.serial,
+        serial: d.serial,
         pc_id: pcId,
         status: d.status || 'online',
         model: d.model || null,
@@ -182,12 +182,13 @@ class SupabaseSync {
       if (d.proxy_id != null) row.proxy_id = d.proxy_id;
       if (d.account_id != null) row.account_id = d.account_id;
       if (d.current_task_id != null) row.current_task_id = d.current_task_id;
+      if (d.connectionId != null) row.connection_id = d.connectionId;
       return row;
     });
 
     const { error } = await this.supabase
       .from('devices')
-      .upsert(rows, { onConflict: 'serial_number' });
+      .upsert(rows, { onConflict: 'serial' });
 
     if (error) {
       console.error(`[Supabase] Batch upsert failed: ${error.message}`);
@@ -215,7 +216,7 @@ class SupabaseSync {
             daily_watch_count: state.dailyWatchCount ?? 0,
             daily_watch_seconds: state.dailyWatchSeconds ?? 0,
           })
-          .eq("serial_number", state.serial);
+          .eq("serial", state.serial);
         if (error) console.warn(`[Supabase] syncDeviceTaskStates failed for ${state.serial}: ${error.message}`);
       } catch (err) {
         console.warn(`[SupabaseSync] syncDeviceTaskStates error: ${err.message}`);
@@ -374,11 +375,35 @@ class SupabaseSync {
       .from("devices")
       .update({ status: "offline", last_seen_at: new Date().toISOString() })
       .eq("pc_id", pcId)
-      .not("serial_number", "in", `(${activeSerials.join(",")})`);
+      .not("serial", "in", `(${activeSerials.join(",")})`);
 
     if (error) {
       console.error(`[Supabase] Failed to mark offline devices: ${error.message}`);
     }
+  }
+
+  /**
+   * Get Xiaowei execution targets for this PC: connection_id ?? serial per device.
+   * @param {string} pcId
+   * @param {string[]|null} [serials] - If provided, only these serials (same PC); else all online/busy.
+   * @returns {Promise<string[]>} Array of device targets (connection_id or serial)
+   */
+  async getDeviceTargetsForExecution(pcId, serials = null) {
+    let query = this.supabase
+      .from("devices")
+      .select("serial, connection_id")
+      .eq("pc_id", pcId);
+    if (serials && serials.length > 0) {
+      query = query.in("serial", serials);
+    } else {
+      query = query.in("status", ["online", "busy"]);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.error(`[Supabase] getDeviceTargetsForExecution failed: ${error.message}`);
+      return [];
+    }
+    return (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
   }
 
   /**
