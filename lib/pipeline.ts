@@ -155,14 +155,15 @@ export async function createBatchTask(options: BatchTaskOptions) {
   // Step 3: Create task_devices per PC (가드레일: PC당 최대 deviceCount, 다른 PC에서 가져오지 않음)
   const distribution = options.distribution ?? "round_robin";
   const perPcCap = deviceCount;
-  /** DB has config + pc_id (migrations); generated Insert type may be stale */
+  /** DB has config, pc_id, device_id (migrations); generated Insert type may be stale */
   type TaskDeviceInsertRow = TaskDeviceInsert & {
     config?: Json | null;
     pc_id?: string | null;
+    device_id?: string | null;
   };
 
   const { data: pcs } = await supabase
-    .from("devices")
+    .from("pcs")
     .select("id")
     .returns<Array<{ id: string }>>();
   const pcList = pcs ?? [];
@@ -174,16 +175,17 @@ export async function createBatchTask(options: BatchTaskOptions) {
     for (const pc of pcList) {
       const { data: devices } = await supabase
         .from("devices")
-        .select("serial")
+        .select("id, serial")
         .eq("pc_id", pc.id)
-        .limit(perPcCap)
-        .returns<Array<{ serial: string }>>();
-      const serials = devices ?? [];
-      const cap = Math.min(perPcCap, serials.length);
+        .limit(Math.min(perPcCap, 20))
+        .returns<Array<{ id: string; serial: string }>>();
+      const deviceList = devices ?? [];
+      const cap = deviceList.length;
       if (cap === 0) continue;
       const deviceConfigsForPc = _distributeVideos(videos, cap, distribution);
       for (let i = 0; i < cap; i++) {
-        const serial = serials[i]?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
+        const dev = deviceList[i];
+        const serial = dev?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
         const baseConfig = deviceConfigsForPc[i];
         const configWithWorkflow: Json = {
           ...baseConfig,
@@ -194,14 +196,16 @@ export async function createBatchTask(options: BatchTaskOptions) {
             steps: [...DEFAULT_WORKFLOW_STEPS],
           },
         };
-        allTaskDevices.push({
+        const row: TaskDeviceInsertRow = {
           task_id: task.id,
           device_serial: serial,
           status: "pending",
           config: configWithWorkflow,
           worker_id: options.workerId ?? null,
           pc_id: pc.id,
-        });
+        };
+        if (dev?.id) row.device_id = dev.id;
+        allTaskDevices.push(row);
         allConfigs.push(deviceConfigsForPc[i]);
       }
     }
@@ -292,9 +296,11 @@ function _priorityWeight(p: string | null): number {
   }
 }
 
-/** Default workflow steps for task_devices SSOT runner */
+/** Default workflow steps for task_devices SSOT runner (search → watch → actions) */
 const DEFAULT_WORKFLOW_STEPS = [
-  { module: "watch", waitSecAfter: 60 },
+  { module: "search_video", waitSecAfter: 10 },
+  { module: "watch_video", waitSecAfter: 60 },
+  { module: "video_actions", waitSecAfter: 30 },
 ] as const;
 
 function _distributeVideos(
