@@ -1,7 +1,7 @@
 /**
- * Task-devices SSOT runner: claim task_devices, run config.snapshot.steps (scriptRef-based),
- * lease renewal every 30s, complete_task_device / fail_or_retry_task_device.
- * Execution unit = task_devices only. Scripts from DB (status=active), version-pinned.
+ * 유일 실행 엔진: claim → steps 실행 → lease 갱신 → complete / fail_or_retry.
+ * Device target: devices.connection_id ?? devices.serial_number (fallback serial).
+ * Scripts: (scriptId, version) from DB, status=active 강제, op timeoutMs Promise.race.
  */
 const { getLogger } = require("./common/logger");
 const { runScript } = require("./script-cache");
@@ -65,7 +65,11 @@ class TaskDevicesRunner {
     const slots = Math.max(0, this._maxConcurrent - this._running.size);
     if (slots === 0) return;
 
-    const claimed = await this.supabaseSync.claimTaskDevicesForPc(pcId, slots);
+    const slotsToClaim = Math.min(slots, 10);
+    const claimed = await this.supabaseSync.claimTaskDevicesForPc(
+      pcId,
+      slotsToClaim,
+    );
     for (const row of claimed) {
       if (!row?.id) continue;
       this._runOne(row, pcId);
@@ -89,7 +93,8 @@ class TaskDevicesRunner {
     startHeartbeat();
 
     try {
-      const target = await this.supabaseSync.getDeviceTargetForTaskDevice(taskDevice);
+      const target =
+        await this.supabaseSync.getDeviceTargetForTaskDevice(taskDevice);
       if (!target) {
         await this.supabaseSync.failOrRetryTaskDevice(
           id,
@@ -124,45 +129,66 @@ class TaskDevicesRunner {
         config: cfg,
       };
 
-      let backgroundPromise = Promise.resolve();
+      // Flatten: step.ops[] (new) or legacy flat step with step.scriptRef
+      const flatOps = [];
       for (const step of steps) {
-        const scriptRef = step.scriptRef;
-        if (!scriptRef?.id || scriptRef.version == null) {
+        const ops = Array.isArray(step.ops) ? step.ops : [step];
+        const isStepBackground = step.background === true;
+        for (const op of ops) {
+          flatOps.push({ op, isBackground: isStepBackground });
+        }
+      }
+
+      let backgroundPromise = Promise.resolve();
+      for (const { op, isBackground } of flatOps) {
+        const scriptRef = op.scriptRef || op;
+        const scriptId = scriptRef.scriptId ?? scriptRef.id;
+        const version = scriptRef.version;
+        if (scriptId == null || scriptId === "" || version == null) {
           await this.supabaseSync.failOrRetryTaskDevice(
             id,
             pcId,
-            "Step missing scriptRef.id or scriptRef.version",
+            "Step op missing scriptRef.scriptId/id or scriptRef.version",
             false,
           );
           this._cleanup(id);
           return;
         }
 
-        const timeoutMs = step.timeoutMs ?? 180000;
-        const params = step.params ?? {};
-        const isBackground = step.background === true;
+        const timeoutMs = op.timeoutMs ?? 180000;
+        const params = op.params ?? {};
+        const ref = { id: scriptId, scriptId, version };
 
         if (isBackground) {
           backgroundPromise = backgroundPromise.then(() =>
-            this._runOneStep(scriptRef, ctx, params, timeoutMs),
+            this._runOneStep(ref, ctx, params, timeoutMs),
           );
         } else {
           await backgroundPromise;
           backgroundPromise = Promise.resolve();
-          await this._runOneStep(scriptRef, ctx, params, timeoutMs);
+          await this._runOneStep(ref, ctx, params, timeoutMs);
         }
       }
       await backgroundPromise;
 
       await this.supabaseSync.completeTaskDevice(id, pcId, {
         completed: true,
-        steps: steps.length,
+        steps: flatOps.length,
       });
       log.info("[TaskDevicesRunner] Completed task_device %s", id);
     } catch (err) {
-      log.error("[TaskDevicesRunner] task_device %s error: %s", id, err.message);
+      log.error(
+        "[TaskDevicesRunner] task_device %s error: %s",
+        id,
+        err.message,
+      );
       const retryable = err.retryable !== false;
-      await this.supabaseSync.failOrRetryTaskDevice(id, pcId, err.message, retryable);
+      await this.supabaseSync.failOrRetryTaskDevice(
+        id,
+        pcId,
+        err.message,
+        retryable,
+      );
     } finally {
       this._cleanup(id);
     }
@@ -170,11 +196,13 @@ class TaskDevicesRunner {
 
   /**
    * Run a single step via script-cache. Resolves on success; throws with retryable set on failure.
+   * scriptRef.scriptId ?? scriptRef.id, version and timeoutMs (active/version enforced in script-cache).
    */
   async _runOneStep(scriptRef, ctx, params, timeoutMs) {
+    const scriptId = scriptRef.scriptId ?? scriptRef.id;
     const out = await runScript({
       supabase: this.supabaseSync.supabase,
-      scriptId: scriptRef.id,
+      scriptId,
       version: scriptRef.version,
       ctx,
       params,

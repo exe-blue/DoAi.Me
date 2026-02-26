@@ -211,7 +211,7 @@ async function main() {
     log.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect");
   }
 
-  // 5. Initialize task executor
+  // 5. TaskExecutor instance only (for heartbeat/config). Do NOT start tasks pending execution or job_assignments — execution = task_devices only.
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
 
   // 5a. Run stale task recovery (cold start)
@@ -345,100 +345,71 @@ async function main() {
     log.info("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Task-devices only: task_queue → create task + fan-out; commands → absorb into task + task_devices (no TaskExecutor/tasks/job_assignments execution)
+  // 12. Execution = task_devices only. Tasks pending (TaskExecutor), job_assignments, task_queue are NOT execution units — server creates task_devices; agent only claims and runs task_devices.
   const workerChannelResult =
     await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
-        onTaskQueue: async (queueRow) => {
-          if (queueRow.status !== "queued") return;
-          const task = await supabaseSync.createTaskFromQueueItem(
-            queueRow,
+      onTaskQueue: async () => {
+        // No-op: do not consume task_queue as execution unit; server converts queue to task_devices.
+      },
+      onCommand: async (cmdRow) => {
+        if (cmdRow.status !== "pending") return;
+        try {
+          await supabaseSync.supabase
+            .from("commands")
+            .update({ status: "running" })
+            .eq("id", cmdRow.id);
+          const task = await supabaseSync.createTaskAndTaskDevicesFromCommand(
+            cmdRow,
             supabaseSync.pcId,
           );
           if (task) {
-            const n = await supabaseSync.fanOutTaskDevicesForTask(
-              task.id,
-              supabaseSync.pcId,
-              { taskConfig: queueRow.task_config },
-            );
-            log.info(
-              `[Agent] task_queue → task ${task.id} + ${n} task_devices (runner will claim)`,
-            );
-          }
-        },
-        onCommand: async (cmdRow) => {
-          if (cmdRow.status !== "pending") return;
-          try {
             await supabaseSync.supabase
               .from("commands")
-              .update({ status: "running" })
+              .update({
+                status: "completed",
+                completed_at: new Date().toISOString(),
+                result: { task_id: task.id },
+              })
               .eq("id", cmdRow.id);
-            const task = await supabaseSync.createTaskAndTaskDevicesFromCommand(
-              cmdRow,
-              supabaseSync.pcId,
+            log.info(
+              `[Agent] Command ${cmdRow.id} absorbed → task ${task.id} + task_devices`,
             );
-            if (task) {
-              await supabaseSync.supabase
-                .from("commands")
-                .update({
-                  status: "completed",
-                  completed_at: new Date().toISOString(),
-                  result: { task_id: task.id },
-                })
-                .eq("id", cmdRow.id);
-              log.info(
-                `[Agent] Command ${cmdRow.id} absorbed → task ${task.id} + task_devices`,
-              );
-            } else {
-              await supabaseSync.supabase
-                .from("commands")
-                .update({
-                  status: "failed",
-                  completed_at: new Date().toISOString(),
-                  result: { error: "createTaskAndTaskDevicesFromCommand failed" },
-                })
-                .eq("id", cmdRow.id);
-            }
-          } catch (err) {
-            log.error(`[Agent] Command ${cmdRow.id} absorb failed: ${err.message}`);
+          } else {
             await supabaseSync.supabase
               .from("commands")
               .update({
                 status: "failed",
                 completed_at: new Date().toISOString(),
-                result: { error: err.message },
+                result: { error: "createTaskAndTaskDevicesFromCommand failed" },
               })
               .eq("id", cmdRow.id);
           }
-        },
-      });
+        } catch (err) {
+          log.error(
+            `[Agent] Command ${cmdRow.id} absorb failed: ${err.message}`,
+          );
+          await supabaseSync.supabase
+            .from("commands")
+            .update({
+              status: "failed",
+              completed_at: new Date().toISOString(),
+              result: { error: err.message },
+            })
+            .eq("id", cmdRow.id);
+        }
+      },
+    });
   if (workerChannelResult.status === "SUBSCRIBED") {
-    log.info("[Agent] ✓ task_queue + commands 구독 (task_devices fan-out/absorb)");
+    log.info(
+      "[Agent] ✓ commands 구독 (task_queue 실행 경로 제거, 서버에서 task_devices 생성)",
+    );
   } else {
     log.warn(
       `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
     );
   }
 
-  const processTaskQueuePending = async () => {
-    try {
-      const items = await supabaseSync.getPendingTaskQueueItems(config.pcNumber);
-      for (const row of items) {
-        const task = await supabaseSync.createTaskFromQueueItem(
-          row,
-          supabaseSync.pcId,
-        );
-        if (task) {
-          await supabaseSync.fanOutTaskDevicesForTask(task.id, supabaseSync.pcId, {
-            taskConfig: row.task_config,
-          });
-        }
-      }
-    } catch (err) {
-      log.error(`[Agent] Task queue poll error: ${err.message}`);
-    }
-  };
-  taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
-  processTaskQueuePending();
+  // task_queue 폴링 없음: 실행 단위는 task_devices만. 큐는 서버가 task_devices로 변환; agent는 task_devices만 실행.
 
   // 14. Start ADB reconnect monitoring (manager already initialized above)
   if (xiaowei.connected) {

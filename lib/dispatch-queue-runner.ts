@@ -74,6 +74,13 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     (config.channelId as string | undefined) ??
     (inputs.channelId as string | undefined) ??
     (config.channel_id as string | undefined);
+  const workflowId =
+    (config.workflowId as string | undefined) ??
+    (config.workflow as { id?: string } | undefined)?.id;
+  const workflowVersion = toNumberOr(
+    config.workflowVersion as unknown,
+    (config.workflow as { version?: number } | undefined)?.version ?? 1,
+  );
 
   if (!videoId || !channelId) {
     await (
@@ -103,6 +110,9 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
       | "channel_auto",
     priority: typeof item.priority === "number" ? item.priority : 5,
     variables: config?.variables as TaskVariables | undefined,
+    ...(workflowId
+      ? { workflowId, workflowVersion, workflowInputs: inputs }
+      : {}),
   });
 
   await (

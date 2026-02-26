@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerClient } from "@/lib/supabase/server";
+import { ok, errFrom } from "@/lib/api-utils";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
 
     type PcRow = { id: string; pc_number: string | null; hostname: string | null; status: string | null; last_heartbeat: string | null };
     let workersList: Array<{ id: string; name: string; status: string; last_heartbeat: string | null }> = [];
@@ -98,7 +100,7 @@ export async function GET() {
           unassigned: proxies?.filter((p) => !p.device_id).length ?? 0,
         };
 
-    return NextResponse.json({
+    return ok({
       worker: onlineWorker
         ? {
             id: onlineWorker.id,
@@ -112,11 +114,8 @@ export async function GET() {
       proxies: proxyCounts,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    console.error("[API /overview]", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch overview" },
-      { status: 500 },
-    );
+  } catch (e) {
+    console.error("[API /overview]", e);
+    return errFrom(e, "OVERVIEW_ERROR", 500);
   }
 }

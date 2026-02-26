@@ -1,9 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getTasksWithDetails, updateTask, deleteTask } from "@/lib/db/tasks";
-import { createManualTask, createBatchTask } from "@/lib/pipeline";
+import {
+  createManualTask,
+  createBatchTask,
+} from "@/lib/pipeline";
+import {
+  DEFAULT_WATCH_WORKFLOW_ID,
+  DEFAULT_WATCH_WORKFLOW_VERSION,
+} from "@/lib/workflow-snapshot";
 import { mapTaskRow } from "@/lib/mappers";
-import { taskCreateSchema, taskUpdateSchema, batchTaskCreateSchema } from "@/lib/schemas";
+import {
+  taskCreateSchema,
+  taskUpdateSchema,
+  batchTaskCreateSchema,
+} from "@/lib/schemas";
 import { createAuthServerClient } from "@/lib/supabase/auth-server";
+import { okList, errFrom, parseListParams } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +35,26 @@ function sortTasksByPriority<T extends { source?: string | null; priority?: numb
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const { page, pageSize } = parseListParams(searchParams);
+    const status = searchParams.get("status") || undefined;
+
     const rows = await getTasksWithDetails();
-    const tasks = rows.map((row) => mapTaskRow(row as any));
+    let tasks = rows.map((row) => mapTaskRow(row as any));
+    if (status) {
+      tasks = tasks.filter((t) => (t.status ?? "") === status);
+    }
     const sorted = sortTasksByPriority(tasks);
-    return NextResponse.json({ tasks: sorted });
-  } catch (error) {
-    console.error("Error fetching tasks:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch tasks" },
-      { status: 500 }
-    );
+    const total = sorted.length;
+    const from = (page - 1) * pageSize;
+    const slice = sorted.slice(from, from + pageSize);
+
+    return okList(slice, { page, pageSize, total });
+  } catch (e) {
+    console.error("Error fetching tasks:", e);
+    return errFrom(e, "TASKS_ERROR", 500);
   }
 }
 
@@ -64,15 +84,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const { contentMode, videoId, channelId, videoIds, distribution, workerId, deviceCount, variables, source, priority } = result.data;
+      const {
+        contentMode,
+        videoId,
+        channelId,
+        videoIds,
+        distribution,
+        workerId,
+        deviceCount,
+        variables,
+        source,
+        priority,
+        workflowRef,
+        inputs: bodyInputs,
+      } = result.data;
 
-      const fullVariables = variables ? {
-        watchPercent: variables.watchPercent ?? 80,
-        commentProb: variables.commentProb ?? 10,
-        likeProb: variables.likeProb ?? 40,
-        saveProb: variables.saveProb ?? 5,
-        subscribeToggle: variables.subscribeToggle ?? false,
-      } : undefined;
+      const fullVariables = variables
+        ? {
+            watchPercent: variables.watchPercent ?? 80,
+            commentProb: variables.commentProb ?? 10,
+            likeProb: variables.likeProb ?? 40,
+            saveProb: variables.saveProb ?? 5,
+            subscribeToggle: variables.subscribeToggle ?? false,
+          }
+        : undefined;
 
       const task = await createBatchTask({
         contentMode,
@@ -84,8 +119,13 @@ export async function POST(request: NextRequest) {
         variables: fullVariables,
         workerId,
         createdByUserId,
-        source: source ?? (priority != null && priority >= 6 ? "manual" : undefined),
+        source:
+          source ?? (priority != null && priority >= 6 ? "manual" : undefined),
         priority: priority ?? (source === "manual" ? 8 : undefined),
+        workflowId: workflowRef?.id ?? DEFAULT_WATCH_WORKFLOW_ID,
+        workflowVersion:
+          workflowRef?.version ?? DEFAULT_WATCH_WORKFLOW_VERSION,
+        workflowInputs: bodyInputs,
       });
 
       return NextResponse.json(task, { status: 201 });
@@ -100,23 +140,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { videoId, channelId, workerId, deviceCount, variables, source, priority } = result.data;
+    const {
+      videoId,
+      channelId,
+      workerId,
+      deviceCount,
+      variables,
+      source,
+      priority,
+      workflowRef,
+      inputs: bodyInputs,
+    } = result.data;
 
-    const fullVariables = variables ? {
-      watchPercent: variables.watchPercent ?? 80,
-      commentProb: variables.commentProb ?? 10,
-      likeProb: variables.likeProb ?? 40,
-      saveProb: variables.saveProb ?? 5,
-      subscribeToggle: variables.subscribeToggle ?? false,
-    } : undefined;
+    const fullVariables = variables
+      ? {
+          watchPercent: variables.watchPercent ?? 80,
+          commentProb: variables.commentProb ?? 10,
+          likeProb: variables.likeProb ?? 40,
+          saveProb: variables.saveProb ?? 5,
+          subscribeToggle: variables.subscribeToggle ?? false,
+        }
+      : undefined;
 
     const task = await createManualTask(videoId, channelId, {
       deviceCount: deviceCount ?? 20,
       variables: fullVariables,
       workerId,
       createdByUserId,
-      source: source ?? (priority != null && priority >= 6 ? "manual" : undefined),
+      source:
+        source ?? (priority != null && priority >= 6 ? "manual" : undefined),
       priority: priority ?? (source === "manual" ? 8 : undefined),
+      workflowId: workflowRef?.id ?? DEFAULT_WATCH_WORKFLOW_ID,
+      workflowVersion: workflowRef?.version ?? DEFAULT_WATCH_WORKFLOW_VERSION,
+      workflowInputs: bodyInputs,
     });
 
     return NextResponse.json(task, { status: 201 });

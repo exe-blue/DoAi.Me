@@ -57,7 +57,13 @@ export function createServiceRoleClient() {
 /**
  * Default server client for API Routes: service role (admin).
  * For session-based auth in server code, use createServerClientWithCookies().
+ * API routes must use this client only on the server; never expose SUPABASE_SERVICE_ROLE_KEY to the client bundle.
  */
 export function createSupabaseServerClient() {
+  return createServiceRoleClient();
+}
+
+/** Canonical name for API routes. Same as createSupabaseServerClient(). Use only in server-side API handlers. */
+export function getServerClient() {
   return createServiceRoleClient();
 }

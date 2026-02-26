@@ -25,6 +25,10 @@ export const taskCreateSchema = z.object({
   deviceCount: z.number().int().min(1).max(1000).optional(),
   source: z.enum(["manual", "channel_auto"]).optional(),
   priority: z.number().int().min(1).max(10).optional(),
+  workflowRef: z
+    .object({ id: z.string().min(1), version: z.number().int().min(1) })
+    .optional(),
+  inputs: z.record(z.unknown()).optional(),
   variables: z
     .object({
       watchPercent: z.number().min(0).max(100).optional(),
@@ -39,18 +43,18 @@ export const taskCreateSchema = z.object({
 // Batch task creation schema (content-aware distribution)
 export const batchTaskCreateSchema = z.object({
   contentMode: z.enum(["single", "channel", "playlist"]),
-  // single mode (videoId = YouTube video ID, not UUID)
   videoId: z.string().min(1).optional(),
-  // channel mode
   channelId: z.string().min(1).optional(),
   distribution: z.enum(["round_robin", "random", "by_priority"]).optional(),
-  // playlist mode
   videoIds: z.array(z.string().min(1)).optional(),
-  // common
   workerId: z.string().uuid().optional(),
   deviceCount: z.number().int().min(1).max(1000).optional(),
   source: z.enum(["manual", "channel_auto"]).optional(),
   priority: z.number().int().min(1).max(10).optional(),
+  workflowRef: z
+    .object({ id: z.string().min(1), version: z.number().int().min(1) })
+    .optional(),
+  inputs: z.record(z.unknown()).optional(),
   variables: z
     .object({
       watchPercent: z.number().min(0).max(100).optional(),

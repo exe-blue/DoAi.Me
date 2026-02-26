@@ -420,19 +420,22 @@ class SupabaseSync {
   }
 
   /**
-   * Get single device target for a task_device: devices.connection_id ?? devices.serial.
-   * Used as Xiaowei request "devices" field (target). Supports device_id (SSOT) and legacy device_serial.
+   * Get single device target for a task_device: connection_id ?? serial_number ?? serial.
+   * Used as Xiaowei request "devices" field. Supports device_id (SSOT) and legacy device_serial.
+   * Selects connection_id + serial (serial_number if present in schema).
    * @param {object} taskDevice - { device_id?, device_serial?, pc_id? }
    * @returns {Promise<string|null>}
    */
   async getDeviceTargetForTaskDevice(taskDevice) {
+    const pickTarget = (d) =>
+      d.connection_id ?? d.serial_number ?? d.serial ?? null;
     if (taskDevice?.device_id) {
       const { data, error } = await this.supabase
         .from("devices")
         .select("connection_id, serial")
         .eq("id", taskDevice.device_id)
         .maybeSingle();
-      if (!error && data) return data.connection_id || data.serial || null;
+      if (!error && data) return pickTarget(data);
     }
     if (!taskDevice?.device_serial) return null;
     let pcId = taskDevice.pc_id;
@@ -447,12 +450,12 @@ class SupabaseSync {
     if (!pcId) return taskDevice.device_serial;
     const { data, error } = await this.supabase
       .from("devices")
-      .select("serial, connection_id")
+      .select("connection_id, serial")
       .eq("pc_id", pcId)
       .eq("serial", taskDevice.device_serial)
       .maybeSingle();
     if (error || !data) return taskDevice.device_serial;
-    return data.connection_id || data.serial || taskDevice.device_serial;
+    return pickTarget(data) ?? taskDevice.device_serial;
   }
 
   /**
@@ -1140,7 +1143,31 @@ class SupabaseSync {
   }
 
   /**
+   * Returns true if config has snapshot.steps (scriptRef-based) for task_devices runner.
+   * @param {object} config
+   * @returns {boolean}
+   */
+  _hasSnapshotSteps(config) {
+    const steps = config?.snapshot?.steps;
+    if (!Array.isArray(steps) || steps.length === 0) return false;
+    return steps.every((s) => {
+      if (!s || typeof s !== "object") return false;
+      if (Array.isArray(s.ops)) {
+        return s.ops.every(
+          (op) =>
+            op?.scriptRef &&
+            (op.scriptRef.scriptId ?? op.scriptRef.id) != null &&
+            op.scriptRef.version != null,
+        );
+      }
+      return s.scriptRef && s.scriptRef.id != null;
+    });
+  }
+
+  /**
    * Fan-out: create task_devices rows for a task for all devices of a PC (runner will claim them).
+   * If options.taskConfig has snapshot.steps (scriptRef-based), it is used as task_devices.config;
+   * otherwise legacy _defaultWatchWorkflowConfig is used (runner may reject if snapshot.steps required).
    * @param {string} taskId - task UUID
    * @param {string} pcId - PC UUID
    * @param {{ taskConfig?: object, maxDevices?: number }} options
@@ -1164,18 +1191,36 @@ class SupabaseSync {
       return 0;
     }
 
-    const videoId = taskConfig.videoId || taskConfig.video_id;
+    const videoId = taskConfig.videoId ?? taskConfig.video_id;
     const videoUrl =
-      taskConfig.videoUrl ||
+      taskConfig.videoUrl ??
       (videoId ? `https://www.youtube.com/watch?v=${videoId}` : null);
-    const baseConfig = this._defaultWatchWorkflowConfig({
-      title: taskConfig.title ?? "",
-      keyword: taskConfig.keyword ?? videoId ?? "",
-      videoId: videoId ?? null,
-      videoUrl,
-      minWatchSec: taskConfig.minWatchSec ?? 240,
-      maxWatchSec: taskConfig.maxWatchSec ?? 420,
-    });
+    const inputs = taskConfig.inputs ?? {};
+    const keyword = inputs.keyword ?? taskConfig.keyword ?? videoId ?? "";
+
+    let baseConfig;
+    if (this._hasSnapshotSteps(taskConfig)) {
+      baseConfig = {
+        ...taskConfig,
+        inputs: {
+          ...inputs,
+          videoId: inputs.videoId ?? videoId,
+          video_url: inputs.video_url ?? videoUrl,
+          keyword: inputs.keyword ?? keyword,
+        },
+      };
+    } else {
+      baseConfig = this._defaultWatchWorkflowConfig({
+        title: taskConfig.title ?? "",
+        keyword,
+        videoId: videoId ?? null,
+        videoUrl,
+        minWatchSec: taskConfig.minWatchSec ?? 240,
+        maxWatchSec: taskConfig.maxWatchSec ?? 420,
+      });
+      if (videoId) baseConfig.video_id = videoId;
+      if (videoUrl) baseConfig.video_url = videoUrl;
+    }
 
     const rows = devices.map((d) => ({
       task_id: taskId,
@@ -1183,7 +1228,7 @@ class SupabaseSync {
       device_id: d.id,
       device_serial: d.serial,
       status: "queued",
-      config: { ...baseConfig, video_id: videoId, video_url: videoUrl },
+      config: baseConfig,
     }));
 
     const { data, error } = await this.supabase

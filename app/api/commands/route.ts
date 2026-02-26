@@ -1,75 +1,49 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { CommandLogRow, TaskDeviceInsert } from "@/lib/supabase/types";
-import type { Json } from "@/lib/supabase/types";
+import { NextRequest } from "next/server";
+import { getServerClient } from "@/lib/supabase/server";
+import { createTaskWithTaskDevices } from "@/lib/pipeline";
+import {
+  DEFAULT_WATCH_WORKFLOW_ID,
+  DEFAULT_WATCH_WORKFLOW_VERSION,
+} from "@/lib/workflow-snapshot";
+import type { CommandLogRow } from "@/lib/supabase/types";
+import { okList, ok, err, errFrom, parseListParams } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
     const { searchParams } = new URL(request.url);
-
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100);
+    const { page, pageSize } = parseListParams(searchParams);
     const before = searchParams.get("before");
 
     let query = supabase
       .from("command_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit);
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false });
 
-    if (before) {
-      query = query.lt("created_at", before);
-    }
+    if (before) query = query.lt("created_at", before);
 
-    const { data, error } = await query.returns<CommandLogRow[]>();
+    const from = (page - 1) * pageSize;
+    query = query.range(from, from + pageSize - 1);
+
+    const { data, error, count } = await query.returns<CommandLogRow[]>();
     if (error) throw error;
 
-    return NextResponse.json({ commands: data });
-  } catch (error: unknown) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to fetch commands",
-      },
-      { status: 500 },
-    );
+    return okList(data ?? [], { page, pageSize, total: count ?? data?.length ?? 0 });
+  } catch (e) {
+    return errFrom(e, "COMMANDS_ERROR", 500);
   }
-}
-
-/** Minimal config for command task_devices (no workflow snapshot from DB). */
-function buildCommandTaskDeviceConfig(command: string): Json {
-  return {
-    schemaVersion: 1,
-    workflow: {
-      id: "COMMAND",
-      version: 1,
-      kind: "EVENT",
-      name: "RUN_COMMAND",
-    },
-    snapshot: {
-      createdAt: new Date().toISOString(),
-      steps: [],
-    },
-    inputs: { command },
-    runtime: {
-      timeouts: { stepTimeoutSec: 60, taskTimeoutSec: 120 },
-    },
-  } as unknown as Json;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
     const body = await request.json();
     const { command, target_type, target_serials } = body;
 
     if (!command || !command.trim()) {
-      return NextResponse.json(
-        { error: "command is required" },
-        { status: 400 },
-      );
+      return err("BAD_REQUEST", "command is required", 400);
     }
 
     const BLOCKED = [
@@ -81,10 +55,7 @@ export async function POST(request: NextRequest) {
       /dd\s+if=/i,
     ];
     if (BLOCKED.some((p) => p.test(command))) {
-      return NextResponse.json(
-        { error: "Command blocked by safety filter" },
-        { status: 400 },
-      );
+      return err("BLOCKED", "Command blocked by safety filter", 400);
     }
 
     const trimmedCommand = command.trim();
@@ -104,101 +75,57 @@ export async function POST(request: NextRequest) {
 
     if (logError) throw logError;
 
-    let devices: Array<{ id: string; serial: string; worker_id: string | null }> =
-      [];
+    type DeviceRow = { id: string; serial: string; worker_id: string | null };
+    let deviceRows: DeviceRow[] = [];
     if (
       Array.isArray(target_serials) &&
       target_serials.length > 0 &&
       target_serials.every((s: unknown) => typeof s === "string")
     ) {
-      const { data: bySerials } = await supabase
+      const { data } = await supabase
         .from("devices")
         .select("id, serial, worker_id")
         .in("serial", target_serials as string[])
-        .returns<Array<{ id: string; serial: string; worker_id: string | null }>>();
-      devices = bySerials ?? [];
+        .returns<DeviceRow[]>();
+      deviceRows = data ?? [];
     } else {
-      const { data: workersList } = await supabase
-        .from("workers")
-        .select("id");
-      const list = workersList ?? [];
-      const perPc = 20;
-      for (const worker of list) {
+      const { data: workers } = await supabase.from("workers").select("id");
+      for (const w of workers ?? []) {
         const { data: devs } = await supabase
           .from("devices")
           .select("id, serial, worker_id")
-          .eq("worker_id", worker.id)
-          .limit(perPc)
-          .returns<
-            Array<{ id: string; serial: string; worker_id: string | null }>
-          >();
-        devices = devices.concat(devs ?? []);
+          .eq("worker_id", w.id)
+          .limit(20)
+          .returns<DeviceRow[]>();
+        deviceRows = deviceRows.concat(devs ?? []);
       }
     }
 
-    const config = buildCommandTaskDeviceConfig(trimmedCommand);
-
-    const { data: task, error: taskError } = await supabase
-      .from("tasks")
-      .insert({
+    const task = await createTaskWithTaskDevices({
+      taskPayload: {
         type: "adb",
         task_type: "direct",
         video_id: null,
         channel_id: null,
-        payload: { command: trimmedCommand, command_log_id: commandLog.id },
+        payload: {
+          command: trimmedCommand,
+          command_log_id: commandLog.id,
+        },
         status: "pending",
-      })
-      .select("id")
-      .single();
-
-    if (taskError) throw taskError;
-    if (!task?.id) throw new Error("Task insert did not return id");
-
-    const taskDevices: TaskDeviceInsert[] = devices.map((d) => ({
-      task_id: task.id,
-      device_serial: d.serial,
-      status: "pending",
-      config,
-      worker_id: null,
-      ...(d.id ? { device_id: d.id } : {}),
-      ...(d.worker_id ? { worker_id: d.worker_id } : {}),
-    }));
-
-    if (taskDevices.length > 0) {
-      const withDeviceId = taskDevices.filter(
-        (r) => (r as { device_id?: string }).device_id != null,
-      );
-      const withoutDeviceId = taskDevices.filter(
-        (r) => (r as { device_id?: string }).device_id == null,
-      );
-      if (withDeviceId.length > 0) {
-        const { error: uErr } = await supabase
-          .from("task_devices")
-          .upsert(withDeviceId, {
-            onConflict: "task_id,device_id",
-            ignoreDuplicates: true,
-          });
-        if (uErr) throw uErr;
-      }
-      if (withoutDeviceId.length > 0) {
-        const { error: iErr } = await supabase
-          .from("task_devices")
-          .insert(withoutDeviceId);
-        if (iErr) throw iErr;
-      }
-    }
-
-    return NextResponse.json(
-      { command_id: commandLog.id, task_id: task.id },
-      { status: 201 },
-    );
-  } catch (error: unknown) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to create command",
       },
-      { status: 500 },
-    );
+      workflowId: DEFAULT_WATCH_WORKFLOW_ID,
+      workflowVersion: DEFAULT_WATCH_WORKFLOW_VERSION,
+      inputs: { command: trimmedCommand },
+      deviceIds:
+        deviceRows.length > 0
+          ? deviceRows
+              .filter((d) => d.worker_id != null)
+              .map((d) => ({ id: d.id, pc_id: d.worker_id! }))
+          : undefined,
+    });
+
+    return ok({ command_id: commandLog.id, task_id: task.id }, 201);
+  } catch (e) {
+    return errFrom(e, "COMMAND_CREATE_ERROR", 500);
   }
 }
