@@ -1,23 +1,27 @@
 /**
- * Workflow snapshot utilities: load workflow definition from DB, validate steps,
- * resolve scripts (active only), and build task_devices.config.
+ * Workflow snapshot: load from workflows_definitions, validate steps (step.ops[]),
+ * resolve scripts (active + timeoutMs), build task_devices.config (schemaVersion 4).
  * Replaces template-based config (workflow-templates.ts).
  */
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 4;
 
-export type ScriptRef = { id: string; version: number };
+export type ScriptRef = { scriptId: string; version: number };
 
-export type WorkflowStepPayload = {
+export type WorkflowOp = {
+  type: "javascript";
   scriptRef: ScriptRef;
   params?: Record<string, unknown>;
-  waitSecAfter?: number;
   timeoutMs?: number;
 };
 
-export type WorkflowRow = {
+export type WorkflowStep = {
+  ops: WorkflowOp[];
+};
+
+export type WorkflowDefRow = {
   id: string;
   version: number;
   kind: string;
@@ -35,8 +39,8 @@ export type ScriptRow = {
 };
 
 export type TaskDeviceConfigInput = {
-  workflow: { id: string; version: number; kind: string; name: string };
-  steps: WorkflowStepPayload[];
+  workflowDef: { id: string; version: number; kind: string; name: string };
+  steps: WorkflowStep[];
   inputs: Record<string, unknown>;
   runtime?: {
     timeouts?: { stepTimeoutSec?: number; taskTimeoutSec?: number };
@@ -44,31 +48,30 @@ export type TaskDeviceConfigInput = {
 };
 
 /**
- * Load workflow definition (steps) from workflows table by id and version.
+ * Load workflow definition from workflows_definitions by id and version.
  */
 export async function loadWorkflowDefinition(
   workflowId: string,
   workflowVersion: number,
-): Promise<WorkflowRow | null> {
+): Promise<WorkflowDefRow | null> {
   const supabase = createSupabaseServerClient();
   const { data, error } = await (supabase as { from: (relation: string) => ReturnType<typeof supabase.from> })
-    .from("workflows")
+    .from("workflows_definitions")
     .select("id, version, kind, name, is_active, steps")
     .eq("id", workflowId)
     .eq("version", workflowVersion)
     .maybeSingle()
-    .returns<WorkflowRow | null>();
+    .returns<WorkflowDefRow | null>();
 
   if (error) throw error;
   return data;
 }
 
 /**
- * Validate that every step has scriptRef with id and version.
+ * Validate steps shape: steps is array, each step.ops is array,
+ * each op is { type:'javascript', scriptRef:{ scriptId, version }, params? }.
  */
-export function validateWorkflowSteps(
-  steps: unknown,
-): asserts steps is WorkflowStepPayload[] {
+export function validateStepsShape(steps: unknown): asserts steps is WorkflowStep[] {
   if (!Array.isArray(steps)) {
     throw new Error("Workflow steps must be an array");
   }
@@ -77,73 +80,85 @@ export function validateWorkflowSteps(
     if (!step || typeof step !== "object") {
       throw new Error(`Step ${i} must be an object`);
     }
-    const ref = (step as WorkflowStepPayload).scriptRef;
-    if (!ref || typeof ref !== "object") {
-      throw new Error(`Step ${i} must have scriptRef`);
+    if (!Array.isArray((step as WorkflowStep).ops)) {
+      throw new Error(`Step ${i}.ops must be an array`);
     }
-    if (
-      typeof (ref as ScriptRef).id !== "string" ||
-      (ref as ScriptRef).id === ""
-    ) {
-      throw new Error(`Step ${i}.scriptRef.id must be a non-empty string`);
-    }
-    if (
-      typeof (ref as ScriptRef).version !== "number" ||
-      !Number.isInteger((ref as ScriptRef).version)
-    ) {
-      throw new Error(`Step ${i}.scriptRef.version must be an integer`);
+    const ops = (step as WorkflowStep).ops;
+    for (let j = 0; j < ops.length; j++) {
+      const op = ops[j];
+      if (!op || typeof op !== "object") {
+        throw new Error(`Step ${i}.ops[${j}] must be an object`);
+      }
+      if ((op as WorkflowOp).type !== "javascript") {
+        throw new Error(`Step ${i}.ops[${j}].type must be 'javascript'`);
+      }
+      const ref = (op as WorkflowOp).scriptRef;
+      if (!ref || typeof ref !== "object") {
+        throw new Error(`Step ${i}.ops[${j}] must have scriptRef`);
+      }
+      const scriptId = (ref as ScriptRef).scriptId;
+      const version = (ref as ScriptRef).version;
+      if (typeof scriptId !== "string" || scriptId === "") {
+        throw new Error(`Step ${i}.ops[${j}].scriptRef.scriptId must be a non-empty string`);
+      }
+      if (typeof version !== "number" || !Number.isInteger(version)) {
+        throw new Error(`Step ${i}.ops[${j}].scriptRef.version must be an integer`);
+      }
     }
   }
 }
 
 /**
- * Resolve scripts from DB by (id, version). Throws if any script is not active.
- * Injects op.timeoutMs from scripts.timeout_ms when missing.
- * Returns steps with timeoutMs set.
+ * Resolve all ops from steps: lookup scripts by (id, version), require status === 'active',
+ * inject op.timeoutMs from scripts.timeout_ms when missing. Returns steps with timeoutMs set on each op.
  */
 export async function resolveAndValidateScripts(
-  steps: WorkflowStepPayload[],
-): Promise<WorkflowStepPayload[]> {
+  steps: WorkflowStep[],
+): Promise<WorkflowStep[]> {
   const supabase = createSupabaseServerClient();
-  const resolved: WorkflowStepPayload[] = [];
+  const resolved: WorkflowStep[] = [];
 
   for (const step of steps) {
-    const { data: script, error } = await supabase
-      .from("scripts")
-      .select("id, name, version, status, timeout_ms")
-      .eq("id", step.scriptRef.id)
-      .eq("version", step.scriptRef.version)
-      .maybeSingle()
-      .returns<ScriptRow | null>();
+    const resolvedOps: WorkflowOp[] = [];
+    for (const op of step.ops) {
+      const { data: script, error } = await (supabase as { from: (relation: string) => ReturnType<typeof supabase.from> })
+        .from("scripts")
+        .select("id, name, version, status, timeout_ms")
+        .eq("id", op.scriptRef.scriptId)
+        .eq("version", op.scriptRef.version)
+        .maybeSingle()
+        .returns<ScriptRow | null>();
 
-    if (error) throw error;
-    if (!script) {
-      throw new Error(
-        `Script not found: id=${step.scriptRef.id} version=${step.scriptRef.version}`,
-      );
-    }
-    if (script.status !== "active") {
-      throw new Error(
-        `Script is not active: ${script.name} (id=${script.id} version=${script.version}) status=${script.status}`,
-      );
-    }
+      if (error) throw error;
+      if (!script) {
+        throw new Error(
+          `Script not found: scriptId=${op.scriptRef.scriptId} version=${op.scriptRef.version}`,
+        );
+      }
+      if (script.status !== "active") {
+        throw new Error(
+          `Script is not active: ${script.name} (id=${script.id} version=${script.version}) status=${script.status}`,
+        );
+      }
 
-    resolved.push({
-      ...step,
-      timeoutMs: step.timeoutMs ?? script.timeout_ms,
-    });
+      resolvedOps.push({
+        ...op,
+        timeoutMs: op.timeoutMs ?? script.timeout_ms,
+      });
+    }
+    resolved.push({ ops: resolvedOps });
   }
 
   return resolved;
 }
 
 /**
- * Build task_devices.config: schemaVersion, workflow, snapshot (createdAt + steps), inputs, runtime.timeouts.
+ * Build task_devices.config: schemaVersion=4, workflow{}, snapshot{createdAt, steps}, inputs{}, runtime.timeouts{}.
  */
 export function buildTaskDeviceConfig(
   options: TaskDeviceConfigInput,
 ): Record<string, unknown> {
-  const { workflow, steps, inputs, runtime = {} } = options;
+  const { workflowDef, steps, inputs, runtime = {} } = options;
 
   const stepTimeoutSec = runtime.timeouts?.stepTimeoutSec ?? 180;
   const taskTimeoutSec = runtime.timeouts?.taskTimeoutSec ?? 900;
@@ -151,10 +166,10 @@ export function buildTaskDeviceConfig(
   return {
     schemaVersion: SCHEMA_VERSION,
     workflow: {
-      id: workflow.id,
-      version: workflow.version,
-      kind: workflow.kind,
-      name: workflow.name,
+      id: workflowDef.id,
+      version: workflowDef.version,
+      kind: workflowDef.kind,
+      name: workflowDef.name,
     },
     snapshot: {
       createdAt: new Date().toISOString(),
@@ -176,7 +191,7 @@ export const DEFAULT_WATCH_WORKFLOW_VERSION = 1;
 
 /**
  * Load workflow, validate steps, resolve scripts, and build config in one call.
- * Use this at publish/dispatch time to produce task_devices.config.
+ * Use at publish/dispatch time to produce task_devices.config.
  */
 export async function buildConfigFromWorkflow(
   workflowId: string,
@@ -192,12 +207,12 @@ export async function buildConfigFromWorkflow(
     throw new Error(`Workflow is not active: ${workflowId}@${workflowVersion}`);
   }
 
-  validateWorkflowSteps(row.steps);
-  const steps = row.steps as WorkflowStepPayload[];
+  validateStepsShape(row.steps);
+  const steps = row.steps as WorkflowStep[];
   const resolvedSteps = await resolveAndValidateScripts(steps);
 
   return buildTaskDeviceConfig({
-    workflow: {
+    workflowDef: {
       id: row.id,
       version: row.version,
       kind: row.kind,
