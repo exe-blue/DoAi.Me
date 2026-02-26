@@ -18,19 +18,22 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // 배포 가능한 스크립트 목록 (보안: 허용된 파일만 배포 가능)
 const ALLOWED_SCRIPTS: Record<string, string> = {
-  'youtube_commander':     './scripts/youtube_commander.js',
-  'youtube_commander_run': './scripts/youtube_commander_run.js',
+  youtube_commander: "./scripts/youtube_commander.js",
+  youtube_commander_run: "./scripts/youtube_commander_run.js",
 };
 
-const DEFAULT_REMOTE_DIR = '/sdcard/scripts/';
+const DEFAULT_REMOTE_DIR = "/sdcard/scripts/";
 
 async function resolveTargetDevices(
   supabase: ReturnType<typeof createSupabaseServerClient>,
   pc_id: string | null,
-  devicesHint?: string
+  devicesHint?: string,
 ): Promise<{ target_devices: string[]; devicesLabel: string }> {
   if (devicesHint && devicesHint !== "all") {
-    const list = devicesHint.split(",").map((s) => s.trim()).filter(Boolean);
+    const list = devicesHint
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     return { target_devices: list, devicesLabel: devicesHint };
   }
   if (!pc_id) return { target_devices: [], devicesLabel: "" };
@@ -39,7 +42,9 @@ async function resolveTargetDevices(
     .select("serial, connection_id")
     .eq("pc_id", pc_id)
     .in("status", ["online", "busy"]);
-  const targets = (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
+  const targets = (data || [])
+    .map((d) => d.connection_id || d.serial)
+    .filter(Boolean);
   return { target_devices: targets, devicesLabel: targets.join(",") };
 }
 
@@ -56,11 +61,22 @@ export async function POST(req: NextRequest) {
       deploy_all = false,
     } = body;
 
-    const { target_devices, devicesLabel } = await resolveTargetDevices(supabase, pc_id ?? null, devicesHint);
-    if (target_devices.length === 0 && (deploy_all || script_name || local_path)) {
+    const { target_devices, devicesLabel } = await resolveTargetDevices(
+      supabase,
+      pc_id ?? null,
+      devicesHint,
+    );
+    if (
+      target_devices.length === 0 &&
+      (deploy_all || script_name || local_path)
+    ) {
       return NextResponse.json(
-        { success: false, error: "No target devices (pc_id required with online/busy devices, or pass devices list)" },
-        { status: 400 }
+        {
+          success: false,
+          error:
+            "No target devices (pc_id required with online/busy devices, or pass devices list)",
+        },
+        { status: 400 },
       );
     }
 
@@ -80,9 +96,20 @@ export async function POST(req: NextRequest) {
         target_devices: target_devices,
       }));
 
-      const { data, error } = await supabase.from("tasks").insert(tasks as any).select();
-      if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-      return NextResponse.json({ success: true, deployed: Object.keys(ALLOWED_SCRIPTS), tasks: data });
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert(tasks as any)
+        .select();
+      if (error)
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 },
+        );
+      return NextResponse.json({
+        success: true,
+        deployed: Object.keys(ALLOWED_SCRIPTS),
+        tasks: data,
+      });
     }
 
     // 단일 스크립트 배포
@@ -91,16 +118,24 @@ export async function POST(req: NextRequest) {
       resolvedLocalPath = ALLOWED_SCRIPTS[script_name];
       if (!resolvedLocalPath) {
         return NextResponse.json(
-          { success: false, error: `Unknown script: ${script_name}`, available: Object.keys(ALLOWED_SCRIPTS) },
-          { status: 400 }
+          {
+            success: false,
+            error: `Unknown script: ${script_name}`,
+            available: Object.keys(ALLOWED_SCRIPTS),
+          },
+          { status: 400 },
         );
       }
     }
 
     if (!resolvedLocalPath) {
       return NextResponse.json(
-        { success: false, error: "script_name or local_path is required", available_scripts: Object.keys(ALLOWED_SCRIPTS) },
-        { status: 400 }
+        {
+          success: false,
+          error: "script_name or local_path is required",
+          available_scripts: Object.keys(ALLOWED_SCRIPTS),
+        },
+        { status: 400 },
       );
     }
 
@@ -125,7 +160,11 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    if (error)
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 },
+      );
 
     return NextResponse.json({
       success: true,
@@ -133,15 +172,18 @@ export async function POST(req: NextRequest) {
       deployed: {
         local_path: resolvedLocalPath,
         remote_path: resolvedRemotePath,
-        devices,
+        devices: devicesLabel,
         pc_id,
       },
     });
   } catch (err) {
     console.error("[youtube/deploy]", err);
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Deploy failed" },
-      { status: 500 }
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "Deploy failed",
+      },
+      { status: 500 },
     );
   }
 }

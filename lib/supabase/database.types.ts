@@ -225,6 +225,7 @@ export type Database = {
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
           created_at: string | null
+          connection_id: string | null
           current_task_id: string | null
           id: string
           ip_intranet: unknown
@@ -259,6 +260,7 @@ export type Database = {
           connection_mode?:
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
+          connection_id?: string | null
           created_at?: string | null
           current_task_id?: string | null
           id?: string
@@ -294,6 +296,7 @@ export type Database = {
           connection_mode?:
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
+          connection_id?: string | null
           created_at?: string | null
           current_task_id?: string | null
           id?: string
