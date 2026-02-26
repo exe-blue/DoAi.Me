@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { TaskDeviceRow } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("task_devices")

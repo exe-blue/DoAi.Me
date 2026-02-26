@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // 배포 가능한 스크립트 목록 (보안: 허용된 파일만 배포 가능)
 const ALLOWED_SCRIPTS: Record<string, string> = {
@@ -26,7 +26,7 @@ const DEFAULT_REMOTE_DIR = '/sdcard/scripts/';
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await req.json();
     const {
       pc_id = null,

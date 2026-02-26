@@ -10,7 +10,8 @@ import { getTaskByVideoId } from "@/lib/db/tasks";
 import type { ChannelRow } from "@/lib/supabase/types";
 
 // task_queue is used by legacy agent; may be missing from generated DB types
-const tq = (sb: ReturnType<typeof createSupabaseServerClient>) => (sb as any).from("task_queue");
+const tq = (sb: ReturnType<typeof createSupabaseServerClient>) =>
+  (sb as any).from("task_queue");
 
 export type SyncChannelsResult = {
   ok: true;
@@ -56,7 +57,8 @@ export async function runSyncChannels(): Promise<
         for (const video of videos) {
           const parts = video.duration.split(":").map(Number);
           let durationSec = 0;
-          if (parts.length === 3) durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          if (parts.length === 3)
+            durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
           else if (parts.length === 2) durationSec = parts[0] * 60 + parts[1];
 
           const { data: existingVideo } = await supabase
@@ -64,7 +66,9 @@ export async function runSyncChannels(): Promise<
             .select("source")
             .eq("id", video.videoId)
             .maybeSingle();
-          if ((existingVideo as { source?: string } | null)?.source === "manual") {
+          if (
+            (existingVideo as { source?: string } | null)?.source === "manual"
+          ) {
             continue;
           }
           const upserted = await upsertVideo({
@@ -84,14 +88,21 @@ export async function runSyncChannels(): Promise<
           if (isNew) {
             totalNew++;
             if ((channel as any).auto_collect) {
-              await supabase.from("videos").update({
-                status: "active",
-                target_views: 100,
-                watch_duration_sec: (channel as any).default_watch_duration_sec || 60,
-                prob_like: (channel as any).default_prob_like || 15,
-                prob_comment: (channel as any).default_prob_comment || 5,
-                search_keyword: video.title.replace(/#\S+/g, "").trim().substring(0, 50),
-              }).eq("id", video.videoId);
+              await supabase
+                .from("videos")
+                .update({
+                  status: "active",
+                  target_views: 100,
+                  watch_duration_sec:
+                    (channel as any).default_watch_duration_sec || 60,
+                  prob_like: (channel as any).default_prob_like || 15,
+                  prob_comment: (channel as any).default_prob_comment || 5,
+                  search_keyword: video.title
+                    .replace(/#\S+/g, "")
+                    .trim()
+                    .substring(0, 50),
+                })
+                .eq("id", video.videoId);
             }
           } else {
             totalUpdated++;
@@ -101,7 +112,7 @@ export async function runSyncChannels(): Promise<
         errors++;
         console.error(
           `[Sync] Failed for ${channel.name}:`,
-          err instanceof Error ? err.message : err
+          err instanceof Error ? err.message : err,
         );
       }
     }
@@ -114,8 +125,9 @@ export async function runSyncChannels(): Promise<
         .select("task_config")
         .eq("status", "queued");
       queuedVideoIds = (queuedItems ?? [])
-        .map((r: { task_config?: { videoId?: string; video_id?: string } }) =>
-          (r.task_config?.videoId ?? r.task_config?.video_id) as string
+        .map(
+          (r: { task_config?: { videoId?: string; video_id?: string } }) =>
+            (r.task_config?.videoId ?? r.task_config?.video_id) as string,
         )
         .filter(Boolean);
     } catch {
@@ -131,19 +143,27 @@ export async function runSyncChannels(): Promise<
         });
         const sortedByOldest = [...activeVideos].sort(
           (a, b) =>
-            new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+            new Date(a.created_at ?? 0).getTime() -
+            new Date(b.created_at ?? 0).getTime(),
         );
         for (const v of sortedByOldest) {
           const hasTask = await getTaskByVideoId(v.id);
           if (hasTask) continue;
           if (queuedVideoIds.includes(v.id)) continue;
           const insertRow: Record<string, unknown> = {
-            task_config: { contentMode: "single", videoId: v.id, channelId: channel.id },
+            task_config: {
+              contentMode: "single",
+              videoId: v.id,
+              channelId: channel.id,
+            },
             priority: 5,
             status: "queued",
           };
           try {
-            const probe = await tq(supabase).select("source").limit(1).maybeSingle();
+            const probe = await tq(supabase)
+              .select("source")
+              .limit(1)
+              .maybeSingle();
             if (probe && "source" in probe) insertRow.source = "channel_auto";
           } catch {
             /* ignore */

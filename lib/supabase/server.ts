@@ -1,6 +1,6 @@
 /**
  * Supabase server clients.
- * - createServerClient(): cookie-based session (Server Components, Route Handlers with auth).
+ * - createServerClientWithCookies(): cookie-based session (Server Components, Route Handlers with auth).
  *   Env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
  * - createServiceRoleClient(): service role (API Routes that need admin/RLS bypass).
  *   Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -58,6 +58,6 @@ export function createServiceRoleClient() {
  * Default server client for API Routes: service role (admin).
  * For session-based auth in server code, use createServerClientWithCookies().
  */
-export function createServerClient() {
+export function createSupabaseServerClient() {
   return createServiceRoleClient();
 }

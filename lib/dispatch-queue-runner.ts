@@ -2,19 +2,41 @@
  * 대기열(task_queue) 1건을 tasks + task_devices로 디스패치.
  * Cron 및 세션 인증 POST에서 공통 사용.
  */
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createBatchTask } from "@/lib/pipeline";
+import type { TaskVariables } from "@/lib/types";
 
-const tq = (sb: ReturnType<typeof createServerClient>) =>
-  (sb as { from: (t: string) => ReturnType<ReturnType<typeof createServerClient>["from"]> }).from("task_queue");
+function toNumberOr(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+const tq = (sb: ReturnType<typeof createSupabaseServerClient>) =>
+  (
+    sb as {
+      from: (
+        t: string,
+      ) => ReturnType<ReturnType<typeof createSupabaseServerClient>["from"]>;
+    }
+  ).from("task_queue");
 
 export type DispatchResult =
   | { ok: true; dispatched: 0; message: string; error?: string }
-  | { ok: true; dispatched: 1; queue_id: string; task_id: string; video_id: string }
+  | {
+      ok: true;
+      dispatched: 1;
+      queue_id: string;
+      task_id: string;
+      video_id: string;
+    }
   | { ok: false; error: string };
 
 export async function runDispatchQueue(): Promise<DispatchResult> {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data: items } = await tq(supabase)
     .select("*")
     .eq("status", "queued")
@@ -43,11 +65,21 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
   };
   const config = (item.task_config || {}) as Record<string, unknown>;
   const contentMode = (config.contentMode as string | undefined) ?? "single";
-  const videoId = (config.videoId as string | undefined) ?? (config.video_id as string | undefined);
-  const channelId = (config.channelId as string | undefined) ?? (config.channel_id as string | undefined);
+  const videoId =
+    (config.videoId as string | undefined) ??
+    (config.video_id as string | undefined);
+  const channelId =
+    (config.channelId as string | undefined) ??
+    (config.channel_id as string | undefined);
 
   if (!videoId || !channelId) {
-    await (tq(supabase) as unknown as { update: (v: object) => { eq: (col: string, val: string) => Promise<unknown> } })
+    await (
+      tq(supabase) as unknown as {
+        update: (v: object) => {
+          eq: (col: string, val: string) => Promise<unknown>;
+        };
+      }
+    )
       .update({ status: "cancelled" })
       .eq("id", item.id);
     return {
@@ -62,13 +94,21 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     contentMode: contentMode === "channel" ? "channel" : "single",
     videoId,
     channelId,
-    deviceCount: config.deviceCount ?? 20,
-    source: (item.source === "manual" ? "manual" : "channel_auto") as "manual" | "channel_auto",
+    deviceCount: toNumberOr((config as any)?.deviceCount, 20),
+    source: (item.source === "manual" ? "manual" : "channel_auto") as
+      | "manual"
+      | "channel_auto",
     priority: typeof item.priority === "number" ? item.priority : 5,
-    variables: config.variables,
+    variables: config?.variables as TaskVariables | undefined,
   });
 
-  await (tq(supabase) as unknown as { update: (v: object) => { eq: (col: string, val: string) => Promise<unknown> } })
+  await (
+    tq(supabase) as unknown as {
+      update: (v: object) => {
+        eq: (col: string, val: string) => Promise<unknown>;
+      };
+    }
+  )
     .update({
       status: "dispatched",
       dispatched_at: new Date().toISOString(),

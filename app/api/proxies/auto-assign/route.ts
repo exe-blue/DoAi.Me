@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json().catch(() => ({}));
     const pcId = body.pc_id ?? body.worker_id ?? null;
 
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function pairAndAssign(
-  supabase: ReturnType<typeof createServerClient>,
+  supabase: ReturnType<typeof createSupabaseServerClient>,
   unassignedProxies: Array<{ id: string }>,
   unassignedDevices: Array<{ id: string }>
 ): Promise<number> {

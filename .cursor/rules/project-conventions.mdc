@@ -1,6 +1,6 @@
 ---
 description: DoAi.Me 팀 공용 강제 최소 규칙 (아키텍처·보안·운영)
-alwaysApply: true
+alwaysApply: false
 ---
 
 # DoAi.Me 프로젝트 규칙 (강제 최소)

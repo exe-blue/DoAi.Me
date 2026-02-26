@@ -34,5 +34,5 @@
 ## 구현 요약
 
 - **middleware.ts**: 공개 경로(`/`, `/login`, `/auth`, `/api/health` 등) 제외 시 `getUser()`로 세션 확인. 없으면 API는 `x-api-key` 검사 후 통과/401, 페이지는 `/login?returnTo=...` 리다이렉트.
-- **API Routes**: 서버에서 `createServerClient()`(service role) 사용. 호출 자체는 middleware에서 세션 또는 `x-api-key`로 이미 차단/허용됨.
+- **API Routes**: 서버에서 `createSupabaseServerClient()`(service role) 사용. 호출 자체는 middleware에서 세션 또는 `x-api-key`로 이미 차단/허용됨.
 - **Agent**: Supabase 직접 사용 + 필요 시 API 호출 시 `x-api-key` 헤더에 `API_KEY` 설정.

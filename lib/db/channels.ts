@@ -1,8 +1,8 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ChannelRow } from "@/lib/supabase/types";
 
 export async function getAllChannels() {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("channels")
     .select("*")
@@ -21,7 +21,7 @@ export async function upsertChannel(channel: {
   video_count?: number;
   is_monitored?: boolean;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("channels")
     .upsert(
@@ -36,7 +36,7 @@ export async function upsertChannel(channel: {
 }
 
 export async function deleteChannel(id: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { error } = await supabase.from("channels").delete().eq("id", id);
   if (error) throw error;
 }
@@ -46,7 +46,7 @@ export async function updateChannelMonitoring(
   enabled: boolean,
   intervalHours?: number
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const update: Record<string, unknown> = {
     is_monitored: enabled,
     updated_at: new Date().toISOString(),
@@ -66,7 +66,7 @@ export async function updateChannelMonitoring(
 }
 
 export async function getChannelById(id: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("channels")
     .select("*")
@@ -83,7 +83,7 @@ export async function createChannel(channel: {
   profile_url?: string | null;
   category?: string | null;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("channels")
     .insert(channel as any)
@@ -104,7 +104,7 @@ export async function updateChannel(
     collect_interval_hours?: number | null;
   }
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("channels")
     .update({ ...updates, updated_at: new Date().toISOString() } as any)

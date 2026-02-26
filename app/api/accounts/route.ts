@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AccountRow } from "@/lib/supabase/types";
 import { accountCreateSchema } from "@/lib/schemas";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { data, error } = await supabase
       .from("accounts")
       .select("*")
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, status, device_id } = result.data;
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("accounts")

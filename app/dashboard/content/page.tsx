@@ -113,7 +113,9 @@ function ContentPageInner() {
   const [watchMinSec, setWatchMinSec] = useState(120);
   const [watchMaxSec, setWatchMaxSec] = useState(300);
   const [priority, setPriority] = useState(8);
-  const [commentPoolMode, setCommentPoolMode] = useState<"default" | "custom">("default");
+  const [commentPoolMode, setCommentPoolMode] = useState<"default" | "custom">(
+    "default",
+  );
   const [commentPoolText, setCommentPoolText] = useState("");
   const [submitLoading, setSubmitLoading] = useState(false);
 
@@ -128,17 +130,21 @@ function ContentPageInner() {
   const [editTargetLikes, setEditTargetLikes] = useState(0);
   const [editTargetComments, setEditTargetComments] = useState(0);
   const [editLoading, setEditLoading] = useState(false);
-  const [editVideoInfo, setEditVideoInfo] = useState<YouTubeVideoInfo | null>(null);
+  const [editVideoInfo, setEditVideoInfo] = useState<YouTubeVideoInfo | null>(
+    null,
+  );
 
-  const { data: tasksData, error, isLoading, mutate } = useSWR<{ tasks: Task[] }>(
-    "/api/tasks",
-    fetcher,
-    { refreshInterval: 30_000 }
-  );
-  const { data: channelsData } = useSWR<{ channels: { id: string; name: string }[] }>(
-    "/api/channels",
-    fetcher
-  );
+  const {
+    data: tasksData,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<{ tasks: Task[] }>("/api/tasks", fetcher, {
+    refreshInterval: 30_000,
+  });
+  const { data: channelsData } = useSWR<{
+    channels: { id: string; name: string }[];
+  }>("/api/channels", fetcher);
   const channels = channelsData?.channels ?? [];
 
   const tasks = tasksData?.tasks ?? [];
@@ -158,7 +164,9 @@ function ContentPageInner() {
       setFetchLoading(true);
       setFetchError(null);
       try {
-        const res = await fetch(`/api/youtube/videos?videoId=${encodeURIComponent(vid)}`);
+        const res = await fetch(
+          `/api/youtube/videos?videoId=${encodeURIComponent(vid)}`,
+        );
         const data = await res.json();
         if (res.ok) {
           setVideoInfo({
@@ -191,7 +199,10 @@ function ContentPageInner() {
   // 로컬: cron 대신 1분마다 YouTube Data API 기반 동기화 호출
   useEffect(() => {
     const tick = () => {
-      fetch("/api/sync-channels", { method: "POST", credentials: "include" }).catch(() => {});
+      fetch("/api/sync-channels", {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => {});
     };
     const id = setInterval(tick, 60_000);
     tick();
@@ -206,11 +217,15 @@ function ContentPageInner() {
       list = list.filter((t) => t.status === statusParam);
     }
     return list.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
   }, [tasks, statusParam]);
 
-  const ensureChannel = async (youtubeChannelId: string, name: string): Promise<string> => {
+  const ensureChannel = async (
+    youtubeChannelId: string,
+    name: string,
+  ): Promise<string> => {
     const found = channels.find((c) => c.id === youtubeChannelId);
     if (found) return found.id;
     const res = await apiClient.post("/api/channels", {
@@ -233,7 +248,9 @@ function ContentPageInner() {
     setFetchError(null);
     setFetchLoading(true);
     try {
-      const res = await fetch(`/api/youtube/videos?videoId=${encodeURIComponent(vid)}`);
+      const res = await fetch(
+        `/api/youtube/videos?videoId=${encodeURIComponent(vid)}`,
+      );
       const data = await res.json();
       if (!res.ok) {
         setFetchError(data.error || "영상을 찾을 수 없습니다.");
@@ -260,41 +277,59 @@ function ContentPageInner() {
   const handleAddSubmit = async () => {
     if (!videoInfo) return;
     const alreadyCompleted = tasks.find(
-      (t) => t.videoId === videoInfo.videoId && ["completed", "done"].includes(t.status as string)
+      (t) =>
+        t.videoId === videoInfo.videoId &&
+        ["completed", "done"].includes(t.status as string),
     );
-    if (alreadyCompleted && !window.confirm("이미 완료된 영상입니다. 다시 실행하시겠습니까?")) {
+    if (
+      alreadyCompleted &&
+      !window.confirm("이미 완료된 영상입니다. 다시 실행하시겠습니까?")
+    ) {
       return;
     }
     setSubmitLoading(true);
     try {
-      const channelId = await ensureChannel(videoInfo.channelId, videoInfo.channelTitle);
+      const channelId = await ensureChannel(
+        videoInfo.channelId,
+        videoInfo.channelTitle,
+      );
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoInfo.videoId}`;
 
-      const createRes = await apiClient.post(`/api/channels/${channelId}/videos`, {
-        body: {
-          title: videoInfo.title,
-          youtube_url: youtubeUrl,
-          channel_name: videoInfo.channelTitle,
-          thumbnail_url: videoInfo.thumbnail,
-          priority: "high",
-          status: "active",
-          source: "manual",
-          target_views: targetViews,
-          prob_like: targetLikes > 0 ? 100 : 0,
-          prob_comment: targetComments > 0 ? 100 : 0,
-          watch_duration_sec: Math.round((watchMinSec + watchMaxSec) / 2),
-          watch_duration_min_pct: Math.round((watchMinSec / 60) * 100),
-          watch_duration_max_pct: Math.round((watchMaxSec / 60) * 100),
-          prob_subscribe: includeSubscribe ? 100 : 0,
+      const createRes = await apiClient.post(
+        `/api/channels/${channelId}/videos`,
+        {
+          body: {
+            title: videoInfo.title,
+            youtube_url: youtubeUrl,
+            channel_name: videoInfo.channelTitle,
+            thumbnail_url: videoInfo.thumbnail,
+            priority: "high",
+            status: "active",
+            source: "manual",
+            target_views: targetViews,
+            prob_like: targetLikes > 0 ? 100 : 0,
+            prob_comment: targetComments > 0 ? 100 : 0,
+            watch_duration_sec: Math.round((watchMinSec + watchMaxSec) / 2),
+            watch_duration_min_pct: Math.round((watchMinSec / 60) * 100),
+            watch_duration_max_pct: Math.round((watchMaxSec / 60) * 100),
+            prob_subscribe: includeSubscribe ? 100 : 0,
+          },
+          silent: true,
         },
-        silent: true,
-      });
+      );
 
       if (!createRes.success) {
-        const errMsg = (createRes.data as { error?: string })?.error ?? createRes.error ?? "";
-        if (errMsg.includes("duplicate") || errMsg.includes("unique") || errMsg.includes("already")) {
+        const errMsg =
+          (createRes.data as { error?: string })?.error ??
+          createRes.error ??
+          "";
+        if (
+          errMsg.includes("duplicate") ||
+          errMsg.includes("unique") ||
+          errMsg.includes("already")
+        ) {
           const confirmEdit = window.confirm(
-            "이미 등록된 영상입니다. 목표를 수정하시겠습니까?"
+            "이미 등록된 영상입니다. 목표를 수정하시겠습니까?",
           );
           if (confirmEdit) {
             setEditChannelId(channelId);
@@ -353,7 +388,11 @@ function ContentPageInner() {
       });
 
       if (!taskRes.success) {
-        toast.error((taskRes.data as { error?: string })?.error ?? taskRes.error ?? "대기열 등록 실패");
+        toast.error(
+          (taskRes.data as { error?: string })?.error ??
+            taskRes.error ??
+            "대기열 등록 실패",
+        );
         setSubmitLoading(false);
         return;
       }
@@ -408,7 +447,9 @@ function ContentPageInner() {
         }
         let info: YouTubeVideoInfo;
         try {
-          const res = await fetch(`/api/youtube/videos?videoId=${encodeURIComponent(vid)}`);
+          const res = await fetch(
+            `/api/youtube/videos?videoId=${encodeURIComponent(vid)}`,
+          );
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "fetch failed");
           info = {
@@ -424,20 +465,26 @@ function ContentPageInner() {
           continue;
         }
         try {
-          const channelId = await ensureChannel(info.channelId, info.channelTitle);
-          const createRes = await apiClient.post(`/api/channels/${channelId}/videos`, {
-            body: {
-              title: info.title,
-              youtube_url: `https://www.youtube.com/watch?v=${info.videoId}`,
-              channel_name: info.channelTitle,
-              priority: "high",
-              status: "active",
-              target_views: bulkTargetViews,
-              prob_like: bulkTargetLikes > 0 ? 100 : 0,
-              prob_comment: bulkTargetComments > 0 ? 100 : 0,
+          const channelId = await ensureChannel(
+            info.channelId,
+            info.channelTitle,
+          );
+          const createRes = await apiClient.post(
+            `/api/channels/${channelId}/videos`,
+            {
+              body: {
+                title: info.title,
+                youtube_url: `https://www.youtube.com/watch?v=${info.videoId}`,
+                channel_name: info.channelTitle,
+                priority: "high",
+                status: "active",
+                target_views: bulkTargetViews,
+                prob_like: bulkTargetLikes > 0 ? 100 : 0,
+                prob_comment: bulkTargetComments > 0 ? 100 : 0,
+              },
+              silent: true,
             },
-            silent: true,
-          });
+          );
           if (!createRes.success) {
             duplicate++;
             continue;
@@ -465,7 +512,9 @@ function ContentPageInner() {
           failed++;
         }
       }
-      toast.success(`${registered}개 등록, ${duplicate}개 중복, ${failed}개 실패`);
+      toast.success(
+        `${registered}개 등록, ${duplicate}개 중복, ${failed}개 실패`,
+      );
       setBulkOpen(false);
       setBulkUrls("");
       mutate();
@@ -477,7 +526,8 @@ function ContentPageInner() {
   const handleEditSubmit = async () => {
     if (!editTask?.videoId) return;
     const channelId =
-      editChannelId ?? channels.find((c) => c.name === editTask.channelName)?.id;
+      editChannelId ??
+      channels.find((c) => c.name === editTask.channelName)?.id;
     if (!channelId) {
       toast.error("채널을 찾을 수 없습니다.");
       return;
@@ -493,7 +543,7 @@ function ContentPageInner() {
             prob_comment: editTargetComments > 0 ? 100 : 0,
           },
           silent: true,
-        }
+        },
       );
       if (res.success) {
         toast.success("목표가 수정되었습니다.");
@@ -501,7 +551,9 @@ function ContentPageInner() {
         setEditTask(null);
         mutate();
       } else {
-        toast.error((res.data as { error?: string })?.error ?? res.error ?? "수정 실패");
+        toast.error(
+          (res.data as { error?: string })?.error ?? res.error ?? "수정 실패",
+        );
       }
     } finally {
       setEditLoading(false);
@@ -514,21 +566,29 @@ function ContentPageInner() {
     if (channelId && task.videoId) {
       await apiClient.delete(
         `/api/channels/${channelId}/videos?ids=${encodeURIComponent(task.videoId)}`,
-        { silent: true }
+        { silent: true },
       );
     }
-    await apiClient.delete("/api/tasks", { body: { id: task.id }, silent: true });
+    await apiClient.delete("/api/tasks", {
+      body: { id: task.id },
+      silent: true,
+    });
     toast.success("삭제되었습니다.");
     mutate();
   };
 
   const handleRetry = async (taskId: string) => {
-    const res = await apiClient.post(`/api/tasks/${taskId}/retry`, { body: {}, silent: true });
+    const res = await apiClient.post(`/api/tasks/${taskId}/retry`, {
+      body: {},
+      silent: true,
+    });
     if (res.success) {
       toast.success("재시도가 등록되었습니다.");
       mutate();
     } else {
-      toast.error((res.data as { error?: string })?.error ?? res.error ?? "재시도 실패");
+      toast.error(
+        (res.data as { error?: string })?.error ?? res.error ?? "재시도 실패",
+      );
     }
   };
 
@@ -618,7 +678,9 @@ function ContentPageInner() {
               onClick={() => router.push(`/dashboard/content?status=${tabKey}`)}
               className={cn(
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                isActive ? "bg-[#1a1d2e] text-white" : "text-slate-500 hover:text-slate-300"
+                isActive
+                  ? "bg-[#1a1d2e] text-white"
+                  : "text-slate-500 hover:text-slate-300",
               )}
             >
               {t.label}
@@ -630,7 +692,11 @@ function ContentPageInner() {
       {error && (
         <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-center text-sm text-red-400">
           목록을 불러오지 못했습니다.{" "}
-          <button type="button" onClick={() => mutate()} className="underline hover:no-underline">
+          <button
+            type="button"
+            onClick={() => mutate()}
+            className="underline hover:no-underline"
+          >
             다시 시도
           </button>
         </div>
@@ -645,7 +711,9 @@ function ContentPageInner() {
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-[#1e2130] bg-[#12141d] p-12 text-center">
           <Upload className="mx-auto h-8 w-8 text-slate-600" />
-          <p className="mt-3 text-sm text-slate-500">등록된 콘텐츠가 없습니다</p>
+          <p className="mt-3 text-sm text-slate-500">
+            등록된 콘텐츠가 없습니다
+          </p>
           <Button
             size="sm"
             className="mt-4 bg-primary hover:bg-primary/90"
@@ -662,7 +730,9 @@ function ContentPageInner() {
           <Table>
             <TableHeader>
               <TableRow className="border-[#1e2130] hover:bg-transparent">
-                <TableHead className="w-[80px] text-slate-500">썸네일</TableHead>
+                <TableHead className="w-[80px] text-slate-500">
+                  썸네일
+                </TableHead>
                 <TableHead className="text-slate-500">제목</TableHead>
                 <TableHead className="text-slate-500">채널</TableHead>
                 <TableHead className="text-slate-500">시청 목표</TableHead>
@@ -676,14 +746,21 @@ function ContentPageInner() {
             </TableHeader>
             <TableBody>
               {filtered.map((t) => {
-                const st = STATUS_MAP[t.status] ?? { color: "bg-slate-500", label: t.status };
+                const st = STATUS_MAP[t.status] ?? {
+                  color: "bg-slate-500",
+                  label: t.status,
+                };
                 const targetV = t.targetViews ?? 0;
                 const doneV = t.completedViews ?? 0;
                 const viewStr = targetV > 0 ? `${doneV}/${targetV}` : "—";
                 const likeStr = (t.probLike ?? 0) > 0 ? `${t.probLike}` : "—";
-                const commentStr = (t.probComment ?? 0) > 0 ? `${t.probComment}` : "—";
+                const commentStr =
+                  (t.probComment ?? 0) > 0 ? `${t.probComment}` : "—";
                 return (
-                  <TableRow key={t.id} className="border-[#1e2130] hover:bg-[#1a1d2e]/50">
+                  <TableRow
+                    key={t.id}
+                    className="border-[#1e2130] hover:bg-[#1a1d2e]/50"
+                  >
                     <TableCell className="p-2">
                       <div className="h-[27px] w-[48px] overflow-hidden rounded bg-[#1a1d2e]">
                         {t.thumbnail ? (
@@ -699,14 +776,24 @@ function ContentPageInner() {
                     <TableCell className="max-w-[200px] truncate text-sm text-white">
                       {t.title || t.videoId || "—"}
                     </TableCell>
-                    <TableCell className="text-xs text-slate-400">@{t.channelName || "—"}</TableCell>
-                    <TableCell className="font-mono text-xs text-slate-300">{viewStr}</TableCell>
-                    <TableCell className="font-mono text-xs text-slate-300">{likeStr}</TableCell>
-                    <TableCell className="font-mono text-xs text-slate-300">{commentStr}</TableCell>
+                    <TableCell className="text-xs text-slate-400">
+                      @{t.channelName || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-slate-300">
+                      {viewStr}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-slate-300">
+                      {likeStr}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-slate-300">
+                      {commentStr}
+                    </TableCell>
                     <TableCell className="w-[100px]">
                       <div className="flex items-center gap-2">
                         <Progress value={t.progress} className="h-2 flex-1" />
-                        <span className="text-xs font-medium text-slate-300">{t.progress}%</span>
+                        <span className="text-xs font-medium text-slate-300">
+                          {t.progress}%
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -725,17 +812,21 @@ function ContentPageInner() {
                           className={cn(
                             "inline-flex rounded px-1.5 py-0.5 text-xs font-medium",
                             st.color,
-                            "text-white"
+                            "text-white",
                           )}
                         >
                           {st.label}
                         </span>
                         {t.priority != null && (
-                          <span className="font-mono text-[9px] text-slate-500">P{t.priority}</span>
+                          <span className="font-mono text-[9px] text-slate-500">
+                            P{t.priority}
+                          </span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs text-slate-500">{formatDate(t.createdAt)}</TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {formatDate(t.createdAt)}
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -747,7 +838,10 @@ function ContentPageInner() {
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="border-[#1e2130] bg-[#12141d]">
+                        <DropdownMenuContent
+                          align="end"
+                          className="border-[#1e2130] bg-[#12141d]"
+                        >
                           <DropdownMenuItem
                             className="text-slate-300 focus:bg-[#1a1d2e] focus:text-white"
                             onClick={() => openEdit(t)}
@@ -794,7 +888,9 @@ function ContentPageInner() {
           {step === 1 ? (
             <div className="space-y-4">
               <div>
-                <Label className="text-xs text-slate-400">YouTube 영상 URL을 입력하세요</Label>
+                <Label className="text-xs text-slate-400">
+                  YouTube 영상 URL을 입력하세요
+                </Label>
                 <Input
                   value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
@@ -819,10 +915,16 @@ function ContentPageInner() {
                   <div className="flex gap-3">
                     <div className="h-16 w-28 shrink-0 overflow-hidden rounded bg-[#0f1117]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={videoInfo.thumbnail} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={videoInfo.thumbnail}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white">{videoInfo.title}</p>
+                      <p className="truncate text-sm font-medium text-white">
+                        {videoInfo.title}
+                      </p>
                       <p className="text-xs text-slate-500">
                         @{videoInfo.channelTitle} · {videoInfo.duration}
                         {videoInfo.viewCount
@@ -864,16 +966,22 @@ function ContentPageInner() {
                       className="h-full w-full object-cover"
                     />
                   </div>
-                  <p className="text-sm font-medium text-white">{videoInfo.title}</p>
+                  <p className="text-sm font-medium text-white">
+                    {videoInfo.title}
+                  </p>
                   <p className="text-xs text-slate-500">
                     채널: @{videoInfo.channelTitle} | 업로드:{" "}
                     {videoInfo.publishedAt
-                      ? new Date(videoInfo.publishedAt).toLocaleDateString("ko-KR")
+                      ? new Date(videoInfo.publishedAt).toLocaleDateString(
+                          "ko-KR",
+                        )
                       : "—"}
                   </p>
                   <p className="text-xs text-slate-500">
                     길이: {videoInfo.duration} | 조회수:{" "}
-                    {videoInfo.viewCount ? parseInt(videoInfo.viewCount, 10).toLocaleString() : "—"}
+                    {videoInfo.viewCount
+                      ? parseInt(videoInfo.viewCount, 10).toLocaleString()
+                      : "—"}
                   </p>
                 </>
               )}
@@ -881,11 +989,15 @@ function ContentPageInner() {
                 <Label className="text-xs text-slate-400">목표 설정</Label>
                 <div className="mt-3 grid grid-cols-3 gap-3">
                   <div>
-                    <Label className="text-[10px] text-slate-500">시청 수</Label>
+                    <Label className="text-[10px] text-slate-500">
+                      시청 수
+                    </Label>
                     <Input
                       type="number"
                       value={targetViews}
-                      onChange={(e) => setTargetViews(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setTargetViews(parseInt(e.target.value, 10) || 0)
+                      }
                       className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                     />
                   </div>
@@ -894,7 +1006,9 @@ function ContentPageInner() {
                     <Input
                       type="number"
                       value={targetLikes}
-                      onChange={(e) => setTargetLikes(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setTargetLikes(parseInt(e.target.value, 10) || 0)
+                      }
                       className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                     />
                   </div>
@@ -903,7 +1017,9 @@ function ContentPageInner() {
                     <Input
                       type="number"
                       value={targetComments}
-                      onChange={(e) => setTargetComments(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setTargetComments(parseInt(e.target.value, 10) || 0)
+                      }
                       className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                     />
                   </div>
@@ -922,26 +1038,36 @@ function ContentPageInner() {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div>
-                    <Label className="text-[10px] text-slate-500">시청 시간 최소 (초)</Label>
+                    <Label className="text-[10px] text-slate-500">
+                      시청 시간 최소 (초)
+                    </Label>
                     <Input
                       type="number"
                       value={watchMinSec}
-                      onChange={(e) => setWatchMinSec(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setWatchMinSec(parseInt(e.target.value, 10) || 0)
+                      }
                       className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                     />
                   </div>
                   <div>
-                    <Label className="text-[10px] text-slate-500">시청 시간 최대 (초)</Label>
+                    <Label className="text-[10px] text-slate-500">
+                      시청 시간 최대 (초)
+                    </Label>
                     <Input
                       type="number"
                       value={watchMaxSec}
-                      onChange={(e) => setWatchMaxSec(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setWatchMaxSec(parseInt(e.target.value, 10) || 0)
+                      }
                       className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                     />
                   </div>
                 </div>
                 <div className="mt-3">
-                  <Label className="text-[10px] text-slate-500">우선순위 (1~10, 직접 등록 기본 8)</Label>
+                  <Label className="text-[10px] text-slate-500">
+                    우선순위 (1~10, 직접 등록 기본 8)
+                  </Label>
                   <Slider
                     value={[priority]}
                     onValueChange={([v]) => setPriority(v)}
@@ -950,7 +1076,9 @@ function ContentPageInner() {
                     step={1}
                     className="mt-1"
                   />
-                  <span className="text-xs text-slate-500">{priority} / 10</span>
+                  <span className="text-xs text-slate-500">
+                    {priority} / 10
+                  </span>
                 </div>
                 <div className="mt-3">
                   <Label className="text-xs text-slate-400">댓글 풀</Label>
@@ -1024,7 +1152,9 @@ function ContentPageInner() {
           <DialogHeader>
             <DialogTitle className="text-white">벌크 영상 등록</DialogTitle>
           </DialogHeader>
-          <p className="text-xs text-slate-500">한 줄에 하나씩 YouTube URL을 입력하세요</p>
+          <p className="text-xs text-slate-500">
+            한 줄에 하나씩 YouTube URL을 입력하세요
+          </p>
           <textarea
             value={bulkUrls}
             onChange={(e) => setBulkUrls(e.target.value)}
@@ -1038,7 +1168,9 @@ function ContentPageInner() {
               <Input
                 type="number"
                 value={bulkTargetViews}
-                onChange={(e) => setBulkTargetViews(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) =>
+                  setBulkTargetViews(parseInt(e.target.value, 10) || 0)
+                }
                 className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
               />
             </div>
@@ -1047,7 +1179,9 @@ function ContentPageInner() {
               <Input
                 type="number"
                 value={bulkTargetLikes}
-                onChange={(e) => setBulkTargetLikes(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) =>
+                  setBulkTargetLikes(parseInt(e.target.value, 10) || 0)
+                }
                 className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
               />
             </div>
@@ -1056,7 +1190,9 @@ function ContentPageInner() {
               <Input
                 type="number"
                 value={bulkTargetComments}
-                onChange={(e) => setBulkTargetComments(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) =>
+                  setBulkTargetComments(parseInt(e.target.value, 10) || 0)
+                }
                 className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
               />
             </div>
@@ -1067,7 +1203,14 @@ function ContentPageInner() {
                 min={1}
                 max={10}
                 value={bulkPriority}
-                onChange={(e) => setBulkPriority(Math.min(10, Math.max(1, parseInt(e.target.value, 10) || 8)))}
+                onChange={(e) =>
+                  setBulkPriority(
+                    Math.min(
+                      10,
+                      Math.max(1, parseInt(e.target.value, 10) || 8),
+                    ),
+                  )
+                }
                 className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
               />
             </div>
@@ -1085,7 +1228,9 @@ function ContentPageInner() {
               disabled={bulkLoading}
               className="bg-primary hover:bg-primary/90"
             >
-              {bulkLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {bulkLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               등록
             </Button>
           </DialogFooter>
@@ -1113,23 +1258,37 @@ function ContentPageInner() {
                 <div className="flex gap-3 rounded-lg border border-[#1e2130] bg-[#12141d] p-2">
                   <div className="h-14 w-24 shrink-0 overflow-hidden rounded bg-[#0f1117]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={editVideoInfo.thumbnail} alt="" className="h-full w-full object-cover" />
+                    <img
+                      src={editVideoInfo.thumbnail}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-white">{editVideoInfo.title}</p>
-                    <p className="text-xs text-slate-500">@{editVideoInfo.channelTitle}</p>
+                    <p className="truncate text-sm text-white">
+                      {editVideoInfo.title}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      @{editVideoInfo.channelTitle}
+                    </p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-400">{editTask.title || editTask.videoId}</p>
+                <p className="text-sm text-slate-400">
+                  {editTask.title || editTask.videoId}
+                </p>
               )}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label className="text-[10px] text-slate-500">시청 목표</Label>
+                  <Label className="text-[10px] text-slate-500">
+                    시청 목표
+                  </Label>
                   <Input
                     type="number"
                     value={editTargetViews}
-                    onChange={(e) => setEditTargetViews(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) =>
+                      setEditTargetViews(parseInt(e.target.value, 10) || 0)
+                    }
                     className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                   />
                 </div>
@@ -1138,7 +1297,9 @@ function ContentPageInner() {
                   <Input
                     type="number"
                     value={editTargetLikes}
-                    onChange={(e) => setEditTargetLikes(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) =>
+                      setEditTargetLikes(parseInt(e.target.value, 10) || 0)
+                    }
                     className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                   />
                 </div>
@@ -1147,7 +1308,9 @@ function ContentPageInner() {
                   <Input
                     type="number"
                     value={editTargetComments}
-                    onChange={(e) => setEditTargetComments(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) =>
+                      setEditTargetComments(parseInt(e.target.value, 10) || 0)
+                    }
                     className="mt-0.5 border-[#1e2130] bg-[#12141d] font-mono text-sm"
                   />
                 </div>
@@ -1167,7 +1330,9 @@ function ContentPageInner() {
               disabled={editLoading || !editTask}
               className="bg-primary hover:bg-primary/90"
             >
-              {editLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {editLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               저장
             </Button>
           </DialogFooter>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { DeviceRow } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { data, error } = await supabase
@@ -36,7 +36,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
     const body = await request.json();
 
@@ -82,7 +82,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { data: device, error } = await supabase

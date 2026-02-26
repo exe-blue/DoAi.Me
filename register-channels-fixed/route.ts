@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
     ];
     const fetchCount = body.fetchLatest ?? 3;
 
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const results: any[] = [];
 
     for (const handle of handles) {

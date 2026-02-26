@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ function sortQueueItems<T extends { source?: string | null; priority?: number | 
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") ?? "queued";
     const limit = Math.min(parseInt(searchParams.get("limit") ?? "50", 10), 200);
@@ -82,7 +82,7 @@ function getVideoIdFromConfig(taskConfig: Record<string, unknown>): string | nul
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json();
 
     if (!body.task_config || typeof body.task_config !== "object") {
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { ids } = await request.json();
 
     if (!Array.isArray(ids) || ids.length === 0) {

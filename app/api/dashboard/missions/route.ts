@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 

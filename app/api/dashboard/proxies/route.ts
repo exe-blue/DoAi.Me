@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     const { count: total } = await supabase
       .from("proxies")

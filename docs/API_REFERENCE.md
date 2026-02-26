@@ -10,7 +10,7 @@
 
 | 방식 | 사용처 | 설명 |
 |------|--------|------|
-| **Session** | 대부분의 API | `createServerClient()` → Supabase Auth 세션 |
+| **Session** | 대부분의 API | `createSupabaseServerClient()` → Supabase Auth 세션 |
 | **x-api-key** | `/api/tasks` POST | Agent가 API Key로 태스크 생성 |
 | **Bearer Token** | `/api/cron/sync-channels` | Vercel Cron용 `CRON_SECRET` |
 | **None** | `/api/health`, `/api/commands/presets` | 인증 불필요 |

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupportedAction, YOUTUBE_COMMANDER_ACTIONS } from "../commander-actions";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       step_delay,
     };
 
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { data: task, error } = await supabase
       .from("tasks")
       .insert({

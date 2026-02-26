@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       stepDelay: 500,
     };
 
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { data: task, error } = await supabase
       .from("tasks")
       .insert({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProxyInsert } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json();
     const {
       proxies: rawLines,
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json();
     const { worker_id, count } = body as {
       worker_id: string;

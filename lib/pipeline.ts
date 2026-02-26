@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json, VideoRow, TaskDeviceInsert } from "@/lib/supabase/types";
 import type { TaskVariables } from "@/lib/types";
 
@@ -20,9 +20,9 @@ export async function createManualTask(
     createdByUserId?: string;
     source?: "manual" | "channel_auto";
     priority?: number;
-  } = {}
+  } = {},
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
 
   const payload: Json = {
     ...(options.variables ?? DEFAULT_VARIABLES),
@@ -44,7 +44,7 @@ export async function createManualTask(
 
   const { data: task, error } = await supabase
     .from("tasks")
-    .insert(insertRow)
+    .insert([insertRow as any])
     .select()
     .single();
 
@@ -74,7 +74,7 @@ type BatchTaskOptions = {
 };
 
 export async function createBatchTask(options: BatchTaskOptions) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const deviceCount = options.deviceCount ?? 20;
   const payload: Json = { ...(options.variables ?? DEFAULT_VARIABLES) };
 
@@ -88,14 +88,17 @@ export async function createBatchTask(options: BatchTaskOptions) {
       .from("videos")
       .select("id, priority, channel_id")
       .eq("id", options.videoId)
-      .returns<Array<{ id: string; priority: string | null; channel_id: string }>>()
+      .returns<
+        Array<{ id: string; priority: string | null; channel_id: string }>
+      >()
       .single();
     if (error) throw error;
     if (!video) throw new Error("Video not found");
     videos = [video];
     channelId = video.channel_id;
   } else if (options.contentMode === "channel") {
-    if (!options.channelId) throw new Error("channelId required for channel mode");
+    if (!options.channelId)
+      throw new Error("channelId required for channel mode");
     const { data, error } = await supabase
       .from("videos")
       .select("id, priority")
@@ -104,7 +107,8 @@ export async function createBatchTask(options: BatchTaskOptions) {
       .order("priority", { ascending: false })
       .returns<Array<{ id: string; priority: string | null }>>();
     if (error) throw error;
-    if (!data || data.length === 0) throw new Error("No active videos found for channel");
+    if (!data || data.length === 0)
+      throw new Error("No active videos found for channel");
     videos = data;
   } else if (options.contentMode === "playlist") {
     if (!options.videoIds || options.videoIds.length === 0) {
@@ -114,9 +118,12 @@ export async function createBatchTask(options: BatchTaskOptions) {
       .from("videos")
       .select("id, priority, channel_id")
       .in("id", options.videoIds)
-      .returns<Array<{ id: string; priority: string | null; channel_id: string }>>();
+      .returns<
+        Array<{ id: string; priority: string | null; channel_id: string }>
+      >();
     if (error) throw error;
-    if (!data || data.length === 0) throw new Error("No videos found for playlist");
+    if (!data || data.length === 0)
+      throw new Error("No videos found for playlist");
     videos = data;
     channelId = data[0].channel_id;
   }
@@ -139,7 +146,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
   const { data: task, error: taskError } = await supabase
     .from("tasks")
-    .insert(taskRow)
+    .insert(taskRow as any)
     .select()
     .single();
 
@@ -148,10 +155,14 @@ export async function createBatchTask(options: BatchTaskOptions) {
   // Step 3: Create task_devices per PC (가드레일: PC당 최대 deviceCount, 다른 PC에서 가져오지 않음)
   const distribution = options.distribution ?? "round_robin";
   const perPcCap = deviceCount;
-  type TaskDeviceInsertRow = TaskDeviceInsert & { pc_id?: string | null };
+  /** DB has config + pc_id (migrations); generated Insert type may be stale */
+  type TaskDeviceInsertRow = TaskDeviceInsert & {
+    config?: Json | null;
+    pc_id?: string | null;
+  };
 
   const { data: pcs } = await supabase
-    .from("pcs")
+    .from("devices")
     .select("id")
     .returns<Array<{ id: string }>>();
   const pcList = pcs ?? [];
@@ -236,7 +247,10 @@ export async function createBatchTask(options: BatchTaskOptions) {
     const current = vid?.completed_views ?? 0;
     await supabase
       .from("videos")
-      .update({ completed_views: current + count, updated_at: new Date().toISOString() } as any)
+      .update({
+        completed_views: current + count,
+        updated_at: new Date().toISOString(),
+      } as any)
       .eq("id", videoId);
   }
 
@@ -245,18 +259,23 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
 function _priorityWeight(p: string | null): number {
   switch (p) {
-    case "urgent": return 4;
-    case "high": return 3;
-    case "normal": return 2;
-    case "low": return 1;
-    default: return 2;
+    case "urgent":
+      return 4;
+    case "high":
+      return 3;
+    case "normal":
+      return 2;
+    case "low":
+      return 1;
+    default:
+      return 2;
   }
 }
 
 function _distributeVideos(
   videos: Array<{ id: string; priority: string | null }>,
   deviceCount: number,
-  distribution: "round_robin" | "random" | "by_priority"
+  distribution: "round_robin" | "random" | "by_priority",
 ): Array<{ video_url: string; video_id: string }> {
   const configs: Array<{ video_url: string; video_id: string }> = [];
   const baseUrl = "https://www.youtube.com/watch?v=";
@@ -272,8 +291,13 @@ function _distributeVideos(
       configs.push({ video_url: baseUrl + video.id, video_id: video.id });
     }
   } else if (distribution === "by_priority") {
-    const totalPriority = videos.reduce((sum, v) => sum + Math.max(_priorityWeight(v.priority), 1), 0);
-    const weights = videos.map((v) => Math.max(_priorityWeight(v.priority), 1) / totalPriority);
+    const totalPriority = videos.reduce(
+      (sum, v) => sum + Math.max(_priorityWeight(v.priority), 1),
+      0,
+    );
+    const weights = videos.map(
+      (v) => Math.max(_priorityWeight(v.priority), 1) / totalPriority,
+    );
 
     for (let i = 0; i < deviceCount; i++) {
       const rand = Math.random();
@@ -286,7 +310,10 @@ function _distributeVideos(
           break;
         }
       }
-      configs.push({ video_url: baseUrl + selectedVideo.id, video_id: selectedVideo.id });
+      configs.push({
+        video_url: baseUrl + selectedVideo.id,
+        video_id: selectedVideo.id,
+      });
     }
   }
 
