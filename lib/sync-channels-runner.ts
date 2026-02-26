@@ -2,14 +2,15 @@
  * 공통 채널 동기화 로직: YouTube Data API로 최근 영상 조회 → videos upsert → auto_collect 채널의 active 영상 task_queue enqueue.
  * /api/cron/sync-channels 와 /api/sync-channels 에서 사용.
  */
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchRecentVideos } from "@/lib/youtube";
 import { getAllChannels } from "@/lib/db/channels";
 import { upsertVideo, getVideosByChannelIdWithFilters } from "@/lib/db/videos";
 import { getTaskByVideoId } from "@/lib/db/tasks";
 import type { ChannelRow } from "@/lib/supabase/types";
 
-const tq = (sb: ReturnType<typeof createServerClient>) => sb.from("task_queue");
+// task_queue is used by legacy agent; may be missing from generated DB types
+const tq = (sb: ReturnType<typeof createSupabaseServerClient>) => (sb as any).from("task_queue");
 
 export type SyncChannelsResult = {
   ok: true;
@@ -50,7 +51,7 @@ export async function runSyncChannels(): Promise<
       try {
         const videos = await fetchRecentVideos(channel.id, 2);
 
-        const supabase = createServerClient();
+        const supabase = createSupabaseServerClient();
 
         for (const video of videos) {
           const parts = video.duration.split(":").map(Number);
@@ -106,7 +107,7 @@ export async function runSyncChannels(): Promise<
     }
 
     let totalEnqueued = 0;
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     let queuedVideoIds: string[] = [];
     try {
       const { data: queuedItems } = await tq(supabase)

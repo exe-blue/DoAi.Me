@@ -58,7 +58,7 @@ if (!fs.existsSync(LOG_DIR)) {
 }
 
 // ── PC ID (config 순환참조 방지: env에서 직접 읽음) ──
-const PC_ID = process.env.PC_NUMBER || process.env.WORKER_ID || 'PC00';
+const PC_ID = process.env.PC_NUMBER || 'PC-00';
 
 // ── Winston 포맷 ──
 const jsonFormat = winston.format.combine(

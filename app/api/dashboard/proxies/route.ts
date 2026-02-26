@@ -18,12 +18,12 @@ export async function GET() {
     const { count: active } = await supabase
       .from("proxies")
       .select("*", { count: "exact", head: true })
-      .in("status", ["active", "valid"]);
+      .eq("status", "active");
 
     const { count: invalid } = await supabase
       .from("proxies")
       .select("*", { count: "exact", head: true })
-      .eq("status", "invalid");
+      .in("status", ["inactive", "banned"]);
 
     const { count: unassigned } = await supabase
       .from("proxies")

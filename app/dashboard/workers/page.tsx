@@ -134,7 +134,7 @@ export default function WorkersPage() {
                     </div>
                   </div>
                 </div>
-                {name === "PC00" && (
+                {name === "PC-00" && (
                   <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">TEST</span>
                 )}
               </div>

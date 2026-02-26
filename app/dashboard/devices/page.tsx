@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -81,7 +81,7 @@ function buildDevicesKey(workerId: string, status: string) {
   return q ? `/api/devices?${q}` : "/api/devices";
 }
 
-export default function DevicesPage() {
+function DevicesPageInner() {
   const searchParams = useSearchParams();
   const [workerFilter, setWorkerFilter] = useState(
     searchParams.get("worker_id") || "all"
@@ -497,6 +497,14 @@ function DeviceDetailSheet({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+export default function DevicesPage() {
+  return (
+    <Suspense fallback={<div className="p-6">로딩 중...</div>}>
+      <DevicesPageInner />
+    </Suspense>
   );
 }
 

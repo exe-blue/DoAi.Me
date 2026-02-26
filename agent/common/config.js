@@ -35,7 +35,7 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.pcNumber = process.env.PC_NUMBER || "PC00";  // ^PC[0-9]{2}$ format (DB constraint)
+    this.pcNumber = process.env.PC_NUMBER || "PC-00";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
@@ -176,7 +176,7 @@ class AgentConfig extends EventEmitter {
     if (!this.supabaseUrl) errors.push('SUPABASE_URL is required');
     if (!this.supabaseAnonKey) errors.push('SUPABASE_ANON_KEY is required');
     if (!this.xiaoweiWsUrl) errors.push('XIAOWEI_WS_URL is required');
-    if (!/^PC\d{2}$/.test(this.pcNumber)) errors.push(`PC_NUMBER must match ^PC[0-9]{2}$ (got: "${this.pcNumber}")`);
+    if (!/^PC-\d{2}$/.test(this.pcNumber)) errors.push(`PC_NUMBER must match PC-XX format, e.g. PC-01 (got: "${this.pcNumber}")`);
     if (this.heartbeatInterval < 5000) errors.push(`HEARTBEAT_INTERVAL too low: ${this.heartbeatInterval}ms (min: 5000)`);
     if (this.maxConcurrentTasks < 1 || this.maxConcurrentTasks > 100) {
       errors.push(`MAX_CONCURRENT_TASKS out of range: ${this.maxConcurrentTasks} (1~100)`);
@@ -194,7 +194,7 @@ class AgentConfig extends EventEmitter {
 
   /** 환경 이름 (dev=PC00, prod=나머지) */
   get environment() {
-    return this.pcNumber === 'PC00' ? 'dev' : 'prod';
+    return this.pcNumber === 'PC-00' ? 'dev' : 'prod';
   }
 
   /** 현재 설정 요약 (민감정보 마스킹) */
