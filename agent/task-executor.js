@@ -115,13 +115,13 @@ class TaskExecutor {
     this.supabaseSync = supabaseSync;
     this.config = config;
     this.running = new Set();
-    this.maxConcurrent = 20;
+    this.maxConcurrent = this.config?.maxConcurrentTasks ?? 10;
 
     // Job assignment polling (pending → run YouTube watch → completed)
     this._jobPollHandle = null;
     this._jobRunning = new Set(); // assignment id
     this._jobPollIntervalMs = 15000;
-    this._maxConcurrentJobs = 5;
+    this._maxConcurrentJobs = this.config?.maxConcurrentTasks ?? 10;
 
     // Execution stats for monitoring
     this.stats = { total: 0, succeeded: 0, failed: 0 };
@@ -1133,8 +1133,11 @@ class TaskExecutor {
           ? await this._fetchDeviceConfigs(task.id)
           : new Map();
 
-        // 4. Execute based on task type — _dispatch logs the specific Xiaowei command
-        const devices = this._resolveDevices(task);
+        // 4. Resolve execution targets (connection_id ?? serial); no "all"
+        const devices = await this._resolveDevices(task);
+        if (devices == null) {
+          throw new Error("No devices for this PC");
+        }
         const result = await this._dispatch(taskType, task, devices, deviceConfigs);
         const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -1172,7 +1175,7 @@ class TaskExecutor {
       // Log failure
       await this.supabaseSync.insertExecutionLog(
         task.id,
-        task.target_devices ? task.target_devices.join(",") : "all",
+        task.target_devices ? task.target_devices.join(",") : "(no targets)",
         taskType,
         task.payload,
         null,
@@ -1249,15 +1252,22 @@ class TaskExecutor {
   }
 
   /**
-   * Resolve which devices to target
+   * Resolve Xiaowei execution targets: connection_id ?? serial. No "all".
    * @param {object} task
-   * @returns {string} comma-separated serials or "all"
+   * @returns {Promise<string|null>} comma-separated device targets, or null if none
    */
-  _resolveDevices(task) {
-    if (task.target_devices && task.target_devices.length > 0) {
-      return task.target_devices.join(",");
-    }
-    return "all";
+  async _resolveDevices(task) {
+    const pcId = this.supabaseSync.pcId;
+    const serials =
+      task.target_devices && task.target_devices.length > 0
+        ? task.target_devices
+        : null;
+    const targets = await this.supabaseSync.getDeviceTargetsForExecution(
+      pcId,
+      serials
+    );
+    if (targets.length === 0) return null;
+    return targets.join(",");
   }
 
   /**

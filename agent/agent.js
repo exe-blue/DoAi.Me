@@ -417,7 +417,7 @@ async function main() {
   // 15b. Start device orchestrator (before VideoDispatcher so nudge target exists)
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
-    maxConcurrent: config.maxConcurrentTasks || 10,
+    maxConcurrent: config.maxConcurrentTasks ?? 10,
   });
   log.info(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`);
   deviceOrchestrator.start();

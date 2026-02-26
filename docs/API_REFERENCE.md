@@ -9,7 +9,7 @@
 ## 인증 방식
 
 | 방식 | 사용처 | 설명 |
-|------|--------|------|
+| ------ | -------- | ------ |
 | **Session** | 대부분의 API | `createSupabaseServerClient()` → Supabase Auth 세션 |
 | **x-api-key** | `/api/tasks` POST | Agent가 API Key로 태스크 생성 |
 | **Bearer Token** | `/api/cron/sync-channels` | Vercel Cron용 `CRON_SECRET` |
@@ -20,7 +20,7 @@
 ## 1. 대시보드 (`/api/dashboard/`)
 
 | Method | Path | 설명 | Query |
-|--------|------|------|-------|
+| -------- | ------ | ------ | ------- |
 | GET | `/api/dashboard/realtime` | 실시간 상태 (기기, 통계, PC 목록) | — |
 | GET | `/api/dashboard/missions` | 일별 미션 리포트 (영상별 달성률) | `?date=2026-02-25` |
 | GET | `/api/dashboard/errors` | 에러 유형별 요약 | `?hours=24` |
@@ -32,7 +32,7 @@
 ## 2. 워커 (`/api/workers/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/workers` | 워커 목록 (디바이스 수 포함) |
 | GET | `/api/workers/[id]` | 워커 상세 (소속 디바이스 포함) |
 | POST | `/api/workers/heartbeat` | 하트비트 (워커 + 디바이스 upsert) |
@@ -42,7 +42,7 @@
 ## 3. 디바이스 (`/api/devices/`)
 
 | Method | Path | 설명 | Query |
-|--------|------|------|-------|
+| -------- | ------ | ------ | ------- |
 | GET | `/api/devices` | 디바이스 목록 | `?worker_id=`, `?status=` |
 | GET | `/api/devices/[id]` | 디바이스 상세 | — |
 | PUT | `/api/devices/[id]` | 디바이스 수정 | — |
@@ -53,7 +53,7 @@
 ## 4. 태스크 (`/api/tasks/`)
 
 | Method | Path | 설명 | Auth |
-|--------|------|------|------|
+| -------- | ------ | ------ | ------ |
 | GET | `/api/tasks` | 태스크 목록 | Session |
 | POST | `/api/tasks` | 태스크 생성 (수동/배치) | Session or x-api-key |
 | PATCH | `/api/tasks` | 태스크 상태 업데이트 | Session |
@@ -66,7 +66,7 @@
 ## 5. 큐 (`/api/queue/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/queue` | 큐 항목 목록 |
 | POST | `/api/queue` | 큐 항목 생성 |
 | DELETE | `/api/queue` | 벌크 취소 |
@@ -78,7 +78,7 @@
 ## 6. 스케줄 (`/api/schedules/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/schedules` | 스케줄 목록 |
 | POST | `/api/schedules` | 스케줄 생성 (cron 표현식) |
 | PUT | `/api/schedules/[id]` | 스케줄 수정 |
@@ -90,7 +90,7 @@
 ## 7. 프리셋 (`/api/presets/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/presets` | 프리셋 목록 |
 | POST | `/api/presets` | 프리셋 생성 |
 | GET | `/api/presets/[id]` | 프리셋 상세 |
@@ -102,7 +102,7 @@
 ## 8. 프록시 (`/api/proxies/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/proxies` | 프록시 목록 |
 | POST | `/api/proxies` | 프록시 생성 |
 | DELETE | `/api/proxies` | 벌크 삭제 |
@@ -119,7 +119,7 @@
 ## 9. 계정 (`/api/accounts/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/accounts` | 계정 목록 |
 | POST | `/api/accounts` | 계정 생성 |
 | GET | `/api/accounts/[id]` | 계정 상세 |
@@ -130,7 +130,7 @@
 ## 10. 채널 (`/api/channels/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/channels` | 채널 목록 (영상 포함) |
 | POST | `/api/channels` | 채널 생성 |
 | GET | `/api/channels/[id]` | 채널 상세 (영상 포함) |
@@ -146,7 +146,7 @@
 ## 11. YouTube API (`/api/youtube/`)
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | POST | `/api/youtube/channels` | 채널 등록 |
 | GET | `/api/youtube/channels` | 채널 핸들 resolve |
 | DELETE | `/api/youtube/channels` | 채널 삭제 |
@@ -160,7 +160,7 @@
 ## 12. 기타
 
 | Method | Path | 설명 | Auth |
-|--------|------|------|------|
+| -------- | ------ | ------ | ------ |
 | GET | `/api/health` | 헬스체크 / 상세 리포트 (`?report=true`) | None |
 | GET | `/api/stats` | 시스템 통계 (워커, 기기, 태스크, 채널) | Session |
 | GET | `/api/overview` | 대시보드 개요 통계 | Session |
@@ -180,7 +180,7 @@
 > WIP 보조 대시보드 (port 3001). 메인 앱의 서브셋.
 
 | Method | Path | 설명 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | GET | `/api/presets` | 프리셋 목록 (`?category=`) |
 | POST | `/api/presets` | 프리셋 생성 |
 | GET | `/api/devices` | 디바이스 목록 (`?worker_id=`, `?status=`, `?tag_group=`) |
@@ -199,7 +199,7 @@
 ## 요약
 
 | 구분 | 파일 수 | 엔드포인트 수 |
-|------|--------|-------------|
+| ------ | -------- | ------------- |
 | 메인 앱 (`app/api/`) | 45 | ~80 |
 | 대시보드 앱 | 7 | ~14 |
 | **합계** | **52** | **~94** |

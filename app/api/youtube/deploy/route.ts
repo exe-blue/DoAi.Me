@@ -6,9 +6,9 @@
  *
  * POST /api/youtube/deploy
  * {
- *   "pc_id": "uuid or null",                 // 특정 PC or null(전체)
- *   "devices": "all",
- *   "local_path": "./scripts/youtube_commander.js",   // Node PC 기준 경로 (상대경로는 Agent cwd 기준)
+ *   "pc_id": "uuid",                         // required for resolving target devices
+ *   "devices": "optional comma list",        // omit to use all online/busy for pc_id
+ *   "local_path": "./scripts/youtube_commander.js",
  *   "remote_path": "/sdcard/scripts/youtube_commander.js"
  * }
  */
@@ -24,18 +24,45 @@ const ALLOWED_SCRIPTS: Record<string, string> = {
 
 const DEFAULT_REMOTE_DIR = '/sdcard/scripts/';
 
+async function resolveTargetDevices(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  pc_id: string | null,
+  devicesHint?: string
+): Promise<{ target_devices: string[]; devicesLabel: string }> {
+  if (devicesHint && devicesHint !== "all") {
+    const list = devicesHint.split(",").map((s) => s.trim()).filter(Boolean);
+    return { target_devices: list, devicesLabel: devicesHint };
+  }
+  if (!pc_id) return { target_devices: [], devicesLabel: "" };
+  const { data } = await supabase
+    .from("devices")
+    .select("serial, connection_id")
+    .eq("pc_id", pc_id)
+    .in("status", ["online", "busy"]);
+  const targets = (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
+  return { target_devices: targets, devicesLabel: targets.join(",") };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = createSupabaseServerClient();
     const body = await req.json();
     const {
       pc_id = null,
-      devices = "all",
+      devices: devicesHint,
       script_name,
       local_path,
       remote_path,
       deploy_all = false,
     } = body;
+
+    const { target_devices, devicesLabel } = await resolveTargetDevices(supabase, pc_id ?? null, devicesHint);
+    if (target_devices.length === 0 && (deploy_all || script_name || local_path)) {
+      return NextResponse.json(
+        { success: false, error: "No target devices (pc_id required with online/busy devices, or pass devices list)" },
+        { status: 400 }
+      );
+    }
 
     // deploy_all: 허용된 모든 스크립트 배포
     if (deploy_all) {
@@ -45,11 +72,12 @@ export async function POST(req: NextRequest) {
         status: "pending",
         pc_id: pc_id || null,
         payload: {
-          devices,
+          devices: devicesLabel,
           local_path: lPath,
           remote_path: DEFAULT_REMOTE_DIR + lPath.split("/").pop(),
           is_media: "0",
         },
+        target_devices: target_devices,
       }));
 
       const { data, error } = await supabase.from("tasks").insert(tasks as any).select();
@@ -87,11 +115,12 @@ export async function POST(req: NextRequest) {
         status: "pending",
         pc_id: pc_id || null,
         payload: {
-          devices,
+          devices: devicesLabel,
           local_path: resolvedLocalPath,
           remote_path: resolvedRemotePath,
           is_media: "0",
         },
+        target_devices: target_devices,
       } as any)
       .select()
       .single();

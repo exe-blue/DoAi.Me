@@ -2,12 +2,14 @@
  * task-executor.js 에 추가할 upload_file 핸들러 패치
  *
  * 기존 task-executor.js의 switch(task_type) 안에 아래 케이스를 추가
+ *
+ * 운영: devices="all" 사용 금지. target_devices 없으면 해당 PC 디바이스 목록으로 자동 채움.
  */
 
 // ─── 기존 switch 안에 추가 ────────────────────────────────────
 
 case 'upload_file': {
-  const { devices = 'all', local_path, remote_path, is_media = '0' } = payload;
+  const { devices, local_path, remote_path, is_media = '0' } = payload;
 
   if (!local_path) throw new Error('payload.local_path is required for upload_file');
   if (!remote_path) throw new Error('payload.remote_path is required for upload_file');
@@ -54,7 +56,6 @@ async upload_file(nodeId, devices, localPath, remotePath, isMedia = '0') {
 POST /api/youtube/deploy
 {
   "script_name": "youtube_commander",   // 또는 "youtube_commander_run"
-  "devices": "all",
   "pc_id": "PC01"                       // 특정 PC만, 없으면 전체
 }
 
@@ -62,7 +63,7 @@ POST /api/youtube/deploy
 POST /api/youtube/deploy
 {
   "deploy_all": true,
-  "devices": "all"
+  "pc_id": "<uuid>"
 }
 
 // 3. 커스텀 경로 직접 지정

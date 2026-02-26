@@ -17,10 +17,31 @@ type PipelineBody = {
  * POST /api/youtube/pipeline
  * Enqueue a YouTube Commander pipeline as run_script (uploadFile cmd.json → autojsCreate youtube_commander.js).
  */
+async function resolveTargetDevices(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  pc_id: string | null,
+  devicesHint?: string
+): Promise<{ target_devices: string[]; devicesLabel: string }> {
+  if (devicesHint && devicesHint !== "all") {
+    const list = devicesHint.split(",").map((s) => s.trim()).filter(Boolean);
+    return { target_devices: list, devicesLabel: devicesHint };
+  }
+  if (!pc_id) {
+    return { target_devices: [], devicesLabel: "" };
+  }
+  const { data } = await supabase
+    .from("devices")
+    .select("serial, connection_id")
+    .eq("pc_id", pc_id)
+    .in("status", ["online", "busy"]);
+  const targets = (data || []).map((d) => d.connection_id || d.serial).filter(Boolean);
+  return { target_devices: targets, devicesLabel: targets.join(",") };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as PipelineBody;
-    const { commands, step_delay = 500, devices = "all", pc_id } = body;
+    const { commands, step_delay = 500, devices: devicesHint, pc_id } = body;
 
     if (!Array.isArray(commands) || commands.length === 0) {
       return NextResponse.json(
@@ -39,8 +60,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabase = createSupabaseServerClient();
+    const { target_devices, devicesLabel } = await resolveTargetDevices(supabase, pc_id ?? null, devicesHint);
+    if (target_devices.length === 0) {
+      return NextResponse.json(
+        { error: "No target devices (set pc_id and ensure online/busy devices, or pass devices list)" },
+        { status: 400 }
+      );
+    }
+
     const payload = {
-      devices,
+      devices: devicesLabel,
       script_path: "youtube_commander.js",
       commands: commands.map((c) => ({
         action: c.action,
@@ -50,7 +80,6 @@ export async function POST(request: NextRequest) {
       step_delay,
     };
 
-    const supabase = createSupabaseServerClient();
     const { data: task, error } = await supabase
       .from("tasks")
       .insert({
@@ -58,6 +87,7 @@ export async function POST(request: NextRequest) {
         task_type: "run_script",
         status: "pending",
         payload,
+        target_devices: target_devices,
         ...(pc_id ? { pc_id } : {}),
       } as any)
       .select("id, status, created_at")

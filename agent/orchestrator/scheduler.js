@@ -55,7 +55,7 @@ class DeviceScheduler {
 
   /** 동시 실행 가능 기기 수 (시간대 반영) */
   get maxConcurrent() {
-    const base = this.config.maxConcurrentTasks || 20;
+    const base = this.config.maxConcurrentTasks ?? 10;
     return Math.max(1, Math.round(base * this.currentActivityRate));
   }
 

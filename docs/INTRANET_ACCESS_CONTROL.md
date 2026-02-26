@@ -14,7 +14,7 @@
 ## 보호 방식
 
 | 항목 | 방식 |
-|------|------|
+| ------ | ------ |
 | **로그인** | Supabase Auth 이메일/비밀번호. (Google OAuth는 퍼블릭 때 추가) |
 | **페이지** | `middleware.ts`에서 미인증 사용자 → `/login` 리다이렉트 |
 | **API** | 대시보드/브라우저: Supabase Session(쿠키) 필수. **Agent 전용**: `x-api-key` 헤더로 인증 |

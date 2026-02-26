@@ -56,7 +56,7 @@ class AgentConfig extends EventEmitter {
     this.adbReconnectInterval = 60000;
     this.proxyCheckInterval = 300000;
     this.proxyPolicy = "sticky";
-    this.maxConcurrentTasks = 20;
+    this.maxConcurrentTasks = parseInt(process.env.MAX_CONCURRENT_TASKS || "10", 10);
     this.taskExecutionTimeoutMs = parseInt(process.env.TASK_EXECUTION_TIMEOUT_MS || "300000", 10); // 5 min default
     this.deviceInterval = 500;
     this.watchDuration = [30, 120];

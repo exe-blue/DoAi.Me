@@ -82,7 +82,7 @@ class QueueDispatcher {
         return;
       }
 
-      const maxConcurrent = this.config.maxConcurrentTasks || 20;
+      const maxConcurrent = this.config.maxConcurrentTasks ?? 10;
       const available = Math.max(0, maxConcurrent - (runningCount || 0));
 
       // 2. Check queue size for state-transition logging
