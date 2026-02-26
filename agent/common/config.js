@@ -76,6 +76,18 @@ class AgentConfig extends EventEmitter {
     this.useTaskDevicesEngine =
       process.env.USE_TASK_DEVICES_ENGINE === "true" ||
       process.env.USE_TASK_DEVICES_ENGINE === "1";
+    this.maxConcurrentDevicesPerPc = parseInt(
+      process.env.MAX_CONCURRENT_DEVICES_PER_PC || "10",
+      10,
+    );
+    this.taskDeviceLeaseMinutes = parseInt(
+      process.env.TASK_DEVICE_LEASE_MINUTES || "5",
+      10,
+    );
+    this.taskDeviceMaxRetries = parseInt(
+      process.env.TASK_DEVICE_MAX_RETRIES || "3",
+      10,
+    );
 
     // Internal
     this._settings = {}; // raw DB values keyed by setting key

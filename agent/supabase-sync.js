@@ -421,15 +421,34 @@ class SupabaseSync {
 
   /**
    * Get single device_target (connection_id ?? serial) for a task_device row.
-   * @param {object} taskDevice - { device_serial, pc_id }
+   * Supports both device_id (SSOT) and legacy device_serial.
+   * @param {object} taskDevice - { device_id?, device_serial?, pc_id? }
    * @returns {Promise<string|null>}
    */
   async getDeviceTargetForTaskDevice(taskDevice) {
-    if (!taskDevice?.pc_id || !taskDevice?.device_serial) return null;
+    if (taskDevice?.device_id) {
+      const { data, error } = await this.supabase
+        .from("devices")
+        .select("connection_id, serial")
+        .eq("id", taskDevice.device_id)
+        .maybeSingle();
+      if (!error && data) return data.connection_id || data.serial || null;
+    }
+    if (!taskDevice?.device_serial) return null;
+    let pcId = taskDevice.pc_id;
+    if (!pcId) {
+      const { data: dev } = await this.supabase
+        .from("devices")
+        .select("pc_id")
+        .eq("serial", taskDevice.device_serial)
+        .maybeSingle();
+      pcId = dev?.pc_id;
+    }
+    if (!pcId) return taskDevice.device_serial;
     const { data, error } = await this.supabase
       .from("devices")
       .select("serial, connection_id")
-      .eq("pc_id", taskDevice.pc_id)
+      .eq("pc_id", pcId)
       .eq("serial", taskDevice.device_serial)
       .maybeSingle();
     if (error || !data) return taskDevice.device_serial;
@@ -438,18 +457,20 @@ class SupabaseSync {
 
   /**
    * Claim up to `limit` queued task_devices for this PC (atomic RPC).
+   * Uses claim_task_devices_for_pc(runner_pc_id, max_to_claim, lease_minutes).
    * @param {string} pcId
    * @param {number} [limit=10]
    * @returns {Promise<Array>} Claimed task_device rows
    */
-  async claimNextTaskDevices(pcId, limit = 10) {
-    const { data, error } = await this.supabase.rpc("claim_next_task_devices", {
-      p_pc_id: pcId,
-      p_limit: Math.min(limit, 10),
+  async claimNextTaskDevices(pcId, limit = 10, leaseMinutes = 5) {
+    const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
+      runner_pc_id: pcId,
+      max_to_claim: Math.min(Math.max(0, limit), 100),
+      lease_minutes: leaseMinutes,
     });
     if (error) {
       console.error(
-        `[Supabase] claim_next_task_devices failed: ${error.message}`,
+        `[Supabase] claim_task_devices_for_pc failed: ${error.message}`,
       );
       return [];
     }
@@ -457,125 +478,87 @@ class SupabaseSync {
   }
 
   /**
-   * Extend lease for a running task_device (heartbeat).
+   * Extend lease for a running task_device (heartbeat). Uses renew_task_device_lease RPC.
    * @param {string} taskDeviceId
    * @param {string} pcId
    * @param {number} [leaseMinutes=5]
    */
   async heartbeatTaskDevice(taskDeviceId, pcId, leaseMinutes = 5) {
-    const leaseUntil = new Date(Date.now() + leaseMinutes * 60 * 1000).toISOString();
-    const { error } = await this.supabase
-      .from("task_devices")
-      .update({
-        lease_expires_at: leaseUntil,
-      })
-      .eq("id", taskDeviceId)
-      .eq("claimed_by_pc_id", pcId)
-      .eq("status", "running");
+    const { data, error } = await this.supabase.rpc("renew_task_device_lease", {
+      task_device_id: taskDeviceId,
+      runner_pc_id: pcId,
+      lease_minutes: leaseMinutes,
+    });
     if (error) {
       console.error(
-        `[Supabase] heartbeatTaskDevice failed: ${error.message}`,
+        `[Supabase] renew_task_device_lease failed: ${error.message}`,
       );
     }
   }
 
   /**
-   * Mark task_device completed.
+   * Mark task_device completed. Uses complete_task_device RPC.
    * @param {string} taskDeviceId
    * @param {string} pcId
    * @param {object} [result]
    * @param {number} [progress=100]
    */
   async completeTaskDevice(taskDeviceId, pcId, result, progress = 100) {
-    const now = new Date().toISOString();
-    const update = {
-      status: "completed",
-      completed_at: now,
-      lease_expires_at: null,
-      claimed_by_pc_id: null,
-      progress: progress ?? 100,
-    };
-    if (result != null) update.result = result;
-    const { error } = await this.supabase
-      .from("task_devices")
-      .update(update)
-      .eq("id", taskDeviceId)
-      .eq("claimed_by_pc_id", pcId);
+    const resultJson = result != null ? result : { progress: progress ?? 100 };
+    const { error } = await this.supabase.rpc("complete_task_device", {
+      task_device_id: taskDeviceId,
+      runner_pc_id: pcId,
+      result_json: resultJson,
+    });
     if (error) {
       console.error(
-        `[Supabase] completeTaskDevice failed: ${error.message}`,
+        `[Supabase] complete_task_device failed: ${error.message}`,
       );
     }
   }
 
   /**
-   * Mark task_device failed or requeue for retry (retry_count < 3).
+   * Mark task_device failed or requeue for retry. Uses fail_or_retry_task_device RPC.
    * @param {string} taskDeviceId
    * @param {string} pcId
    * @param {string} errorMessage
    * @param {boolean} [retryable=true]
    */
   async failOrRetryTaskDevice(taskDeviceId, pcId, errorMessage, retryable = true) {
-    const now = new Date().toISOString();
-    const { data: row, error: readErr } = await this.supabase
-      .from("task_devices")
-      .select("retry_count")
-      .eq("id", taskDeviceId)
-      .eq("claimed_by_pc_id", pcId)
-      .maybeSingle();
-
-    if (readErr || !row) {
+    const { data, error } = await this.supabase.rpc("fail_or_retry_task_device", {
+      task_device_id: taskDeviceId,
+      runner_pc_id: pcId,
+      error_text: errorMessage,
+      retryable,
+    });
+    if (error) {
       console.error(
-        `[Supabase] failOrRetryTaskDevice read failed: ${readErr?.message || "not found"}`,
+        `[Supabase] fail_or_retry_task_device failed: ${error.message}`,
       );
       return;
     }
-
-    const currentRetry = row.retry_count ?? 0;
-    const doRetry = retryable && currentRetry < 2; // 0->1, 1->2, 2->3 then fail
-
-    if (doRetry) {
-      const { error } = await this.supabase
-        .from("task_devices")
-        .update({
-          status: "queued",
-          error: errorMessage,
-          last_error_at: now,
-          retry_count: currentRetry + 1,
-          lease_expires_at: null,
-          claimed_by_pc_id: null,
-        })
-        .eq("id", taskDeviceId)
-        .eq("claimed_by_pc_id", pcId);
-      if (error) {
-        console.error(
-          `[Supabase] failOrRetryTaskDevice (retry) failed: ${error.message}`,
-        );
-      }
-    } else {
-      const { error } = await this.supabase
-        .from("task_devices")
-        .update({
-          status: "failed",
-          completed_at: now,
-          error: errorMessage,
-          last_error_at: now,
-          lease_expires_at: null,
-          claimed_by_pc_id: null,
-        })
-        .eq("id", taskDeviceId)
-        .eq("claimed_by_pc_id", pcId);
-      if (error) {
-        console.error(
-          `[Supabase] failOrRetryTaskDevice (failed) failed: ${error.message}`,
+    if (data && data.length > 0 && data[0]) {
+      const row = data[0];
+      if (row.final_status === "queued") {
+        console.log(
+          `[Supabase] task_device ${taskDeviceId} requeued (retry ${row.retry_count_out})`,
         );
       }
     }
   }
 
+  /** Alias: claimTaskDevicesForPc(pcId, limit) → RPC claim_task_devices_for_pc */
+  async claimTaskDevicesForPc(pcId, limit = 10) {
+    return this.claimNextTaskDevices(pcId, limit, 5);
+  }
+
+  /** Alias: renewTaskDeviceLease(taskDeviceId, pcId, leaseMinutes?) → RPC renew_task_device_lease */
+  async renewTaskDeviceLease(taskDeviceId, pcId, leaseMinutes = 5) {
+    return this.heartbeatTaskDevice(taskDeviceId, pcId, leaseMinutes);
+  }
+
   /**
    * Get pending tasks assigned to this PC or unassigned (pc_id=null).
-   */
    * Unassigned tasks are auto-claimed by setting pc_id.
    * @param {string} pcId
    * @returns {Promise<Array>}

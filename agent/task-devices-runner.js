@@ -6,11 +6,13 @@ const { getLogger } = require("./common/logger");
 const log = getLogger("task-devices-runner");
 
 const POLL_INTERVAL_MS = 5000;
-const LEASE_HEARTBEAT_MS = 30000;
-const MAX_CONCURRENT = 10;
-const MAX_RETRIES = 3;
+const LEASE_HEARTBEAT_MS = 30000; // 30s lease renewal
 
-const DEFAULT_STEPS = [{ module: "watch", waitSecAfter: 60 }];
+const DEFAULT_STEPS = [
+  { module: "search_video", waitSecAfter: 10 },
+  { module: "watch_video", waitSecAfter: 60 },
+  { module: "video_actions", waitSecAfter: 30 },
+];
 
 class TaskDevicesRunner {
   /**
@@ -25,6 +27,10 @@ class TaskDevicesRunner {
     this.config = config;
     this.watchAdapter = opts.watchAdapter || null;
 
+    this._maxConcurrent = (config && config.maxConcurrentDevicesPerPc) ?? 10;
+    this._leaseMinutes = (config && config.taskDeviceLeaseMinutes) ?? 5;
+    this._maxRetries = (config && config.taskDeviceMaxRetries) ?? 3;
+
     this._running = new Map(); // task_device_id -> { taskDevice, heartbeatTimer }
     this._pollTimer = null;
     this._leaseTimers = new Map();
@@ -37,7 +43,7 @@ class TaskDevicesRunner {
       log.warn("task_devices runner not started: no pcId");
       return;
     }
-    log.info("[TaskDevicesRunner] Started (maxConcurrent=%s)", MAX_CONCURRENT);
+    log.info("[TaskDevicesRunner] Started (maxConcurrent=%s, leaseMin=%s)", this._maxConcurrent, this._leaseMinutes);
     this._pollTimer = setInterval(() => this._tick(), POLL_INTERVAL_MS);
     this._tick();
   }
@@ -58,10 +64,10 @@ class TaskDevicesRunner {
     const pcId = this.supabaseSync.pcId;
     if (!pcId) return;
 
-    const slots = MAX_CONCURRENT - this._running.size;
+    const slots = this._maxConcurrent - this._running.size;
     if (slots <= 0) return;
 
-    const claimed = await this.supabaseSync.claimNextTaskDevices(pcId, slots);
+    const claimed = await this.supabaseSync.claimNextTaskDevices(pcId, slots, this._leaseMinutes);
     for (const row of claimed) {
       if (!row || !row.id) continue;
       this._runOne(row, pcId);
@@ -75,7 +81,7 @@ class TaskDevicesRunner {
 
     const startHeartbeat = () => {
       const t = setInterval(async () => {
-        await this.supabaseSync.heartbeatTaskDevice(id, pcId, 5);
+        await this.supabaseSync.heartbeatTaskDevice(id, pcId, this._leaseMinutes);
       }, LEASE_HEARTBEAT_MS);
       if (t.unref) t.unref();
       this._leaseTimers.set(id, t);
@@ -103,15 +109,20 @@ class TaskDevicesRunner {
         (Array.isArray(cfg.steps) ? cfg.steps : DEFAULT_STEPS);
 
       for (const step of steps) {
-        const module = step.module || "watch";
+        const module = step.module || "watch_video";
         const waitSec = step.waitSecAfter ?? 60;
-        if (module === "watch") {
+        const isWatch = module === "watch" || module === "watch_video";
+        if (isWatch) {
           if (this.watchAdapter) {
             await this.watchAdapter(deviceTarget, cfg);
           } else {
             await this._defaultWatch(deviceTarget, cfg);
           }
           await _sleep(Math.min(waitSec, 300) * 1000);
+        } else if (module === "search_video" || module === "video_actions") {
+          // Adapter can be extended; for now same as watch (minimal impl)
+          if (this.watchAdapter) await this.watchAdapter(deviceTarget, cfg);
+          await _sleep(Math.min(waitSec, 60) * 1000);
         }
       }
 
