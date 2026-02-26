@@ -10,13 +10,16 @@
  *   pcModels.init(supabaseClient);
  *   const pc = await pcModels.getOrCreate('PC01');
  */
-const { getLogger } = require('../common/logger');
-const log = getLogger('device.models');
+const { getLogger } = require("../common/logger");
+const log = getLogger("device.models");
 
 let _supabase = null;
 
 function _db() {
-  if (!_supabase) throw new Error('device/models not initialized — call init(supabase) first');
+  if (!_supabase)
+    throw new Error(
+      "device/models not initialized — call init(supabase) first",
+    );
   return _supabase;
 }
 
@@ -25,27 +28,35 @@ function _db() {
 // ══════════════════════════════════════════════════
 
 const pcModels = {
-  init(supabase) { _supabase = supabase; },
+  init(supabase) {
+    _supabase = supabase;
+  },
 
   /** PC 조회 by pc_number (e.g. 'PC01') */
   async getByNumber(pcNumber) {
     const { data, error } = await _db()
-      .from('pcs')
-      .select('*')
-      .eq('pc_number', pcNumber)
+      .from("pcs")
+      .select("*")
+      .eq("pc_number", pcNumber)
       .maybeSingle();
-    if (error) { log.error('pc_get_failed', { pcNumber, error: error.message }); return null; }
+    if (error) {
+      log.error("pc_get_failed", { pcNumber, error: error.message });
+      return null;
+    }
     return data;
   },
 
   /** PC 조회 by UUID */
   async getById(id) {
     const { data, error } = await _db()
-      .from('pcs')
-      .select('*')
-      .eq('id', id)
+      .from("pcs")
+      .select("*")
+      .eq("id", id)
       .maybeSingle();
-    if (error) { log.error('pc_get_failed', { id, error: error.message }); return null; }
+    if (error) {
+      log.error("pc_get_failed", { id, error: error.message });
+      return null;
+    }
     return data;
   },
 
@@ -53,33 +64,37 @@ const pcModels = {
   async getOrCreate(pcNumber) {
     const existing = await this.getByNumber(pcNumber);
     if (existing) {
-      log.info('pc_found', { pcId: existing.id, pcNumber });
+      log.info("pc_found", { pcId: existing.id, pcNumber });
       return existing;
     }
 
     const { data, error } = await _db()
-      .from('pcs')
-      .insert({ pc_number: pcNumber, status: 'online' })
-      .select('*')
+      .from("pcs")
+      .insert({ pc_number: pcNumber, status: "online" })
+      .select("*")
       .single();
 
     if (error) {
-      log.error('pc_create_failed', { pcNumber, error: error.message });
+      log.error("pc_create_failed", { pcNumber, error: error.message });
       throw new Error(`Failed to create PC: ${error.message}`);
     }
 
-    log.info('pc_created', { pcId: data.id, pcNumber });
+    log.info("pc_created", { pcId: data.id, pcNumber });
     return data;
   },
 
   /** PC 상태 업데이트 */
   async updateStatus(pcId, status) {
     const { error } = await _db()
-      .from('pcs')
+      .from("pcs")
       .update({ status, last_heartbeat: new Date().toISOString() })
-      .eq('id', pcId);
+      .eq("id", pcId);
     if (error) {
-      log.error('pc_status_update_failed', { pcId, status, error: error.message });
+      log.error("pc_status_update_failed", {
+        pcId,
+        status,
+        error: error.message,
+      });
       return false;
     }
     return true;
@@ -88,10 +103,13 @@ const pcModels = {
   /** 전체 PC 목록 */
   async listAll() {
     const { data, error } = await _db()
-      .from('pcs')
-      .select('*')
-      .order('pc_number');
-    if (error) { log.error('pc_list_failed', { error: error.message }); return []; }
+      .from("pcs")
+      .select("*")
+      .order("pc_number");
+    if (error) {
+      log.error("pc_list_failed", { error: error.message });
+      return [];
+    }
     return data || [];
   },
 };
@@ -101,40 +119,51 @@ const pcModels = {
 // ══════════════════════════════════════════════════
 
 const deviceModels = {
-  init(supabase) { _supabase = supabase; },
+  init(supabase) {
+    _supabase = supabase;
+  },
 
   /** 디바이스 조회 by UUID */
   async getById(id) {
     const { data, error } = await _db()
-      .from('devices')
-      .select('*')
-      .eq('id', id)
+      .from("devices")
+      .select("*")
+      .eq("id", id)
       .maybeSingle();
-    if (error) { log.error('device_get_failed', { id, error: error.message }); return null; }
+    if (error) {
+      log.error("device_get_failed", { id, error: error.message });
+      return null;
+    }
     return data;
   },
 
   /** 디바이스 조회 by serial */
   async getBySerial(serial) {
     const { data, error } = await _db()
-      .from('devices')
-      .select('*')
-      .eq('serial', serial)
+      .from("devices")
+      .select("*")
+      .eq("serial", serial)
       .maybeSingle();
-    if (error) { log.error('device_get_failed', { serial, error: error.message }); return null; }
+    if (error) {
+      log.error("device_get_failed", { serial, error: error.message });
+      return null;
+    }
     return data;
   },
 
   /** PC별 디바이스 목록 */
   async listByPc(pcId, statusFilter) {
-    let query = _db().from('devices').select('*').eq('pc_id', pcId);
+    let query = _db().from("devices").select("*").eq("pc_id", pcId);
     if (statusFilter) {
       query = Array.isArray(statusFilter)
-        ? query.in('status', statusFilter)
-        : query.eq('status', statusFilter);
+        ? query.in("status", statusFilter)
+        : query.eq("status", statusFilter);
     }
-    const { data, error } = await query.order('serial');
-    if (error) { log.error('device_list_failed', { pcId, error: error.message }); return []; }
+    const { data, error } = await query.order("serial");
+    if (error) {
+      log.error("device_list_failed", { pcId, error: error.message });
+      return [];
+    }
     return data || [];
   },
 
@@ -143,7 +172,7 @@ const deviceModels = {
     const row = {
       serial,
       pc_id: pcId,
-      status: fields.status || 'online',
+      status: fields.status || "online",
       model: fields.model || null,
       battery_level: fields.battery ?? null,
       last_seen_at: new Date().toISOString(),
@@ -154,13 +183,13 @@ const deviceModels = {
     row.pc_id = pcId;
 
     const { data, error } = await _db()
-      .from('devices')
-      .upsert(row, { onConflict: 'serial' })
-      .select('id')
+      .from("devices")
+      .upsert(row, { onConflict: "serial" })
+      .select("id")
       .maybeSingle();
 
     if (error) {
-      log.error('device_upsert_failed', { serial, error: error.message });
+      log.error("device_upsert_failed", { serial, error: error.message });
       return null;
     }
     return data?.id || null;
@@ -170,11 +199,11 @@ const deviceModels = {
   async bulkUpsert(devices, pcId) {
     if (!devices || devices.length === 0) return { success: 0, failed: 0 };
 
-    const rows = devices.map(d => {
+    const rows = devices.map((d) => {
       const row = {
         serial: d.serial,
         pc_id: pcId,
-        status: d.status || 'online',
+        status: d.status || "online",
         model: d.model || null,
         battery_level: d.battery ?? d.battery_level ?? null,
         last_seen_at: new Date().toISOString(),
@@ -185,26 +214,33 @@ const deviceModels = {
     });
 
     const { error } = await _db()
-      .from('devices')
-      .upsert(rows, { onConflict: 'serial' });
+      .from("devices")
+      .upsert(rows, { onConflict: "serial" });
 
     if (error) {
-      log.error('device_bulk_upsert_failed', { count: rows.length, error: error.message });
+      log.error("device_bulk_upsert_failed", {
+        count: rows.length,
+        error: error.message,
+      });
       return { success: 0, failed: rows.length };
     }
 
-    log.info('device_bulk_upsert', { count: rows.length, pcId });
+    log.info("device_bulk_upsert", { count: rows.length, pcId });
     return { success: rows.length, failed: 0 };
   },
 
   /** 디바이스 상태 업데이트 */
   async updateStatus(deviceId, status) {
     const { error } = await _db()
-      .from('devices')
+      .from("devices")
       .update({ status, last_seen_at: new Date().toISOString() })
-      .eq('id', deviceId);
+      .eq("id", deviceId);
     if (error) {
-      log.error('device_status_failed', { deviceId, status, error: error.message });
+      log.error("device_status_failed", {
+        deviceId,
+        status,
+        error: error.message,
+      });
       return false;
     }
     return true;
@@ -214,11 +250,15 @@ const deviceModels = {
   async bulkUpdateStatus(deviceIds, status) {
     if (!deviceIds || deviceIds.length === 0) return true;
     const { error } = await _db()
-      .from('devices')
+      .from("devices")
       .update({ status, last_seen_at: new Date().toISOString() })
-      .in('id', deviceIds);
+      .in("id", deviceIds);
     if (error) {
-      log.error('device_bulk_status_failed', { count: deviceIds.length, status, error: error.message });
+      log.error("device_bulk_status_failed", {
+        count: deviceIds.length,
+        status,
+        error: error.message,
+      });
       return false;
     }
     return true;
@@ -228,34 +268,41 @@ const deviceModels = {
   async markMissingOffline(pcId, activeSerials) {
     if (!activeSerials || activeSerials.length === 0) {
       const { error } = await _db()
-        .from('devices')
-        .update({ status: 'offline', last_seen_at: new Date().toISOString() })
-        .eq('pc_id', pcId);
-      if (error) log.error('device_mark_offline_failed', { pcId, error: error.message });
+        .from("devices")
+        .update({ status: "offline", last_seen_at: new Date().toISOString() })
+        .eq("pc_id", pcId);
+      if (error)
+        log.error("device_mark_offline_failed", { pcId, error: error.message });
       return;
     }
 
     const { error } = await _db()
-      .from('devices')
-      .update({ status: 'offline', last_seen_at: new Date().toISOString() })
-      .eq('pc_id', pcId)
-      .not('serial', 'in', `(${activeSerials.join(',')})`);
+      .from("devices")
+      .update({ status: "offline", last_seen_at: new Date().toISOString() })
+      .eq("pc_id", pcId)
+      .not("serial", "in", `(${activeSerials.join(",")})`);
 
-    if (error) log.error('device_mark_offline_failed', { pcId, error: error.message });
+    if (error)
+      log.error("device_mark_offline_failed", { pcId, error: error.message });
   },
 
   /** PC별 디바이스 카운트 */
   async countByPc(pcId) {
     const counts = { total: 0, online: 0, busy: 0, error: 0, offline: 0 };
-    const statuses = ['online', 'busy', 'error', 'offline'];
+    const statuses = ["online", "busy", "error", "offline"];
 
     const { count: total } = await _db()
-      .from('devices').select('*', { count: 'exact', head: true }).eq('pc_id', pcId);
+      .from("devices")
+      .select("*", { count: "exact", head: true })
+      .eq("pc_id", pcId);
     counts.total = total || 0;
 
     for (const s of statuses) {
       const { count } = await _db()
-        .from('devices').select('*', { count: 'exact', head: true }).eq('pc_id', pcId).eq('status', s);
+        .from("devices")
+        .select("*", { count: "exact", head: true })
+        .eq("pc_id", pcId)
+        .eq("status", s);
       counts[s] = count || 0;
     }
 

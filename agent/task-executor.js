@@ -16,11 +16,16 @@ function _withTimeout(promise, ms) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(
-      () => reject(new Error(`Task execution timeout after ${Math.round(ms / 1000)}s`)),
-      ms
+      () =>
+        reject(
+          new Error(`Task execution timeout after ${Math.round(ms / 1000)}s`),
+        ),
+      ms,
     );
   });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+  return Promise.race([promise, timeoutPromise]).finally(() =>
+    clearTimeout(timeoutId),
+  );
 }
 
 function _escapeRegex(value) {
@@ -31,7 +36,12 @@ function _escapeRegex(value) {
 function _extractShellOutput(res) {
   if (res == null) return "";
   if (typeof res === "string") return res;
-  if (res.data != null) return Array.isArray(res.data) ? (res.data[0] != null ? String(res.data[0]) : "") : String(res.data);
+  if (res.data != null)
+    return Array.isArray(res.data)
+      ? res.data[0] != null
+        ? String(res.data[0])
+        : ""
+      : String(res.data);
   if (res.msg != null) return String(res.msg);
   if (res.stdout != null) return String(res.stdout);
   return String(res);
@@ -39,7 +49,16 @@ function _extractShellOutput(res) {
 
 /** Task types that use job_assignments (per-device config). Others (adb_shell, adb, etc.) skip it. */
 const JOB_ASSIGNMENT_TASK_TYPES = new Set([
-  "watch_video", "view_farm", "subscribe", "like", "comment", "custom", "action", "script", "run_script", "actionCreate",
+  "watch_video",
+  "view_farm",
+  "subscribe",
+  "like",
+  "comment",
+  "custom",
+  "action",
+  "script",
+  "run_script",
+  "actionCreate",
 ]);
 
 function _taskTypeUsesJobAssignments(taskType) {
@@ -55,28 +74,45 @@ function _randInt(min, max) {
 const YT = {
   SEARCH_BUTTON: { resourceId: "com.google.android.youtube:id/menu_item_1" },
   SEARCH_BUTTON_ALT: { contentDesc: "검색" },
-  SEARCH_EDIT_TEXT: { resourceId: "com.google.android.youtube:id/search_edit_text" },
+  SEARCH_EDIT_TEXT: {
+    resourceId: "com.google.android.youtube:id/search_edit_text",
+  },
   SEARCH_EDIT_ALT: { className: "android.widget.EditText" },
   SKIP_AD: { resourceId: "com.google.android.youtube:id/skip_ad_button" },
   SKIP_AD_ALT: { contentDesc: "건너뛰기" },
-  PLAY_PAUSE: { resourceId: "com.google.android.youtube:id/player_control_play_pause_replay_button" },
+  PLAY_PAUSE: {
+    resourceId:
+      "com.google.android.youtube:id/player_control_play_pause_replay_button",
+  },
   PLAY_PAUSE_ALT: { contentDesc: "재생" },
   PAUSE_ALT: { contentDesc: "일시중지" },
-  PLAYER: { resourceId: "com.google.android.youtube:id/player_fragment_container" },
+  PLAYER: {
+    resourceId: "com.google.android.youtube:id/player_fragment_container",
+  },
   VIDEO_TITLE: { resourceId: "com.google.android.youtube:id/video_title" },
   LIKE_BUTTON: { resourceId: "com.google.android.youtube:id/like_button" },
-  SUBSCRIBE_BUTTON: { resourceId: "com.google.android.youtube:id/subscribe_button" },
+  SUBSCRIBE_BUTTON: {
+    resourceId: "com.google.android.youtube:id/subscribe_button",
+  },
   SUBSCRIBE_TEXT: { textContains: "구독 중" },
-  COMMENT_INPUT: { resourceId: "com.google.android.youtube:id/comment_composer_input" },
+  COMMENT_INPUT: {
+    resourceId: "com.google.android.youtube:id/comment_composer_input",
+  },
   COMMENT_INPUT_ALT: { contentDesc: "댓글 추가..." },
-  COMMENT_POST: { resourceId: "com.google.android.youtube:id/comment_post_button" },
+  COMMENT_POST: {
+    resourceId: "com.google.android.youtube:id/comment_post_button",
+  },
   COMMENT_POST_ALT: { contentDesc: "댓글" },
-  SAVE_PLAYLIST: { resourceId: "com.google.android.youtube:id/save_to_playlist_button" },
+  SAVE_PLAYLIST: {
+    resourceId: "com.google.android.youtube:id/save_to_playlist_button",
+  },
   SAVE_PLAYLIST_ALT: { contentDesc: "재생목록에 저장" },
   WATCH_LATER: { textContains: "나중에 볼 동영상" },
   HOME_FEED: { resourceId: "com.google.android.youtube:id/results" },
   RELATED_VIDEO: { resourceId: "com.google.android.youtube:id/thumbnail" },
-  AUTOPLAY_TOGGLE: { resourceId: "com.google.android.youtube:id/autonav_toggle" },
+  AUTOPLAY_TOGGLE: {
+    resourceId: "com.google.android.youtube:id/autonav_toggle",
+  },
   BOTTOM_NAV_HOME: { contentDesc: "홈" },
   BOTTOM_NAV_SHORTS: { contentDesc: "Shorts" },
   BOTTOM_NAV_SUBS: { contentDesc: "구독" },
@@ -84,10 +120,30 @@ const YT = {
 
 // === Engagement 상수 (agent/docs/engagement-system-design.md) ===
 const PERSONALITY_TYPES = {
-  passive: { likeMult: 0.3, commentMult: 0.0, subscribeMult: 0.2, playlistMult: 0.1 },
-  casual: { likeMult: 0.7, commentMult: 0.3, subscribeMult: 0.5, playlistMult: 0.3 },
-  active: { likeMult: 1.5, commentMult: 1.0, subscribeMult: 1.2, playlistMult: 1.0 },
-  superfan: { likeMult: 2.0, commentMult: 2.0, subscribeMult: 2.0, playlistMult: 2.0 },
+  passive: {
+    likeMult: 0.3,
+    commentMult: 0.0,
+    subscribeMult: 0.2,
+    playlistMult: 0.1,
+  },
+  casual: {
+    likeMult: 0.7,
+    commentMult: 0.3,
+    subscribeMult: 0.5,
+    playlistMult: 0.3,
+  },
+  active: {
+    likeMult: 1.5,
+    commentMult: 1.0,
+    subscribeMult: 1.2,
+    playlistMult: 1.0,
+  },
+  superfan: {
+    likeMult: 2.0,
+    commentMult: 2.0,
+    subscribeMult: 2.0,
+    playlistMult: 2.0,
+  },
 };
 const PERSONALITY_DISTRIBUTION = [
   { type: "passive", weight: 30 },
@@ -96,11 +152,30 @@ const PERSONALITY_DISTRIBUTION = [
   { type: "superfan", weight: 10 },
 ];
 const TIME_WEIGHT = {
-  0: 0.3, 1: 0.2, 2: 0.1, 3: 0.1, 4: 0.2, 5: 0.3,
-  6: 0.5, 7: 0.7, 8: 0.8,
-  9: 0.9, 10: 1.0, 11: 1.0, 12: 1.1, 13: 1.0, 14: 0.9, 15: 0.9, 16: 1.0,
-  17: 1.1, 18: 1.2, 19: 1.3, 20: 1.3, 21: 1.2,
-  22: 1.0, 23: 0.7,
+  0: 0.3,
+  1: 0.2,
+  2: 0.1,
+  3: 0.1,
+  4: 0.2,
+  5: 0.3,
+  6: 0.5,
+  7: 0.7,
+  8: 0.8,
+  9: 0.9,
+  10: 1.0,
+  11: 1.0,
+  12: 1.1,
+  13: 1.0,
+  14: 0.9,
+  15: 0.9,
+  16: 1.0,
+  17: 1.1,
+  18: 1.2,
+  19: 1.3,
+  20: 1.3,
+  21: 1.2,
+  22: 1.0,
+  23: 0.7,
 };
 const DEFAULT_PROBS = { like: 15, comment: 5, subscribe: 8, playlist: 3 };
 
@@ -133,7 +208,7 @@ class TaskExecutor {
     if (process.env.OPENAI_API_KEY) {
       this.commentGenerator = new CommentGenerator(
         process.env.OPENAI_API_KEY,
-        process.env.OPENAI_MODEL || "gpt-4o-mini"
+        process.env.OPENAI_MODEL || "gpt-4o-mini",
       );
       log.info("[TaskExecutor] ✓ CommentGenerator initialized (OpenAI)");
     } else {
@@ -150,8 +225,13 @@ class TaskExecutor {
   startJobAssignmentPolling(intervalMs = 15000) {
     this._jobPollIntervalMs = intervalMs;
     if (this._jobPollHandle) return;
-    log.info(`[TaskExecutor] Job assignment polling started (${intervalMs / 1000}s)`);
-    this._jobPollHandle = setInterval(() => this._pollJobAssignments(), intervalMs);
+    log.info(
+      `[TaskExecutor] Job assignment polling started (${intervalMs / 1000}s)`,
+    );
+    this._jobPollHandle = setInterval(
+      () => this._pollJobAssignments(),
+      intervalMs,
+    );
     this._pollJobAssignments();
   }
 
@@ -205,30 +285,39 @@ class TaskExecutor {
 
       for (const row of assignments) {
         if (!row || row.id == null) {
-          log.warn("[TaskExecutor] Skipping job_assignment row with missing id");
+          log.warn(
+            "[TaskExecutor] Skipping job_assignment row with missing id",
+          );
           continue;
         }
         if (this._jobRunning.has(row.id)) continue;
 
         // Atomic claim: CAS update pending → running to prevent duplicate execution
-        const { data: claimed, error: claimErr } = await this.supabaseSync.supabase
-          .from("job_assignments")
-          .update({ status: "running", started_at: new Date().toISOString() })
-          .eq("id", row.id)
-          .eq("status", "pending")
-          .select("id")
-          .maybeSingle();
+        const { data: claimed, error: claimErr } =
+          await this.supabaseSync.supabase
+            .from("job_assignments")
+            .update({ status: "running", started_at: new Date().toISOString() })
+            .eq("id", row.id)
+            .eq("status", "pending")
+            .select("id")
+            .maybeSingle();
 
         if (claimErr || !claimed) {
           if (claimErr) {
-            log.warn(`[TaskExecutor] Claim failed for ${row.id}: ${claimErr.message}`);
+            log.warn(
+              `[TaskExecutor] Claim failed for ${row.id}: ${claimErr.message}`,
+            );
           }
           continue;
         }
 
-        log.info(`[TaskExecutor] Claimed job assignment ${row.id} → ${row.device_serial}`);
+        log.info(
+          `[TaskExecutor] Claimed job assignment ${row.id} → ${row.device_serial}`,
+        );
         this._executeJobAssignment(row).catch((err) => {
-          log.error(`[TaskExecutor] Job assignment ${row.id} error: ${err.message}`);
+          log.error(
+            `[TaskExecutor] Job assignment ${row.id} error: ${err.message}`,
+          );
         });
       }
     } catch (err) {
@@ -238,47 +327,67 @@ class TaskExecutor {
 
   async _executeJobAssignment(assignment) {
     if (!assignment) {
-      log.error("[TaskExecutor] _executeJobAssignment: assignment is null/undefined");
+      log.error(
+        "[TaskExecutor] _executeJobAssignment: assignment is null/undefined",
+      );
       return;
     }
     if (assignment.id == null) {
-      log.error("[TaskExecutor] _executeJobAssignment: assignment.id is missing");
+      log.error(
+        "[TaskExecutor] _executeJobAssignment: assignment.id is missing",
+      );
       return;
     }
     this._jobRunning.add(assignment.id);
     const serial = assignment.device_serial;
     if (!serial) {
-      await this._updateJobAssignment(assignment.id, "failed", { error_log: "No device_serial" });
+      await this._updateJobAssignment(assignment.id, "failed", {
+        error_log: "No device_serial",
+      });
       this._jobRunning.delete(assignment.id);
       return;
     }
 
     try {
       if (assignment.job_id == null) {
-        await this._updateJobAssignment(assignment.id, "failed", { error_log: "No job_id" });
+        await this._updateJobAssignment(assignment.id, "failed", {
+          error_log: "No job_id",
+        });
         this._jobRunning.delete(assignment.id);
-        log.error("[TaskExecutor] _executeJobAssignment: assignment.job_id is missing");
+        log.error(
+          "[TaskExecutor] _executeJobAssignment: assignment.job_id is missing",
+        );
         return;
       }
       const { data: job, error: jobErr } = await this.supabaseSync.supabase
         .from("jobs")
-        .select("target_url, duration_sec, duration_min_pct, duration_max_pct, keyword, video_title, title, prob_like, prob_comment, prob_playlist")
+        .select(
+          "target_url, duration_sec, duration_min_pct, duration_max_pct, keyword, video_title, title, prob_like, prob_comment, prob_playlist",
+        )
         .eq("id", assignment.job_id)
         .single();
 
       if (jobErr || !job || !job.target_url) {
-        await this._updateJobAssignment(assignment.id, "failed", { error_log: "Job not found or no target_url" });
+        await this._updateJobAssignment(assignment.id, "failed", {
+          error_log: "Job not found or no target_url",
+        });
         this._jobRunning.delete(assignment.id);
         return;
       }
 
       // Status already set to "running" by atomic claim in _pollJobAssignments
 
-      const minSec = Math.round((job.duration_sec || 60) * (job.duration_min_pct || 30) / 100);
-      const maxSec = Math.round((job.duration_sec || 60) * (job.duration_max_pct || 90) / 100);
+      const minSec = Math.round(
+        ((job.duration_sec || 60) * (job.duration_min_pct || 30)) / 100,
+      );
+      const maxSec = Math.round(
+        ((job.duration_sec || 60) * (job.duration_max_pct || 90)) / 100,
+      );
       const watchDurationSec = _randInt(minSec, maxSec);
 
-      log.info(`[TaskExecutor] Job assignment ${assignment.id} → ${serial} watch ${watchDurationSec}s`);
+      log.info(
+        `[TaskExecutor] Job assignment ${assignment.id} → ${serial} watch ${watchDurationSec}s`,
+      );
 
       const searchKeyword = job.keyword || null;
       const videoTitle = job.video_title || job.title || null;
@@ -303,7 +412,7 @@ class TaskExecutor {
         watchDurationSec,
         searchKeyword,
         videoTitle,
-        engagementConfig
+        engagementConfig,
       );
 
       const { error: completeErr } = await this.supabaseSync.supabase
@@ -312,8 +421,12 @@ class TaskExecutor {
           status: "completed",
           progress_pct: 100,
           completed_at: new Date().toISOString(),
-          ...(result.actualDurationSec != null && { final_duration_sec: result.actualDurationSec }),
-          ...(result.watchPercentage != null && { watch_percentage: result.watchPercentage }),
+          ...(result.actualDurationSec != null && {
+            final_duration_sec: result.actualDurationSec,
+          }),
+          ...(result.watchPercentage != null && {
+            watch_percentage: result.watchPercentage,
+          }),
           did_like: result.liked ?? false,
           did_comment: result.commented ?? false,
           did_playlist: result.playlisted ?? false,
@@ -321,15 +434,25 @@ class TaskExecutor {
         .eq("id", assignment.id);
 
       if (completeErr) {
-        log.error(`[TaskExecutor] Failed to mark ${assignment.id} completed: ${completeErr.message}`);
+        log.error(
+          `[TaskExecutor] Failed to mark ${assignment.id} completed: ${completeErr.message}`,
+        );
       }
 
-      log.info(`[TaskExecutor] ✓ Job assignment ${assignment.id} completed (${result.actualDurationSec}s, ${result.watchPercentage}%)`);
+      log.info(
+        `[TaskExecutor] ✓ Job assignment ${assignment.id} completed (${result.actualDurationSec}s, ${result.watchPercentage}%)`,
+      );
     } catch (err) {
-      log.error(`[TaskExecutor] ✗ Job assignment ${assignment.id} failed: ${err.message}`);
-      const ok = await this._updateJobAssignment(assignment.id, "failed", { error_log: err.message });
+      log.error(
+        `[TaskExecutor] ✗ Job assignment ${assignment.id} failed: ${err.message}`,
+      );
+      const ok = await this._updateJobAssignment(assignment.id, "failed", {
+        error_log: err.message,
+      });
       if (!ok) {
-        log.error(`[TaskExecutor] CRITICAL: Could not mark ${assignment.id} as failed — may remain stuck in running`);
+        log.error(
+          `[TaskExecutor] CRITICAL: Could not mark ${assignment.id} as failed — may remain stuck in running`,
+        );
       }
     } finally {
       this._jobRunning.delete(assignment.id);
@@ -347,7 +470,14 @@ class TaskExecutor {
    * @param {{ probLike?: number, probComment?: number, probSubscribe?: number, probPlaylist?: number, channelName?: string, videoId?: string }} [engagementConfig] - null이면 engagement 비활성화
    * @returns {Promise<{actualDurationSec: number, watchPercentage: number, liked?: boolean, subscribed?: boolean, commented?: boolean, playlisted?: boolean}>}
    */
-  async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig) {
+  async _watchVideoOnDevice(
+    serial,
+    videoUrl,
+    durationSec,
+    searchKeyword,
+    videoTitle,
+    engagementConfig,
+  ) {
     const startTime = Date.now();
     const eng = engagementConfig || {};
 
@@ -357,34 +487,56 @@ class TaskExecutor {
 
     const personality = this._getPersonality(serial);
 
-    const willLike = Math.random() < this._calcProb(eng.probLike ?? DEFAULT_PROBS.like, personality.likeMult);
-    const willSubscribe = Math.random() < this._calcProb(eng.probSubscribe ?? DEFAULT_PROBS.subscribe, personality.subscribeMult);
+    const willLike =
+      Math.random() <
+      this._calcProb(eng.probLike ?? DEFAULT_PROBS.like, personality.likeMult);
+    const willSubscribe =
+      Math.random() <
+      this._calcProb(
+        eng.probSubscribe ?? DEFAULT_PROBS.subscribe,
+        personality.subscribeMult,
+      );
     const willComment =
       this.commentGenerator &&
-      Math.random() < this._calcProb(eng.probComment ?? DEFAULT_PROBS.comment, personality.commentMult);
+      Math.random() <
+        this._calcProb(
+          eng.probComment ?? DEFAULT_PROBS.comment,
+          personality.commentMult,
+        );
     const willPlaylist =
-      Math.random() < this._calcProb(eng.probPlaylist ?? DEFAULT_PROBS.playlist, personality.playlistMult);
+      Math.random() <
+      this._calcProb(
+        eng.probPlaylist ?? DEFAULT_PROBS.playlist,
+        personality.playlistMult,
+      );
     const likeAtSec = durationSec * (_randInt(20, 40) / 100);
     const subscribeAtSec = durationSec * (_randInt(60, 80) / 100);
     const commentAtSec = durationSec * (_randInt(40, 65) / 100);
     const playlistAtSec = durationSec * (_randInt(85, 95) / 100);
-    const actions = { liked: false, subscribed: false, commented: false, playlisted: false };
+    const actions = {
+      liked: false,
+      subscribed: false,
+      commented: false,
+      playlisted: false,
+    };
 
     let commentText = null;
     if (willComment) {
       commentText = await this.commentGenerator.generate(
         videoTitle || "영상",
         eng.channelName || "",
-        eng.videoId || ""
+        eng.videoId || "",
       );
       if (!commentText) {
-        log.warn(`[Engagement] ${serial.substring(0, 6)} comment generation failed, skip`);
+        log.warn(
+          `[Engagement] ${serial.substring(0, 6)} comment generation failed, skip`,
+        );
       }
     }
 
     if (willLike || willComment || willSubscribe || willPlaylist) {
       log.info(
-        `[Engagement] ${serial.substring(0, 6)} [${personality.type}] plan: like=${willLike}@${Math.round(likeAtSec)}s comment=${!!(willComment && commentText)}@${Math.round(commentAtSec)}s sub=${willSubscribe}@${Math.round(subscribeAtSec)}s playlist=${willPlaylist}@${Math.round(playlistAtSec)}s`
+        `[Engagement] ${serial.substring(0, 6)} [${personality.type}] plan: like=${willLike}@${Math.round(likeAtSec)}s comment=${!!(willComment && commentText)}@${Math.round(commentAtSec)}s sub=${willSubscribe}@${Math.round(subscribeAtSec)}s playlist=${willPlaylist}@${Math.round(playlistAtSec)}s`,
       );
     }
 
@@ -392,11 +544,20 @@ class TaskExecutor {
     await _sleep(500);
 
     // 세로 모드 강제 (Galaxy S9)
-    await this.xiaowei.adbShell(serial, "settings put system accelerometer_rotation 0");
+    await this.xiaowei.adbShell(
+      serial,
+      "settings put system accelerometer_rotation 0",
+    );
     await this.xiaowei.adbShell(serial, "settings put system user_rotation 0");
-    await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+    await this.xiaowei.adbShell(
+      serial,
+      "am force-stop com.google.android.youtube",
+    );
     await _sleep(1000);
-    await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
+    await this.xiaowei.adbShell(
+      serial,
+      "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1",
+    );
     await _sleep(_randInt(3000, 5000));
 
     const query = this._buildSearchQuery(searchKeyword, videoTitle, videoUrl);
@@ -405,8 +566,13 @@ class TaskExecutor {
     const searchSuccess = await this._searchAndSelectVideo(serial, query);
 
     if (!searchSuccess) {
-      log.info(`[TaskExecutor] ⚠ ${serial} search failed, falling back to direct URL`);
-      await this.xiaowei.adbShell(serial, `am start -a android.intent.action.VIEW -d '${videoUrl}'`);
+      log.info(
+        `[TaskExecutor] ⚠ ${serial} search failed, falling back to direct URL`,
+      );
+      await this.xiaowei.adbShell(
+        serial,
+        `am start -a android.intent.action.VIEW -d '${videoUrl}'`,
+      );
       await _sleep(_randInt(4000, 7000));
     }
 
@@ -434,10 +600,19 @@ class TaskExecutor {
       if (willLike && !actions.liked && elapsedSec >= likeAtSec) {
         actions.liked = await this._doLike(serial);
       }
-      if (willSubscribe && !actions.subscribed && elapsedSec >= subscribeAtSec) {
+      if (
+        willSubscribe &&
+        !actions.subscribed &&
+        elapsedSec >= subscribeAtSec
+      ) {
         actions.subscribed = await this._doSubscribe(serial);
       }
-      if (willComment && commentText && !actions.commented && elapsedSec >= commentAtSec) {
+      if (
+        willComment &&
+        commentText &&
+        !actions.commented &&
+        elapsedSec >= commentAtSec
+      ) {
         actions.commented = await this._doComment(serial, commentText);
       }
       if (willPlaylist && !actions.playlisted && elapsedSec >= playlistAtSec) {
@@ -449,7 +624,10 @@ class TaskExecutor {
     await _sleep(500);
 
     const actualDurationSec = Math.round((Date.now() - startTime) / 1000);
-    const watchPercentage = durationSec > 0 ? Math.min(100, Math.round((actualDurationSec / durationSec) * 100)) : 0;
+    const watchPercentage =
+      durationSec > 0
+        ? Math.min(100, Math.round((actualDurationSec / durationSec) * 100))
+        : 0;
     return {
       actualDurationSec,
       watchPercentage,
@@ -493,34 +671,46 @@ class TaskExecutor {
    * @returns {Promise<boolean>}
    */
   async _getUiDumpXml(serial) {
-    await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
+    await this.xiaowei.adbShell(
+      serial,
+      "uiautomator dump /sdcard/window_dump.xml",
+    );
     await _sleep(500);
-    const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
+    const dumpRes = await this.xiaowei.adbShell(
+      serial,
+      "cat /sdcard/window_dump.xml",
+    );
     return _extractShellOutput(dumpRes);
   }
 
   _findBoundsInXml(xml, selector) {
     if (!xml || !selector) return null;
 
-    const escapedResourceId = selector.resourceId ? _escapeRegex(selector.resourceId) : null;
-    const escapedContentDesc = selector.contentDesc ? _escapeRegex(selector.contentDesc) : null;
-    const escapedTextContains = selector.textContains ? _escapeRegex(selector.textContains) : null;
+    const escapedResourceId = selector.resourceId
+      ? _escapeRegex(selector.resourceId)
+      : null;
+    const escapedContentDesc = selector.contentDesc
+      ? _escapeRegex(selector.contentDesc)
+      : null;
+    const escapedTextContains = selector.textContains
+      ? _escapeRegex(selector.textContains)
+      : null;
 
     let pattern = null;
     if (selector.resourceId) {
       pattern = new RegExp(
         `resource-id="${escapedResourceId}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-        "i"
+        "i",
       );
     } else if (selector.contentDesc) {
       pattern = new RegExp(
         `content-desc="${escapedContentDesc}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-        "i"
+        "i",
       );
     } else if (selector.textContains) {
       pattern = new RegExp(
         `text="[^"]*${escapedTextContains}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
-        "i"
+        "i",
       );
     }
     if (!pattern) return null;
@@ -530,19 +720,19 @@ class TaskExecutor {
       if (selector.resourceId) {
         const altPattern = new RegExp(
           `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*resource-id="${escapedResourceId}"`,
-          "i"
+          "i",
         );
         match = xml.match(altPattern);
       } else if (selector.contentDesc) {
         const altPattern = new RegExp(
           `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*content-desc="${escapedContentDesc}"`,
-          "i"
+          "i",
         );
         match = xml.match(altPattern);
       } else if (selector.textContains) {
         const altPattern = new RegExp(
           `bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"[^>]*text="[^"]*${escapedTextContains}[^"]*"`,
-          "i"
+          "i",
         );
         match = xml.match(altPattern);
       }
@@ -598,9 +788,15 @@ class TaskExecutor {
    */
   async _hasElement(serial, selector) {
     try {
-      await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
+      await this.xiaowei.adbShell(
+        serial,
+        "uiautomator dump /sdcard/window_dump.xml",
+      );
       await _sleep(500);
-      const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
+      const dumpRes = await this.xiaowei.adbShell(
+        serial,
+        "cat /sdcard/window_dump.xml",
+      );
       const xml = _extractShellOutput(dumpRes);
       if (!xml) return false;
       if (selector.resourceId) return xml.includes(selector.resourceId);
@@ -621,7 +817,10 @@ class TaskExecutor {
       const output = _extractShellOutput(res);
       const match = output && output.match(/(\d+)x(\d+)/);
       if (match) {
-        return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
+        return {
+          width: parseInt(match[1], 10),
+          height: parseInt(match[2], 10),
+        };
       }
     } catch {}
     return { width: 1080, height: 1920 };
@@ -674,7 +873,7 @@ class TaskExecutor {
     try {
       const res = await this.xiaowei.adbShell(
         serial,
-        `am broadcast -a ADB_INPUT_B64 --es msg '${encoded}' 2>/dev/null`
+        `am broadcast -a ADB_INPUT_B64 --es msg '${encoded}' 2>/dev/null`,
       );
       const output = _extractShellOutput(res);
       if (output && output.includes("result=0")) return;
@@ -684,7 +883,10 @@ class TaskExecutor {
 
     try {
       const safe = str.replace(/'/g, "");
-      await this.xiaowei.adbShell(serial, `am broadcast -a clipper.set -e text '${safe}' 2>/dev/null`);
+      await this.xiaowei.adbShell(
+        serial,
+        `am broadcast -a clipper.set -e text '${safe}' 2>/dev/null`,
+      );
       await _sleep(300);
       await this.xiaowei.adbShell(serial, "input keyevent 279");
       return;
@@ -721,7 +923,9 @@ class TaskExecutor {
         return;
       }
 
-      skipped = await this._tapSelectorInXml(serial, xml, { contentDesc: "Skip" });
+      skipped = await this._tapSelectorInXml(serial, xml, {
+        contentDesc: "Skip",
+      });
       if (skipped) {
         log.info(`[TaskExecutor] ⏭ ${serial} ad skipped (Skip)`);
         await _sleep(1500);
@@ -755,7 +959,10 @@ class TaskExecutor {
       await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
     } catch (err) {
       try {
-        const res = await this.xiaowei.adbShell(serial, "dumpsys media_session | grep -E 'state='");
+        const res = await this.xiaowei.adbShell(
+          serial,
+          "dumpsys media_session | grep -E 'state='",
+        );
         const output = _extractShellOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
@@ -772,7 +979,9 @@ class TaskExecutor {
       .update({ status, ...extra })
       .eq("id", assignmentId);
     if (error) {
-      log.error(`[TaskExecutor] Failed to update job_assignment ${assignmentId} → ${status}: ${error.message}`);
+      log.error(
+        `[TaskExecutor] Failed to update job_assignment ${assignmentId} → ${status}: ${error.message}`,
+      );
       return false;
     }
     return true;
@@ -800,7 +1009,9 @@ class TaskExecutor {
     const personality = PERSONALITY_TYPES[selectedType];
     const cached = { ...personality, type: selectedType };
     this._devicePersonalities.set(serial, cached);
-    log.info(`[Engagement] ${serial.substring(0, 6)} personality: ${selectedType}`);
+    log.info(
+      `[Engagement] ${serial.substring(0, 6)} personality: ${selectedType}`,
+    );
     return cached;
   }
 
@@ -823,22 +1034,32 @@ class TaskExecutor {
       const midX = Math.round(screen.width / 2);
       const fromY = Math.round(screen.height * 0.6);
       const toY = Math.round(screen.height * 0.4);
-      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
+      await this.xiaowei.adbShell(
+        serial,
+        `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`,
+      );
       await _sleep(_randInt(800, 1500));
 
       const tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
       if (!tapped) {
-        log.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} like button not found`);
+        log.warn(
+          `[Engagement] ⚠ ${serial.substring(0, 6)} like button not found`,
+        );
         return false;
       }
       await _sleep(_randInt(500, 1000));
       log.info(`[Engagement] 👍 ${serial.substring(0, 6)} liked`);
 
-      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`);
+      await this.xiaowei.adbShell(
+        serial,
+        `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`,
+      );
       await _sleep(_randInt(500, 1000));
       return true;
     } catch (err) {
-      log.warn(`[Engagement] ✗ ${serial.substring(0, 6)} like failed: ${err.message}`);
+      log.warn(
+        `[Engagement] ✗ ${serial.substring(0, 6)} like failed: ${err.message}`,
+      );
       return false;
     }
   }
@@ -850,9 +1071,14 @@ class TaskExecutor {
    */
   async _doSubscribe(serial) {
     try {
-      const alreadySubscribed = await this._hasElement(serial, YT.SUBSCRIBE_TEXT);
+      const alreadySubscribed = await this._hasElement(
+        serial,
+        YT.SUBSCRIBE_TEXT,
+      );
       if (alreadySubscribed) {
-        log.info(`[Engagement] 🔔 ${serial.substring(0, 6)} already subscribed, skip`);
+        log.info(
+          `[Engagement] 🔔 ${serial.substring(0, 6)} already subscribed, skip`,
+        );
         return false;
       }
       let tapped = await this._findAndTap(serial, YT.SUBSCRIBE_BUTTON, 1);
@@ -860,7 +1086,9 @@ class TaskExecutor {
         tapped = await this._findAndTap(serial, { contentDesc: "구독" }, 1);
       }
       if (!tapped) {
-        log.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} subscribe button not found`);
+        log.warn(
+          `[Engagement] ⚠ ${serial.substring(0, 6)} subscribe button not found`,
+        );
         return false;
       }
       await _sleep(_randInt(1000, 2000));
@@ -869,10 +1097,14 @@ class TaskExecutor {
         log.info(`[Engagement] 🔔 ${serial.substring(0, 6)} subscribed!`);
         return true;
       }
-      log.info(`[Engagement] 🔔 ${serial.substring(0, 6)} subscribe tapped (unconfirmed)`);
+      log.info(
+        `[Engagement] 🔔 ${serial.substring(0, 6)} subscribe tapped (unconfirmed)`,
+      );
       return true;
     } catch (err) {
-      log.warn(`[Engagement] ✗ ${serial.substring(0, 6)} subscribe failed: ${err.message}`);
+      log.warn(
+        `[Engagement] ✗ ${serial.substring(0, 6)} subscribe failed: ${err.message}`,
+      );
       return false;
     }
   }
@@ -891,16 +1123,19 @@ class TaskExecutor {
       for (let i = 0; i < 3; i++) {
         await this.xiaowei.adbShell(
           serial,
-          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
+          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`,
         );
         await _sleep(_randInt(600, 1000));
       }
       await _sleep(_randInt(1000, 1500));
 
       let found = await this._findAndTap(serial, YT.COMMENT_INPUT, 2);
-      if (!found) found = await this._findAndTap(serial, YT.COMMENT_INPUT_ALT, 1);
+      if (!found)
+        found = await this._findAndTap(serial, YT.COMMENT_INPUT_ALT, 1);
       if (!found) {
-        log.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment input not found`);
+        log.warn(
+          `[Engagement] ⚠ ${serial.substring(0, 6)} comment input not found`,
+        );
         await this._scrollBackToVideo(serial, screen);
         return false;
       }
@@ -910,9 +1145,12 @@ class TaskExecutor {
       await _sleep(_randInt(1000, 2500));
 
       let posted = await this._findAndTap(serial, YT.COMMENT_POST, 2);
-      if (!posted) posted = await this._findAndTap(serial, YT.COMMENT_POST_ALT, 1);
+      if (!posted)
+        posted = await this._findAndTap(serial, YT.COMMENT_POST_ALT, 1);
       if (!posted) {
-        log.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment post button not found`);
+        log.warn(
+          `[Engagement] ⚠ ${serial.substring(0, 6)} comment post button not found`,
+        );
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
         await _sleep(500);
         await this._scrollBackToVideo(serial, screen);
@@ -920,12 +1158,16 @@ class TaskExecutor {
       }
 
       await _sleep(_randInt(2000, 3000));
-      log.info(`[Engagement] 💬 ${serial.substring(0, 6)} commented: "${commentText.substring(0, 30)}..."`);
+      log.info(
+        `[Engagement] 💬 ${serial.substring(0, 6)} commented: "${commentText.substring(0, 30)}..."`,
+      );
 
       await this._scrollBackToVideo(serial, screen);
       return true;
     } catch (err) {
-      log.warn(`[Engagement] ✗ ${serial.substring(0, 6)} comment failed: ${err.message}`);
+      log.warn(
+        `[Engagement] ✗ ${serial.substring(0, 6)} comment failed: ${err.message}`,
+      );
       try {
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
       } catch {}
@@ -941,7 +1183,7 @@ class TaskExecutor {
     for (let i = 0; i < 3; i++) {
       await this.xiaowei.adbShell(
         serial,
-        `input swipe ${midX} ${Math.round(screen.height * 0.3)} ${midX} ${Math.round(screen.height * 0.7)} ${_randInt(400, 700)}`
+        `input swipe ${midX} ${Math.round(screen.height * 0.3)} ${midX} ${Math.round(screen.height * 0.7)} ${_randInt(400, 700)}`,
       );
       await _sleep(_randInt(400, 700));
     }
@@ -956,9 +1198,12 @@ class TaskExecutor {
   async _doSavePlaylist(serial) {
     try {
       let found = await this._findAndTap(serial, YT.SAVE_PLAYLIST, 1);
-      if (!found) found = await this._findAndTap(serial, YT.SAVE_PLAYLIST_ALT, 1);
+      if (!found)
+        found = await this._findAndTap(serial, YT.SAVE_PLAYLIST_ALT, 1);
       if (!found) {
-        log.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} playlist save button not found`);
+        log.warn(
+          `[Engagement] ⚠ ${serial.substring(0, 6)} playlist save button not found`,
+        );
         return false;
       }
       await _sleep(_randInt(1500, 2500));
@@ -966,19 +1211,25 @@ class TaskExecutor {
       const selected = await this._findAndTap(serial, YT.WATCH_LATER, 1);
       if (selected) {
         await _sleep(_randInt(1000, 1500));
-        log.info(`[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`);
+        log.info(
+          `[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`,
+        );
       } else {
         const screen = await this._getScreenSize(serial);
         await this.xiaowei.adbShell(
           serial,
-          `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`
+          `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`,
         );
         await _sleep(_randInt(1000, 1500));
-        log.info(`[Engagement] 📋 ${serial.substring(0, 6)} saved to playlist (first option)`);
+        log.info(
+          `[Engagement] 📋 ${serial.substring(0, 6)} saved to playlist (first option)`,
+        );
       }
       return true;
     } catch (err) {
-      log.warn(`[Engagement] ✗ ${serial.substring(0, 6)} playlist save failed: ${err.message}`);
+      log.warn(
+        `[Engagement] ✗ ${serial.substring(0, 6)} playlist save failed: ${err.message}`,
+      );
       try {
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
       } catch {}
@@ -993,13 +1244,21 @@ class TaskExecutor {
    */
   async _doWarmup(serial, durationSec = 120) {
     try {
-      log.info(`[Warmup] 🔥 ${serial.substring(0, 6)} starting warmup (${durationSec}s)`);
+      log.info(
+        `[Warmup] 🔥 ${serial.substring(0, 6)} starting warmup (${durationSec}s)`,
+      );
       const screen = await this._getScreenSize(serial);
       const midX = Math.round(screen.width / 2);
 
-      await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+      await this.xiaowei.adbShell(
+        serial,
+        "am force-stop com.google.android.youtube",
+      );
       await _sleep(1000);
-      await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
+      await this.xiaowei.adbShell(
+        serial,
+        "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1",
+      );
       await _sleep(_randInt(3000, 5000));
 
       await this._findAndTap(serial, YT.BOTTOM_NAV_HOME, 0);
@@ -1009,7 +1268,7 @@ class TaskExecutor {
       for (let i = 0; i < scrollCount; i++) {
         await this.xiaowei.adbShell(
           serial,
-          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
+          `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`,
         );
         await _sleep(_randInt(1500, 3000));
       }
@@ -1038,18 +1297,22 @@ class TaskExecutor {
           await _sleep(5000);
           watched += 5000;
           if (watched % 15000 < 5000) await this._trySkipAd(serial);
-          if (watched % 30000 < 5000) await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+          if (watched % 30000 < 5000)
+            await this.xiaowei.adbShell(
+              serial,
+              "input keyevent KEYCODE_WAKEUP",
+            );
         }
 
         videosWatched++;
         log.info(
-          `[Warmup] ${serial.substring(0, 6)} watched video #${videosWatched} (${Math.round(actualWatch / 1000)}s)`
+          `[Warmup] ${serial.substring(0, 6)} watched video #${videosWatched} (${Math.round(actualWatch / 1000)}s)`,
         );
 
         if (Math.random() < 0.5 && Date.now() - startTime < targetMs) {
           await this.xiaowei.adbShell(
             serial,
-            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
+            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`,
           );
           await _sleep(_randInt(1000, 2000));
           await this._findAndTap(serial, YT.RELATED_VIDEO, 0);
@@ -1059,7 +1322,7 @@ class TaskExecutor {
           await _sleep(_randInt(1500, 2500));
           await this.xiaowei.adbShell(
             serial,
-            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
+            `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`,
           );
           await _sleep(_randInt(1500, 2500));
         }
@@ -1068,10 +1331,12 @@ class TaskExecutor {
       await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
       await _sleep(500);
       log.info(
-        `[Warmup] ✓ ${serial.substring(0, 6)} warmup done (${videosWatched} videos, ${Math.round((Date.now() - startTime) / 1000)}s)`
+        `[Warmup] ✓ ${serial.substring(0, 6)} warmup done (${videosWatched} videos, ${Math.round((Date.now() - startTime) / 1000)}s)`,
       );
     } catch (err) {
-      log.error(`[Warmup] ✗ ${serial.substring(0, 6)} warmup error: ${err.message}`);
+      log.error(
+        `[Warmup] ✗ ${serial.substring(0, 6)} warmup error: ${err.message}`,
+      );
       try {
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
       } catch {}
@@ -1101,7 +1366,7 @@ class TaskExecutor {
   async execute(task) {
     if (this.running.size >= this.maxConcurrent) {
       log.info(
-        `[TaskExecutor] Max concurrent tasks reached (${this.maxConcurrent}), skipping ${task.id}`
+        `[TaskExecutor] Max concurrent tasks reached (${this.maxConcurrent}), skipping ${task.id}`,
       );
       return;
     }
@@ -1138,7 +1403,12 @@ class TaskExecutor {
         if (devices == null) {
           throw new Error("No devices for this PC");
         }
-        const result = await this._dispatch(taskType, task, devices, deviceConfigs);
+        const result = await this._dispatch(
+          taskType,
+          task,
+          devices,
+          deviceConfigs,
+        );
         const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
         // 5. Extract response summary for logging
@@ -1152,7 +1422,7 @@ class TaskExecutor {
           task.payload,
           result,
           "success",
-          `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`
+          `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`,
         );
 
         // 7. Update video play_count if this was a batch task
@@ -1161,16 +1431,25 @@ class TaskExecutor {
         }
 
         // 8. Mark completed
-        await this.supabaseSync.updateTaskStatus(task.id, "completed", result, null);
+        await this.supabaseSync.updateTaskStatus(
+          task.id,
+          "completed",
+          result,
+          null,
+        );
         this.stats.succeeded++;
-        log.info(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`);
+        log.info(
+          `[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`,
+        );
       })();
 
       await _withTimeout(work, timeoutMs);
     } catch (err) {
       const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
       this.stats.failed++;
-      log.error(`[TaskExecutor] ✗ ${task.id} failed: ${err.message} (${durationSec}s)`);
+      log.error(
+        `[TaskExecutor] ✗ ${task.id} failed: ${err.message} (${durationSec}s)`,
+      );
 
       // Log failure
       await this.supabaseSync.insertExecutionLog(
@@ -1180,11 +1459,16 @@ class TaskExecutor {
         task.payload,
         null,
         "error",
-        `${err.message} (${durationSec}s)`
+        `${err.message} (${durationSec}s)`,
       );
 
       // Mark failed and increment retry
-      await this.supabaseSync.updateTaskStatus(task.id, "failed", null, err.message);
+      await this.supabaseSync.updateTaskStatus(
+        task.id,
+        "failed",
+        null,
+        err.message,
+      );
       await this.supabaseSync.incrementRetryCount(task.id);
     } finally {
       this.running.delete(task.id);
@@ -1204,7 +1488,9 @@ class TaskExecutor {
         .eq("job_id", taskId);
 
       if (error) {
-        log.warn(`[TaskExecutor] Failed to fetch job_assignments: ${error.message}`);
+        log.warn(
+          `[TaskExecutor] Failed to fetch job_assignments: ${error.message}`,
+        );
         return new Map();
       }
 
@@ -1216,14 +1502,19 @@ class TaskExecutor {
       for (const row of data) {
         const serial = row.device_serial || row.device_id;
         if (serial && row.video_url && row.video_id) {
-          configs.set(serial, { video_url: row.video_url, video_id: row.video_id });
+          configs.set(serial, {
+            video_url: row.video_url,
+            video_id: row.video_id,
+          });
         }
       }
 
       log.info(`[TaskExecutor] Loaded ${configs.size} per-device configs`);
       return configs;
     } catch (err) {
-      log.warn(`[TaskExecutor] job_assignments query failed — skipping (${err.message})`);
+      log.warn(
+        `[TaskExecutor] job_assignments query failed — skipping (${err.message})`,
+      );
       return new Map();
     }
   }
@@ -1242,11 +1533,15 @@ class TaskExecutor {
     for (const [videoId, count] of videoIdCounts) {
       const { error } = await this.supabaseSync.supabase
         .from("videos")
-        .update({ play_count: this.supabaseSync.supabase.rpc("increment", { x: count }) })
+        .update({
+          play_count: this.supabaseSync.supabase.rpc("increment", { x: count }),
+        })
         .eq("id", videoId);
 
       if (error) {
-        log.warn(`[TaskExecutor] Failed to increment play_count for video ${videoId}: ${error.message}`);
+        log.warn(
+          `[TaskExecutor] Failed to increment play_count for video ${videoId}: ${error.message}`,
+        );
       }
     }
   }
@@ -1264,7 +1559,7 @@ class TaskExecutor {
         : null;
     const targets = await this.supabaseSync.getDeviceTargetsForExecution(
       pcId,
-      serials
+      serials,
     );
     if (targets.length === 0) return null;
     return targets.join(",");
@@ -1289,17 +1584,26 @@ class TaskExecutor {
     switch (taskType) {
       case "watch_video":
       case "view_farm":
-        return this._executeWatchVideo(devices, payload, options, deviceConfigs);
+        return this._executeWatchVideo(
+          devices,
+          payload,
+          options,
+          deviceConfigs,
+        );
 
       case "subscribe": {
         const actionName = payload.actionName || "YouTube_구독";
-        log.info(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`,
+        );
         return this.xiaowei.actionCreate(devices, actionName, options);
       }
 
       case "like": {
         const actionName = payload.actionName || "YouTube_좋아요";
-        log.info(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`,
+        );
         return this.xiaowei.actionCreate(devices, actionName, options);
       }
 
@@ -1313,49 +1617,63 @@ class TaskExecutor {
         if (!payload.actionName) {
           throw new Error("actionName is required for action type");
         }
-        log.info(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`,
+        );
         return this.xiaowei.actionCreate(devices, payload.actionName, options);
 
       case "script":
         if (!payload.scriptPath) {
           throw new Error("scriptPath is required for script type");
         }
-        log.info(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`,
+        );
         return this.xiaowei.autojsCreate(devices, payload.scriptPath, options);
 
       case "adb":
         if (!payload.command) {
           throw new Error("command is required for adb type");
         }
-        log.info(`[TaskExecutor]   Xiaowei adb: "${payload.command}" → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei adb: "${payload.command}" → ${devices}`,
+        );
         return this.xiaowei.adb(devices, payload.command);
 
       case "adb_shell":
         if (!payload.command) {
           throw new Error("command is required for adb_shell type");
         }
-        log.info(`[TaskExecutor]   Xiaowei adbShell: "${payload.command}" → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei adbShell: "${payload.command}" → ${devices}`,
+        );
         return this.xiaowei.adbShell(devices, payload.command);
 
       case "start_app":
         if (!payload.packageName) {
           throw new Error("packageName is required for start_app type");
         }
-        log.info(`[TaskExecutor]   Xiaowei startApk: ${payload.packageName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei startApk: ${payload.packageName} → ${devices}`,
+        );
         return this.xiaowei.startApk(devices, payload.packageName);
 
       case "stop_app":
         if (!payload.packageName) {
           throw new Error("packageName is required for stop_app type");
         }
-        log.info(`[TaskExecutor]   Xiaowei stopApk: ${payload.packageName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei stopApk: ${payload.packageName} → ${devices}`,
+        );
         return this.xiaowei.stopApk(devices, payload.packageName);
 
       case "install_apk":
         if (!payload.filePath) {
           throw new Error("filePath is required for install_apk type");
         }
-        log.info(`[TaskExecutor]   Xiaowei installApk: ${payload.filePath} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei installApk: ${payload.filePath} → ${devices}`,
+        );
         return this.xiaowei.installApk(devices, payload.filePath);
 
       case "screenshot":
@@ -1364,9 +1682,13 @@ class TaskExecutor {
 
       case "push_event":
         if (payload.type == null || payload.type === undefined) {
-          throw new Error("type is required for push_event (0=back, 1=home, 2=recents)");
+          throw new Error(
+            "type is required for push_event (0=back, 1=home, 2=recents)",
+          );
         }
-        log.info(`[TaskExecutor]   Xiaowei pushEvent: type=${payload.type} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei pushEvent: type=${payload.type} → ${devices}`,
+        );
         return this.xiaowei.pushEvent(devices, String(payload.type));
 
       case "run_script":
@@ -1374,14 +1696,18 @@ class TaskExecutor {
           throw new Error("scriptPath is required for run_script type");
         }
         const runScriptPath = this._resolveScriptPath(payload.scriptPath);
-        log.info(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`,
+        );
         return this.xiaowei.autojsCreate(devices, runScriptPath, options);
 
       case "actionCreate":
         if (!payload.actionName) {
           throw new Error("actionName is required for actionCreate type");
         }
-        log.info(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
+        log.info(
+          `[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`,
+        );
         return this.xiaowei.actionCreate(devices, payload.actionName, options);
 
       default:
@@ -1392,24 +1718,36 @@ class TaskExecutor {
   async _executeWatchVideo(devices, payload, options, deviceConfigs) {
     // If we have per-device configs (batch task), execute individually for each device
     if (deviceConfigs && deviceConfigs.size > 0) {
-      log.info(`[TaskExecutor]   Batch execution: ${deviceConfigs.size} devices with individual videos`);
+      log.info(
+        `[TaskExecutor]   Batch execution: ${deviceConfigs.size} devices with individual videos`,
+      );
       const results = [];
 
       for (const [deviceSerial, config] of deviceConfigs) {
         const devicePayload = { ...payload, video_url: config.video_url };
-        log.info(`[TaskExecutor]   Device ${deviceSerial} → ${config.video_url}`);
+        log.info(
+          `[TaskExecutor]   Device ${deviceSerial} → ${config.video_url}`,
+        );
 
         if (payload.actionName) {
-          const result = await this.xiaowei.actionCreate(deviceSerial, payload.actionName, options);
+          const result = await this.xiaowei.actionCreate(
+            deviceSerial,
+            payload.actionName,
+            options,
+          );
           results.push({ device: deviceSerial, result });
         } else {
           const scriptName = payload.scriptPath || "youtube_watch.js";
           const scriptPath = this._resolveScriptPath(scriptName);
-          const result = await this.xiaowei.autojsCreate(deviceSerial, scriptPath, {
-            ...options,
-            taskInterval: payload.taskInterval || [2000, 5000],
-            deviceInterval: payload.deviceInterval || "1000",
-          });
+          const result = await this.xiaowei.autojsCreate(
+            deviceSerial,
+            scriptPath,
+            {
+              ...options,
+              taskInterval: payload.taskInterval || [2000, 5000],
+              deviceInterval: payload.deviceInterval || "1000",
+            },
+          );
           results.push({ device: deviceSerial, result });
         }
       }
@@ -1419,13 +1757,17 @@ class TaskExecutor {
 
     // Fall back to standard execution (all devices get same video)
     if (payload.actionName) {
-      log.info(`[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`);
+      log.info(
+        `[TaskExecutor]   Xiaowei actionCreate: ${payload.actionName} → ${devices}`,
+      );
       return this.xiaowei.actionCreate(devices, payload.actionName, options);
     }
 
     const scriptName = payload.scriptPath || "youtube_watch.js";
     const scriptPath = this._resolveScriptPath(scriptName);
-    log.info(`[TaskExecutor]   Xiaowei autojsCreate: ${scriptName} → ${devices}`);
+    log.info(
+      `[TaskExecutor]   Xiaowei autojsCreate: ${scriptName} → ${devices}`,
+    );
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
       taskInterval: payload.taskInterval || [2000, 5000],
@@ -1436,12 +1778,16 @@ class TaskExecutor {
   async _executeComment(devices, payload, options) {
     if (payload.scriptPath) {
       const scriptPath = this._resolveScriptPath(payload.scriptPath);
-      log.info(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
+      log.info(
+        `[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`,
+      );
       return this.xiaowei.autojsCreate(devices, scriptPath, options);
     }
 
     const actionName = payload.actionName || "YouTube_댓글";
-    log.info(`[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`);
+    log.info(
+      `[TaskExecutor]   Xiaowei actionCreate: ${actionName} → ${devices}`,
+    );
     return this.xiaowei.actionCreate(devices, actionName, options);
   }
 
@@ -1450,7 +1796,9 @@ class TaskExecutor {
       throw new Error("scriptPath is required for custom task type");
     }
     const scriptPath = this._resolveScriptPath(payload.scriptPath);
-    log.info(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
+    log.info(
+      `[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`,
+    );
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
       taskInterval: payload.taskInterval || [2000, 5000],
@@ -1498,7 +1846,8 @@ function _extractResponseSummary(result) {
   if (result.message) return String(result.message).substring(0, 100);
   if (result.status) return `status=${result.status}`;
   if (result.code !== undefined) return `code=${result.code}`;
-  if (result.success !== undefined) return result.success ? "success=true" : "success=false";
+  if (result.success !== undefined)
+    return result.success ? "success=true" : "success=false";
 
   return null;
 }
