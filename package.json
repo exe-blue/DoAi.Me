@@ -2,11 +2,11 @@
   "name": "doai-me",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["packages/*"],
   "scripts": {
+    "preinstall": "node ./scripts/guard-devcontainer.mjs",
+    "prebuild": "node ./scripts/guard-devcontainer.mjs",
+    "pretest": "node ./scripts/guard-devcontainer.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

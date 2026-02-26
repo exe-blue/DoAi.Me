@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -89,7 +89,7 @@ interface YouTubeVideoInfo {
   viewCount?: string;
 }
 
-export default function ContentPage() {
+function ContentPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const statusParam = (searchParams.get("status") as StatusTabKey) || "all";
@@ -1174,5 +1174,13 @@ export default function ContentPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ContentPage() {
+  return (
+    <Suspense fallback={<div className="p-6">로딩 중...</div>}>
+      <ContentPageInner />
+    </Suspense>
   );
 }

@@ -1,10 +1,6 @@
 {
   "compilerOptions": {
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -22,9 +18,7 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     },
     "target": "ES2017"
   },
@@ -35,9 +29,5 @@
     ".next/types/**/*.ts",
     "sentry-example-page"
   ],
-  "exclude": [
-    "node_modules",
-    "app_legacy",
-    "agent"
-  ]
+  "exclude": ["node_modules", "app_legacy", "agent", "apps/**"]
 }
