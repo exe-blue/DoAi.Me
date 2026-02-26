@@ -34,6 +34,39 @@ git config --global core.ignorecase true
 - rebase/대량 정리 전: `git switch -c backup/wsl-win-cleanup-YYYYMMDD`
 - `git reset --hard` / 전체 `git clean -fd`는 사용하지 말 것
 
+## 6. Windows에서만 실행할 Push 및 PR 확인
+
+**아래 명령은 Windows( PowerShell 또는 Git Bash )에서만 실행한다.** WSL/DevContainer가 아닌, 실제 Windows 터미널에서 실행해야 GitHub 인증과 push가 동작한다.
+
+### 6.1 레포 디렉터리로 이동
+
+- **PowerShell 예시** (실제 본인 경로로 바꿀 것):
+
+```powershell
+cd C:\Users\choi\dev\DoAi.Me
+```
+
+- **Git Bash 예시**:
+
+```bash
+cd /c/Users/choi/dev/DoAi.Me
+```
+
+### 6.2 Push 명령 (한 번에 복사해 실행)
+
+```bash
+git fetch origin
+git push --force-with-lease origin feat/cursor-changes
+```
+
+rebase를 이미 했다면 반드시 `--force-with-lease`로 push 한다.
+
+### 6.3 PR 확인 (GitHub UI)
+
+- **Conflict**: PR 페이지에 "This branch has no conflicts with the base branch" 표시되는지 확인.
+- **Files changed**: 로그/아카이브/`.bak`/`C:scriptscmd.json`/`.devcontainer` 등 **제외했어야 할 항목이 포함되지 않았는지** 확인.
+- **Commits 탭**: 커밋 순서와 메시지가 의도한 대로인지 확인 (chore → feat/fix → docs).
+
 ---
 
-*이 문서는 WSL→Windows 정리 자동화 후 재발 방지를 위해 추가됨.*
+_이 문서는 WSL→Windows 정리 자동화 후 재발 방지를 위해 추가됨._
