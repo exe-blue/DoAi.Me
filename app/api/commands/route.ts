@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 
     if (logError) throw logError;
 
-    let devices: Array<{ id: string; serial: string; pc_id: string | null }> =
+    let devices: Array<{ id: string; serial: string; worker_id: string | null }> =
       [];
     if (
       Array.isArray(target_serials) &&
@@ -113,25 +113,24 @@ export async function POST(request: NextRequest) {
     ) {
       const { data: bySerials } = await supabase
         .from("devices")
-        .select("id, serial, pc_id")
+        .select("id, serial, worker_id")
         .in("serial", target_serials as string[])
-        .returns<Array<{ id: string; serial: string; pc_id: string | null }>>();
+        .returns<Array<{ id: string; serial: string; worker_id: string | null }>>();
       devices = bySerials ?? [];
     } else {
-      const { data: pcs } = await supabase
-        .from("pcs")
-        .select("id")
-        .returns<Array<{ id: string }>>();
-      const pcList = pcs?.data ?? pcs ?? [];
+      const { data: workersList } = await supabase
+        .from("workers")
+        .select("id");
+      const list = workersList ?? [];
       const perPc = 20;
-      for (const pc of pcList) {
+      for (const worker of list) {
         const { data: devs } = await supabase
           .from("devices")
-          .select("id, serial, pc_id")
-          .eq("pc_id", (pc as { id: string }).id)
+          .select("id, serial, worker_id")
+          .eq("worker_id", worker.id)
           .limit(perPc)
           .returns<
-            Array<{ id: string; serial: string; pc_id: string | null }>
+            Array<{ id: string; serial: string; worker_id: string | null }>
           >();
         devices = devices.concat(devs ?? []);
       }
@@ -162,7 +161,7 @@ export async function POST(request: NextRequest) {
       config,
       worker_id: null,
       ...(d.id ? { device_id: d.id } : {}),
-      ...(d.pc_id ? { pc_id: d.pc_id } : {}),
+      ...(d.worker_id ? { worker_id: d.worker_id } : {}),
     }));
 
     if (taskDevices.length > 0) {

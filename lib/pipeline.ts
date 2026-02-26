@@ -85,19 +85,18 @@ export async function createManualTask(
     inputs,
   );
 
-  const pcs = await supabase
-    .from("pcs")
-    .select("id")
-    .returns<Array<{ id: string }>>();
-  const pcList = pcs.data ?? [];
+  const { data: workersList } = await supabase
+    .from("workers")
+    .select("id");
+  const pcList = workersList ?? [];
   const perPcCap = Math.min(deviceCount, 20);
   const allTaskDevices: Array<Record<string, unknown>> = [];
 
-  for (const pc of pcList) {
+  for (const worker of pcList) {
     const { data: devices } = await supabase
       .from("devices")
       .select("id, serial")
-      .eq("pc_id", pc.id)
+      .eq("worker_id", worker.id)
       .limit(perPcCap)
       .returns<Array<{ id: string; serial: string }>>();
     const deviceList = devices ?? [];
@@ -110,10 +109,9 @@ export async function createManualTask(
         task_id: task.id,
         device_serial: dev.serial,
         device_id: dev.id,
-        pc_id: pc.id,
+        worker_id: options.workerId ?? worker.id,
         status: "pending",
         config: config as Json,
-        worker_id: options.workerId ?? null,
       });
     }
   }
@@ -291,25 +289,23 @@ export async function createBatchTask(options: BatchTaskOptions) {
     status: string;
     config: Json;
     worker_id: string | null;
-    pc_id?: string | null;
     device_id?: string | null;
   };
 
   const allTaskDevices: TaskDeviceRow[] = [];
   const allConfigs: Array<{ video_url: string; video_id: string }> = [];
 
-  const { data: pcs } = await supabase
-    .from("pcs")
-    .select("id")
-    .returns<Array<{ id: string }>>();
-  const pcList = pcs ?? [];
+  const { data: workersList } = await supabase
+    .from("workers")
+    .select("id");
+  const pcList = workersList ?? [];
 
   if (pcList.length > 0) {
-    for (const pc of pcList) {
+    for (const worker of pcList) {
       const { data: devices } = await supabase
         .from("devices")
         .select("id, serial")
-        .eq("pc_id", pc.id)
+        .eq("worker_id", worker.id)
         .limit(perPcCap)
         .returns<Array<{ id: string; serial: string }>>();
       const deviceList = devices ?? [];
@@ -318,7 +314,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
       const deviceConfigsForPc = _distributeVideos(videos, cap, distribution);
       for (let i = 0; i < cap; i++) {
         const dev = deviceList[i];
-        const serial = dev?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
+        const serial = dev?.serial ?? `worker_${worker.id.slice(0, 8)}_${i + 1}`;
         const base = deviceConfigsForPc[i];
         const config = {
           ...(JSON.parse(JSON.stringify(baseConfig)) as Record<
@@ -336,8 +332,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
           device_serial: serial,
           status: "pending",
           config,
-          worker_id: options.workerId ?? null,
-          pc_id: pc.id,
+          worker_id: options.workerId ?? worker.id,
           device_id: dev?.id,
         });
         allConfigs.push(base);
