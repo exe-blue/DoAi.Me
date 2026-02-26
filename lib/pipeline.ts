@@ -102,7 +102,7 @@ async function fanOutTaskDevices(
         task_id: taskId,
         pc_id: pc.id,
         device_id: dev.id,
-        status: "queued",
+        status: "pending",
         config: config as Json,
       });
     }
@@ -158,7 +158,7 @@ export async function createTaskWithTaskDevices(
       task_id: task.id,
       pc_id: d.pc_id,
       device_id: d.id,
-      status: "queued" as const,
+      status: "pending" as const,
       config: {
         ...(JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>),
         inputs,
@@ -415,7 +415,7 @@ export async function createBatchTask(options: BatchTaskOptions) {
       task_id: task.id,
       pc_id,
       device_id,
-      status: "queued",
+      status: "pending",
       config,
     });
   }

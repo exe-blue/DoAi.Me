@@ -39,7 +39,15 @@ export function err(
 }
 
 export function errFrom(e: unknown, fallbackCode = "INTERNAL_ERROR", fallbackStatus = 500): NextResponse<ApiError> {
-  const message = e instanceof Error ? e.message : String(e);
+  let message: string;
+  if (e instanceof Error) {
+    message = e.message;
+  } else if (e != null && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string") {
+    message = (e as { message: string }).message;
+  } else {
+    const s = String(e);
+    message = s === "[object Object]" ? "오류가 발생했습니다" : s;
+  }
   const status = fallbackStatus;
   return NextResponse.json(
     { ok: false as const, code: fallbackCode, message },

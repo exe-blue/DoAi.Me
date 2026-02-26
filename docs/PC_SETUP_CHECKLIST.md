@@ -2,6 +2,7 @@
 
 > 각 PC(PC01~PC04)에 처음 배포할 때 순서대로 따라할 매뉴얼.
 > PC00은 개발용 — 이미 세팅됨.
+> **원격 PC 실행 흐름·agent/youtube 연동 요약**: [REMOTE_PC_EXECUTION.md](REMOTE_PC_EXECUTION.md)
 
 ---
 

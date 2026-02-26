@@ -19,6 +19,7 @@
 ### Supabase Auth (로그인/회원가입)
 
 - 로그인·인증은 Supabase Auth 사용 (이메일/비밀번호, Magic Link 등)
+- **Supabase Auth (GoTrue) 버전**: 2.187.0 (프로젝트 기준)
 - Supabase Dashboard → Authentication → URL Configuration:
   - Site URL: `http://localhost:3000` (로컬) / `https://doai.me` (프로덕션)
   - Redirect URLs: `http://localhost:3000/auth/callback`, `https://doai.me/auth/callback`
@@ -38,18 +39,18 @@
 
 **파일**: `agent/.env` 또는 `C:\Users\[user]\farm_agent\.env`
 
-| 변수명               | 필수 | 기본값                  | 설명                                          |
+| 변수명               | 필수 | 기본값                  | 설명                                          | 예시                             |
 | -------------------- | ---- | ----------------------- | --------------------------------------------- | -------------------------------- |
 | `WORKER_NAME`        | ✅   | -                       | 워커 호스트명 (고유)                          | `node-pc-01`                     |
-| `WORKER_ID`          | ⚠️   | -                       | Supabase `workers.id` (UUID). 첫 등록 후 할당 |
-| `SUPABASE_URL`       | ✅   | -                       | Supabase 프로젝트 URL                         |
-| `SUPABASE_ANON_KEY`  | ✅   | -                       | Supabase 익명 키                              |
-| `XIAOWEI_WS_URL`     | ✅   | `ws://127.0.0.1:22222/` | Xiaowei WebSocket 주소                        |
+| `WORKER_ID`          | ⚠️   | -                       | Supabase `workers.id` (UUID). 첫 등록 후 할당 | -                                |
+| `SUPABASE_URL`       | ✅   | -                       | Supabase 프로젝트 URL                         | `https://xxx.supabase.co`        |
+| `SUPABASE_ANON_KEY`  | ✅   | -                       | Supabase 익명 키                              | `eyJhbGciOiJIUzI1NiIs...`        |
+| `XIAOWEI_WS_URL`     | ✅   | `ws://127.0.0.1:22222/` | Xiaowei WebSocket 주소                        | `ws://127.0.0.1:22222/`          |
 | `SCRIPTS_DIR`        | ❌   | -                       | AutoJS 스크립트 경로                          | `C:\Users\user\farm_scripts`     |
 | `SCREENSHOTS_DIR`    | ❌   | -                       | 스크린샷 저장 경로                            | `C:\Users\user\farm_screenshots` |
 | `CONFIG_DIR`         | ❌   | -                       | 설정 파일 경로                                | `C:\Users\user\farm_config`      |
-| `HEARTBEAT_INTERVAL` | ❌   | `30000`                 | Heartbeat 주기 (ms)                           |
-| `TASK_POLL_INTERVAL` | ❌   | `5000`                  | 태스크 폴링 주기 (ms)                         |
+| `HEARTBEAT_INTERVAL` | ❌   | `30000`                 | Heartbeat 주기 (ms)                           | `30000`                          |
+| `TASK_POLL_INTERVAL` | ❌   | `5000`                  | 태스크 폴링 주기 (ms)                         | `5000`                           |
 
 ### Agent 환경 규칙
 

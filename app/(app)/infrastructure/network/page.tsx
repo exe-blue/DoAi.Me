@@ -1,10 +1,11 @@
 import { PageHeader } from "@/components/page-header";
+import { NetworkContent } from "./network-content";
 
 export default function NetworkPage() {
   return (
     <>
-      <PageHeader title="네트워크" description="네트워크 설정 및 상태" />
-      <p className="text-muted-foreground">Coming soon. 네트워크 설정 화면입니다.</p>
+      <PageHeader title="네트워크" description="프록시 · 디바이스 · 연결 상태 시각화" />
+      <NetworkContent />
     </>
   );
 }

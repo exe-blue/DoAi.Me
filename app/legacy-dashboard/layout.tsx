@@ -1,9 +1,5 @@
-import { DashboardShell } from "./dashboard-shell";
-
-export default function DashboardLayout({
+export default function LegacyDashboardLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return <DashboardShell>{children}</DashboardShell>;
+}: Readonly<{ children: React.ReactNode }>) {
+  return <>{children}</>;
 }

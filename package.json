@@ -57,6 +57,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@sentry/cli": "^3.2.2",
     "@sentry/nextjs": "^10.38.0",
+    "@supabase/sentry-js-integration": "^0.3.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.47.10",
     "@tanstack/react-table": "^8.21.3",

@@ -18,6 +18,30 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,  // Skip TypeScript build errors to allow containerization
   },
+  async redirects() {
+    return [
+      { source: "/legacy-dashboard", destination: "/dashboard", permanent: true },
+      { source: "/legacy-dashboard/workers", destination: "/infrastructure/pcs", permanent: true },
+      { source: "/legacy-dashboard/devices", destination: "/infrastructure/devices", permanent: true },
+      { source: "/legacy-dashboard/proxies", destination: "/infrastructure/proxies", permanent: true },
+      { source: "/legacy-dashboard/network", destination: "/infrastructure/network", permanent: true },
+      { source: "/legacy-dashboard/channels", destination: "/content/channels", permanent: true },
+      { source: "/legacy-dashboard/content", destination: "/content/content", permanent: true },
+      { source: "/legacy-dashboard/tasks", destination: "/content/tasks", permanent: true },
+      { source: "/legacy-dashboard/completed", destination: "/content/completed", permanent: true },
+      { source: "/legacy-dashboard/scripts", destination: "/automation/scripts", permanent: true },
+      { source: "/legacy-dashboard/scripts/new", destination: "/automation/scripts", permanent: true },
+      { source: "/legacy-dashboard/scripts/:id*", destination: "/automation/scripts", permanent: true },
+      { source: "/legacy-dashboard/workflows", destination: "/automation/workflows", permanent: true },
+      { source: "/legacy-dashboard/workflows/new", destination: "/automation/workflows", permanent: true },
+      { source: "/legacy-dashboard/workflows/:id*", destination: "/automation/workflows", permanent: true },
+      { source: "/legacy-dashboard/presets", destination: "/automation/scripts", permanent: true },
+      { source: "/legacy-dashboard/adb", destination: "/automation/adb", permanent: true },
+      { source: "/legacy-dashboard/settings", destination: "/system/settings", permanent: true },
+      { source: "/legacy-dashboard/logs", destination: "/system/logs", permanent: true },
+      { source: "/legacy-dashboard/errors", destination: "/system/errors", permanent: true },
+    ];
+  },
   webpack: (config, { dev, isServer }) => {
     // Configure webpack cache to help prevent corruption from concurrent builds
     if (dev && !isServer) {

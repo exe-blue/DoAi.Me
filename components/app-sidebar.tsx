@@ -20,6 +20,7 @@ import {
   GitBranch,
   FileCode,
   Users,
+  CheckCircle2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -63,6 +64,7 @@ const navGroups = [
       { href: "/content/content", label: "콘텐츠 등록", icon: Upload },
       { href: "/content/tasks", label: "작업 / 대기열", icon: ListOrdered },
       { href: "/content/schedules", label: "스케줄", icon: Calendar },
+      { href: "/content/completed", label: "완료", icon: CheckCircle2 },
     ],
   },
   {

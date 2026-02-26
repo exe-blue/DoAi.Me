@@ -2,9 +2,12 @@
  * 유일 실행 엔진: claim → steps 실행 → lease 갱신 → complete / fail_or_retry.
  * Device target: devices.connection_id ?? devices.serial_number (fallback serial).
  * Scripts: (scriptId, version) from DB, status=active 강제, op timeoutMs Promise.race.
+ * YouTube: config.inputs.keyword/video_url 있으면 agent/youtube executeYouTubeMission으로 검색·시청·액션 실행.
  */
 const { getLogger } = require("./common/logger");
 const { runScript } = require("./script-cache");
+const { createDev } = require("./youtube-runner-adapter");
+const { executeYouTubeMission } = require("./youtube/flows");
 const log = getLogger("task-devices-runner");
 
 const POLL_INTERVAL_MS = 5000;
@@ -107,6 +110,15 @@ class TaskDevicesRunner {
       }
 
       const cfg = taskDevice.config || {};
+      const inputs = cfg.inputs || {};
+      const payload = cfg.payload || {};
+
+      // YouTube mission: config.inputs.keyword 또는 video_url 있으면 agent/youtube로 검색·시청·액션 실행
+      if (this._isYoutubeMissionConfig(cfg)) {
+        await this._runYoutubeMission(target, cfg, id, pcId);
+        return;
+      }
+
       const snapshot = cfg.snapshot || {};
       const steps = Array.isArray(snapshot.steps) ? snapshot.steps : [];
       if (steps.length === 0) {
@@ -191,6 +203,89 @@ class TaskDevicesRunner {
       );
     } finally {
       this._cleanup(id);
+    }
+  }
+
+  /**
+   * config에 inputs.keyword 또는 inputs.video_url 이 있으면 agent/youtube 미션으로 실행.
+   */
+  _isYoutubeMissionConfig(cfg) {
+    const inputs = cfg.inputs || {};
+    return (
+      (typeof inputs.keyword === "string" && inputs.keyword.length > 0) ||
+      (typeof inputs.video_url === "string" && inputs.video_url.length > 0) ||
+      (typeof inputs.videoId === "string" && inputs.videoId.length > 0)
+    );
+  }
+
+  /**
+   * agent/youtube executeYouTubeMission 실행 후 complete 또는 fail_or_retry.
+   */
+  async _runYoutubeMission(target, cfg, taskDeviceId, pcId) {
+    const inputs = cfg.inputs || {};
+    const payload = cfg.payload || {};
+    const keyword =
+      inputs.keyword ||
+      inputs.videoId ||
+      (inputs.video_url && inputs.video_url.includes("v=")
+        ? inputs.video_url.split("v=")[1].split("&")[0]
+        : null) ||
+      "youtube";
+    const watchPercent = Math.min(100, Math.max(0, Number(payload.watchPercent) ?? 80));
+    const baseDuration = 120;
+    const watchDuration = Math.round((watchPercent / 100) * baseDuration) || 60;
+    const actions = [];
+    if (Number(payload.likeProb) > 0) actions.push("like");
+    if (Number(payload.commentProb) > 0) actions.push("comment");
+    if (payload.subscribeToggle) actions.push("subscribe");
+    if (Number(payload.saveProb) > 0) actions.push("save");
+
+    const mission = {
+      type: "watch_and_engage",
+      videoId: inputs.videoId || null,
+      keyword,
+      watchDuration,
+      actions,
+      probLike: Number(payload.likeProb) ?? 15,
+      probComment: Number(payload.commentProb) ?? 5,
+      probSubscribe: payload.subscribeToggle ? 100 : 0,
+      probSave: Number(payload.saveProb) ?? 3,
+    };
+
+    try {
+      const dev = createDev(this.xiaowei, target);
+      const result = await executeYouTubeMission(dev, mission, {});
+      if (result.success) {
+        await this.supabaseSync.completeTaskDevice(taskDeviceId, pcId, {
+          completed: true,
+          watchedSec: result.watchedSec,
+          watchPct: result.watchPct,
+          actions: result.actions,
+          videoInfo: result.videoInfo,
+        });
+        log.info(
+          "[TaskDevicesRunner] YouTube mission completed task_device %s (watched=%ss)",
+          taskDeviceId,
+          result.watchedSec,
+        );
+      } else {
+        await this.supabaseSync.failOrRetryTaskDevice(
+          taskDeviceId,
+          pcId,
+          result.abortReason || result.errors?.join("; ") || "YouTube mission failed",
+          true,
+        );
+      }
+    } catch (err) {
+      log.error("[TaskDevicesRunner] YouTube mission error task_device %s: %s", taskDeviceId, err.message);
+      await this.supabaseSync.failOrRetryTaskDevice(
+        taskDeviceId,
+        pcId,
+        err.message,
+        err.retryable !== false,
+      );
+    } finally {
+      this._cleanup(taskDeviceId);
     }
   }
 

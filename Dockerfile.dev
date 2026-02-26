@@ -13,15 +13,13 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copy package files
 COPY package*.json ./
 COPY packages/ packages/
+COPY scripts/ scripts/
 
 # Install dependencies (including dev dependencies for dev server)
-RUN npm install
+RUN CI=1 npm install
 
 # Copy source code
 COPY . .
-
-# Build the application for faster initial development server start
-RUN npm run build
 
 # Switch to non-root user
 USER nextjs

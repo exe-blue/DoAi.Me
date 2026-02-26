@@ -29,9 +29,11 @@ export function DashboardContent() {
   }
 
   if (error) {
+    const msg = error?.message ?? "";
+    const displayMessage = msg === "[object Object]" ? "데이터를 불러오지 못했습니다" : msg || "데이터를 불러오지 못했습니다";
     return (
       <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-        {error.message}
+        {displayMessage}
       </div>
     );
   }

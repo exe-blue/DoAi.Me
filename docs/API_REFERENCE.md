@@ -79,6 +79,8 @@
 | PUT | `/api/queue/[id]` | 우선순위/설정 변경 |
 | DELETE | `/api/queue/[id]` | 큐 항목 취소 |
 
+**MVP 최소 경로 (대시보드 없이 영상 인젝션 → 시청 완료)**: [MINIMAL_MVP.md](MINIMAL_MVP.md) 참고. `POST /api/queue` 최소 body 스펙과 채널/영상 준비 방법 정리.
+
 ---
 
 ## 6. 스케줄 (`/api/schedules/`)
