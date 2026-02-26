@@ -4,7 +4,7 @@ import { AdbContent } from "./adb-content";
 export default function AdbPage() {
   return (
     <>
-      <PageHeader title="ADB 콘솔" description="command_logs 기반 명령 실행 및 이력" />
+      <PageHeader title="adb 명령 파일" description="저장된 파일 혹은 웹 등록 · command_logs 기반 명령 실행 및 이력" />
       <AdbContent />
     </>
   );

@@ -11,7 +11,6 @@ import {
   Tv,
   Upload,
   ListOrdered,
-  Zap,
   Terminal,
   Settings,
   FileText,
@@ -69,10 +68,9 @@ const navGroups = [
   {
     label: "AUTOMATION",
     items: [
-      { href: "/automation/presets", label: "프리셋", icon: Zap },
-      { href: "/automation/adb", label: "ADB 콘솔", icon: Terminal },
-      { href: "/automation/workflows", label: "워크플로우", icon: GitBranch },
-      { href: "/automation/scripts", label: "스크립트", icon: FileCode },
+      { href: "/automation/adb", label: "adb 명령 파일", icon: Terminal },
+      { href: "/automation/scripts", label: "js 명령 파일", icon: FileCode },
+      { href: "/automation/workflows", label: "조건별 조합된 명령", icon: GitBranch },
     ],
   },
   {
