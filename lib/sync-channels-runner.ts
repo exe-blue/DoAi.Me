@@ -152,6 +152,8 @@ export async function runSyncChannels(): Promise<
           if (queuedVideoIds.includes(v.id)) continue;
           const insertRow: Record<string, unknown> = {
             task_config: {
+              workflow_ref: { id: "WATCH_MAIN", version: 1 },
+              inputs: { videoId: v.id, channelId: channel.id },
               contentMode: "single",
               videoId: v.id,
               channelId: channel.id,

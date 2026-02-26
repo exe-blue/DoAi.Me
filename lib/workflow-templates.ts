@@ -1,7 +1,10 @@
 /**
- * Shared workflow templates for task_devices.config.
+ * @deprecated Do not use. Replaced by lib/workflow-snapshot.ts and DB-driven workflows (workflows + scripts tables).
+ * Task device config is now built via buildConfigFromWorkflow() from workflow definitions and script refs.
+ * This file is kept only for reference; no new code should import it.
+ *
+ * Shared workflow templates for task_devices.config (legacy).
  * Shape fixed: schemaVersion, workflow (type, name, steps), video, actions, runtime.
- * Key names must not be changed.
  */
 
 export const WORKFLOW_SCHEMA_VERSION = 1;

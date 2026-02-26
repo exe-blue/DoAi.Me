@@ -64,12 +64,15 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     created_at?: string;
   };
   const config = (item.task_config || {}) as Record<string, unknown>;
+  const inputs = (config.inputs as Record<string, unknown> | undefined) ?? {};
   const contentMode = (config.contentMode as string | undefined) ?? "single";
   const videoId =
     (config.videoId as string | undefined) ??
+    (inputs.videoId as string | undefined) ??
     (config.video_id as string | undefined);
   const channelId =
     (config.channelId as string | undefined) ??
+    (inputs.channelId as string | undefined) ??
     (config.channel_id as string | undefined);
 
   if (!videoId || !channelId) {

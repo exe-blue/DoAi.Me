@@ -1,7 +1,11 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Json, VideoRow, TaskDeviceInsert } from "@/lib/supabase/types";
+import type { Json, TaskDeviceInsert } from "@/lib/supabase/types";
 import type { TaskVariables } from "@/lib/types";
-import { buildWatchWorkflowConfig } from "@/lib/workflow-templates";
+import {
+  buildConfigFromWorkflow,
+  DEFAULT_WATCH_WORKFLOW_ID,
+  DEFAULT_WATCH_WORKFLOW_VERSION,
+} from "@/lib/workflow-snapshot";
 
 const DEFAULT_VARIABLES: TaskVariables = {
   watchPercent: 80,
@@ -10,6 +14,8 @@ const DEFAULT_VARIABLES: TaskVariables = {
   saveProb: 5,
   subscribeToggle: false,
 };
+
+const YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v=";
 
 export async function createManualTask(
   videoId: string,
@@ -24,7 +30,7 @@ export async function createManualTask(
   } = {},
 ) {
   const supabase = createSupabaseServerClient();
-
+  const deviceCount = options.deviceCount ?? 20;
   const payload: Json = {
     ...(options.variables ?? DEFAULT_VARIABLES),
   };
@@ -34,7 +40,7 @@ export async function createManualTask(
     channel_id: channelId,
     type: "youtube",
     task_type: "view_farm",
-    device_count: options.deviceCount ?? 20,
+    device_count: deviceCount,
     payload,
     status: "pending",
     ...(options.workerId ? { worker_id: options.workerId } : {}),
@@ -51,11 +57,127 @@ export async function createManualTask(
 
   if (error) throw error;
 
-  // Update video status
   await supabase
     .from("videos")
     .update({ status: "processing", updated_at: new Date().toISOString() })
     .eq("id", videoId);
+
+  const { data: videoRow } = await supabase
+    .from("videos")
+    .select("search_keyword, title")
+    .eq("id", videoId)
+    .maybeSingle()
+    .returns<{
+      search_keyword?: string | null;
+      title?: string | null;
+    } | null>();
+  const keyword =
+    (videoRow?.search_keyword ?? videoRow?.title ?? videoId) || videoId;
+  const inputs = {
+    videoId,
+    video_url: YOUTUBE_WATCH_URL + videoId,
+    keyword: String(keyword),
+  };
+
+  const baseConfig = await buildConfigFromWorkflow(
+    DEFAULT_WATCH_WORKFLOW_ID,
+    DEFAULT_WATCH_WORKFLOW_VERSION,
+    inputs,
+  );
+
+  const pcs = await supabase
+    .from("pcs")
+    .select("id")
+    .returns<Array<{ id: string }>>();
+  const pcList = pcs.data ?? [];
+  const perPcCap = Math.min(deviceCount, 20);
+  const allTaskDevices: Array<Record<string, unknown>> = [];
+
+  for (const pc of pcList) {
+    const { data: devices } = await supabase
+      .from("devices")
+      .select("id, serial")
+      .eq("pc_id", pc.id)
+      .limit(perPcCap)
+      .returns<Array<{ id: string; serial: string }>>();
+    const deviceList = devices ?? [];
+    for (const dev of deviceList) {
+      const config = {
+        ...(JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>),
+        inputs,
+      };
+      allTaskDevices.push({
+        task_id: task.id,
+        device_serial: dev.serial,
+        device_id: dev.id,
+        pc_id: pc.id,
+        status: "pending",
+        config: config as Json,
+        worker_id: options.workerId ?? null,
+      });
+    }
+  }
+
+  if (allTaskDevices.length === 0) {
+    const { data: fallbackDevices } = options.workerId
+      ? await supabase
+          .from("devices")
+          .select("id, serial")
+          .eq("worker_id", options.workerId)
+          .limit(deviceCount)
+          .returns<Array<{ id: string; serial: string }>>()
+      : { data: [] as Array<{ id: string; serial: string }> };
+    const deviceList = fallbackDevices ?? [];
+    const placeholders = Math.max(0, deviceCount - deviceList.length);
+    for (let i = 0; i < deviceList.length; i++) {
+      const dev = deviceList[i];
+      const config = {
+        ...(JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>),
+        inputs,
+      };
+      allTaskDevices.push({
+        task_id: task.id,
+        device_serial: dev.serial,
+        device_id: dev.id,
+        status: "pending",
+        config: config as Json,
+        worker_id: options.workerId ?? null,
+      });
+    }
+    for (let i = 0; i < placeholders; i++) {
+      const config = {
+        ...(JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>),
+        inputs,
+      };
+      allTaskDevices.push({
+        task_id: task.id,
+        device_serial: `device_${i + 1}`,
+        status: "pending",
+        config: config as Json,
+        worker_id: options.workerId ?? null,
+      });
+    }
+  }
+
+  if (allTaskDevices.length > 0) {
+    const withDeviceId = allTaskDevices.filter((r) => r.device_id != null);
+    const withoutDeviceId = allTaskDevices.filter((r) => r.device_id == null);
+    if (withDeviceId.length > 0) {
+      const { error: tdErr } = await supabase
+        .from("task_devices")
+        .upsert(withDeviceId as TaskDeviceInsert[], {
+          onConflict: "task_id,device_id",
+          ignoreDuplicates: true,
+        });
+      if (tdErr) throw tdErr;
+    }
+    if (withoutDeviceId.length > 0) {
+      const { error: insErr } = await supabase
+        .from("task_devices")
+        .insert(withoutDeviceId as TaskDeviceInsert[]);
+      if (insErr) throw insErr;
+    }
+  }
 
   return task;
 }
@@ -153,15 +275,28 @@ export async function createBatchTask(options: BatchTaskOptions) {
 
   if (taskError) throw taskError;
 
-  // Step 3: Create task_devices per PC (가드레일: PC당 최대 deviceCount, 다른 PC에서 가져오지 않음)
+  // Step 3: Build workflow snapshot once, then create task_devices per device (PC당 최대 deviceCount)
   const distribution = options.distribution ?? "round_robin";
-  const perPcCap = deviceCount;
-  /** DB has config, pc_id, device_id (migrations); generated Insert type may be stale */
-  type TaskDeviceInsertRow = TaskDeviceInsert & {
-    config?: Json | null;
+  const perPcCap = Math.min(deviceCount, 20);
+
+  const baseConfig = await buildConfigFromWorkflow(
+    DEFAULT_WATCH_WORKFLOW_ID,
+    DEFAULT_WATCH_WORKFLOW_VERSION,
+    {},
+  );
+
+  type TaskDeviceRow = {
+    task_id: string;
+    device_serial: string;
+    status: string;
+    config: Json;
+    worker_id: string | null;
     pc_id?: string | null;
     device_id?: string | null;
   };
+
+  const allTaskDevices: TaskDeviceRow[] = [];
+  const allConfigs: Array<{ video_url: string; video_id: string }> = [];
 
   const { data: pcs } = await supabase
     .from("pcs")
@@ -169,18 +304,14 @@ export async function createBatchTask(options: BatchTaskOptions) {
     .returns<Array<{ id: string }>>();
   const pcList = pcs ?? [];
 
-  const allTaskDevices: TaskDeviceInsertRow[] = [];
-  const allConfigs: Array<{ video_url: string; video_id: string }> = [];
-
   if (pcList.length > 0) {
     for (const pc of pcList) {
-      const devicesQuery = supabase
+      const { data: devices } = await supabase
         .from("devices")
         .select("id, serial")
         .eq("pc_id", pc.id)
-        .limit(Math.min(perPcCap, 100));
-      const { data: devices } =
-        await devicesQuery.returns<Array<{ id: string; serial: string }>>();
+        .limit(perPcCap)
+        .returns<Array<{ id: string; serial: string }>>();
       const deviceList = devices ?? [];
       const cap = deviceList.length;
       if (cap === 0) continue;
@@ -188,88 +319,86 @@ export async function createBatchTask(options: BatchTaskOptions) {
       for (let i = 0; i < cap; i++) {
         const dev = deviceList[i];
         const serial = dev?.serial ?? `pc_${pc.id.slice(0, 8)}_${i + 1}`;
-        const baseConfig = deviceConfigsForPc[i];
-        const configWithWorkflow = buildWatchWorkflowConfig({
-          title: "",
-          keyword: baseConfig.video_id ?? "",
-          expectedTitleContains: [],
-          minWatchSec: 240,
-          maxWatchSec: 420,
-          minDurationSec: 30,
-          maxDurationSec: 7200,
-          probLike: 0.3,
-          probComment: 0.05,
-          probScrap: 0.1,
-          videoId: baseConfig.video_id,
-        });
-        const configJson = {
-          ...configWithWorkflow,
-          video_url: baseConfig.video_url,
-          video_id: baseConfig.video_id,
+        const base = deviceConfigsForPc[i];
+        const config = {
+          ...(JSON.parse(JSON.stringify(baseConfig)) as Record<
+            string,
+            unknown
+          >),
+          inputs: {
+            videoId: base.video_id,
+            video_url: base.video_url,
+            keyword: base.video_id,
+          },
         } as unknown as Json;
-        const row: TaskDeviceInsertRow = {
+        allTaskDevices.push({
           task_id: task.id,
           device_serial: serial,
           status: "pending",
-          config: configJson,
+          config,
           worker_id: options.workerId ?? null,
           pc_id: pc.id,
-        };
-        if (dev?.id) row.device_id = dev.id;
-        allTaskDevices.push(row);
-        allConfigs.push(deviceConfigsForPc[i]);
+          device_id: dev?.id,
+        });
+        allConfigs.push(base);
       }
     }
   }
 
-  // Fallback: PC가 없거나 모든 PC에 기기가 없으면 기존 방식(workerId 또는 플레이스홀더)
   if (allTaskDevices.length === 0) {
     const deviceConfigs = _distributeVideos(videos, deviceCount, distribution);
-    let deviceSerials: string[] = [];
+    let deviceList: Array<{ id?: string; serial: string }> = [];
     if (options.workerId) {
-      const { data: devices, error: devicesError } = await supabase
+      const { data: devices } = await supabase
         .from("devices")
-        .select("serial")
+        .select("id, serial")
         .eq("worker_id", options.workerId)
         .limit(deviceCount)
-        .returns<Array<{ serial: string }>>();
-      if (!devicesError)
-        deviceSerials = (devices ?? []).map((d: { serial: any }) => d.serial);
+        .returns<Array<{ id: string; serial: string }>>();
+      deviceList = devices ?? [];
     }
-    while (deviceSerials.length < deviceCount) {
-      deviceSerials.push(`device_${deviceSerials.length + 1}`);
+    while (deviceList.length < deviceCount) {
+      deviceList.push({ serial: `device_${deviceList.length + 1}` });
     }
     for (let i = 0; i < deviceCount; i++) {
-      const baseConfig = deviceConfigs[i];
-      const configWithWorkflow = buildWatchWorkflowConfig({
-        title: "",
-        keyword: baseConfig.video_id ?? "",
-        expectedTitleContains: [],
-        videoId: baseConfig.video_id,
-      });
-      const configJson = {
-        ...configWithWorkflow,
-        video_url: baseConfig.video_url,
-        video_id: baseConfig.video_id,
+      const base = deviceConfigs[i];
+      const config = {
+        ...(JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>),
+        inputs: {
+          videoId: base.video_id,
+          video_url: base.video_url,
+          keyword: base.video_id,
+        },
       } as unknown as Json;
       allTaskDevices.push({
         task_id: task.id,
-        device_serial: deviceSerials[i],
+        device_serial: deviceList[i].serial,
         status: "pending",
-        config: configJson,
+        config,
         worker_id: options.workerId ?? null,
+        device_id: deviceList[i].id,
       });
-      allConfigs.push(deviceConfigs[i]);
+      allConfigs.push(base);
     }
   }
 
-  const { error: taskDevicesError } = await supabase
-    .from("task_devices")
-    .upsert(allTaskDevices as TaskDeviceInsert[], {
-      onConflict: "task_id,device_id",
-      ignoreDuplicates: true,
-    });
-  if (taskDevicesError) throw taskDevicesError;
+  const withDeviceId = allTaskDevices.filter((r) => r.device_id != null);
+  const withoutDeviceId = allTaskDevices.filter((r) => r.device_id == null);
+  if (withDeviceId.length > 0) {
+    const { error: taskDevicesError } = await supabase
+      .from("task_devices")
+      .upsert(withDeviceId as TaskDeviceInsert[], {
+        onConflict: "task_id,device_id",
+        ignoreDuplicates: true,
+      });
+    if (taskDevicesError) throw taskDevicesError;
+  }
+  if (withoutDeviceId.length > 0) {
+    const { error: insErr } = await supabase
+      .from("task_devices")
+      .insert(withoutDeviceId as TaskDeviceInsert[]);
+    if (insErr) throw insErr;
+  }
 
   // Step 4: Increment completed_views for assigned videos
   const videoIdCounts = new Map<string, number>();

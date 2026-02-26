@@ -420,8 +420,8 @@ class SupabaseSync {
   }
 
   /**
-   * Get single device_target (connection_id ?? serial) for a task_device row.
-   * Supports both device_id (SSOT) and legacy device_serial.
+   * Get single device target for a task_device: devices.connection_id ?? devices.serial.
+   * Used as Xiaowei request "devices" field (target). Supports device_id (SSOT) and legacy device_serial.
    * @param {object} taskDevice - { device_id?, device_serial?, pc_id? }
    * @returns {Promise<string|null>}
    */

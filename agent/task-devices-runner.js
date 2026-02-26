@@ -1,50 +1,31 @@
 /**
- * Task-devices SSOT runner: claim task_devices rows, run workflow steps, complete/fail with retry.
- * Concurrency: 10 per PC. One running per device. Retry up to 3 times.
- *
- * yt_* / adb_* steps run via youtube-runner-adapter (ADBDevice from Xiaowei + deviceTarget).
- * Legacy watch/watch_video fallback: watchAdapter or _defaultWatch.
+ * Task-devices SSOT runner: claim task_devices, run config.snapshot.steps (scriptRef-based),
+ * lease renewal every 30s, complete_task_device / fail_or_retry_task_device.
+ * Execution unit = task_devices only. Scripts from DB (status=active), version-pinned.
  */
 const { getLogger } = require("./common/logger");
-const { runYoutubeStep } = require("./youtube-runner-adapter");
+const { runScript } = require("./script-cache");
 const log = getLogger("task-devices-runner");
 
 const POLL_INTERVAL_MS = 5000;
-const LEASE_HEARTBEAT_MS = 30000; // 30s lease renewal
+const LEASE_HEARTBEAT_MS = 30000;
 
-const DEFAULT_STEPS = [
-  { module: "yt_preflight", waitSecAfter: 1, params: {} },
-  { module: "yt_search_video", waitSecAfter: 2, params: { mode: "title" } },
-  {
-    module: "yt_watch_video",
-    waitSecAfter: 1,
-    params: { minWatchSec: 240, maxWatchSec: 420 },
-  },
-  {
-    module: "yt_actions",
-    waitSecAfter: 0,
-    params: { like: true, comment: true, scrap: true },
-  },
-];
-
+/**
+ * @param {import('./supabase-sync')} supabaseSync
+ * @param {import('./xiaowei-client')} xiaowei
+ * @param {object} config - { useTaskDevicesEngine, maxConcurrentDevicesPerPc, taskDeviceLeaseMinutes, taskDeviceMaxRetries }
+ */
 class TaskDevicesRunner {
-  /**
-   * @param {import('./supabase-sync')} supabaseSync
-   * @param {import('./xiaowei-client')} xiaowei
-   * @param {object} config - { useTaskDevicesEngine, maxConcurrentTasks, pcNumber }
-   * @param {object} [opts] - { watchAdapter: (deviceTarget, config) => Promise<void> }
-   */
-  constructor(supabaseSync, xiaowei, config, opts = {}) {
+  constructor(supabaseSync, xiaowei, config) {
     this.supabaseSync = supabaseSync;
     this.xiaowei = xiaowei;
     this.config = config;
-    this.watchAdapter = opts.watchAdapter || null;
 
-    this._maxConcurrent = (config && config.maxConcurrentDevicesPerPc) ?? 10;
-    this._leaseMinutes = (config && config.taskDeviceLeaseMinutes) ?? 5;
-    this._maxRetries = (config && config.taskDeviceMaxRetries) ?? 3;
+    this._maxConcurrent = config?.maxConcurrentDevicesPerPc ?? 10;
+    this._leaseMinutes = config?.taskDeviceLeaseMinutes ?? 5;
+    this._maxRetries = config?.taskDeviceMaxRetries ?? 3;
 
-    this._running = new Map(); // task_device_id -> { taskDevice, heartbeatTimer }
+    this._running = new Map();
     this._pollTimer = null;
     this._leaseTimers = new Map();
   }
@@ -57,7 +38,7 @@ class TaskDevicesRunner {
       return;
     }
     log.info(
-      "[TaskDevicesRunner] Started (maxConcurrent=%s, leaseMin=%s)",
+      "[TaskDevicesRunner] Started (slots=%s, leaseMin=%s)",
       this._maxConcurrent,
       this._leaseMinutes,
     );
@@ -81,12 +62,12 @@ class TaskDevicesRunner {
     const pcId = this.supabaseSync.pcId;
     if (!pcId) return;
 
-    const slots = this._maxConcurrent - this._running.size;
-    if (slots <= 0) return;
+    const slots = Math.max(0, this._maxConcurrent - this._running.size);
+    if (slots === 0) return;
 
     const claimed = await this.supabaseSync.claimTaskDevicesForPc(pcId, slots);
     for (const row of claimed) {
-      if (!row || !row.id) continue;
+      if (!row?.id) continue;
       this._runOne(row, pcId);
     }
   }
@@ -97,12 +78,10 @@ class TaskDevicesRunner {
     this._running.set(id, { taskDevice, heartbeatTimer: null });
 
     const startHeartbeat = () => {
-      const t = setInterval(async () => {
-        await this.supabaseSync.renewTaskDeviceLease(
-          id,
-          pcId,
-          this._leaseMinutes,
-        );
+      const t = setInterval(() => {
+        this.supabaseSync
+          .renewTaskDeviceLease(id, pcId, this._leaseMinutes)
+          .catch(() => {});
       }, LEASE_HEARTBEAT_MS);
       if (t.unref) t.unref();
       this._leaseTimers.set(id, t);
@@ -110,13 +89,12 @@ class TaskDevicesRunner {
     startHeartbeat();
 
     try {
-      const deviceTarget =
-        await this.supabaseSync.getDeviceTargetForTaskDevice(taskDevice);
-      if (!deviceTarget) {
+      const target = await this.supabaseSync.getDeviceTargetForTaskDevice(taskDevice);
+      if (!target) {
         await this.supabaseSync.failOrRetryTaskDevice(
           id,
           pcId,
-          "No device_target for task_device",
+          "No device target (connection_id or serial) for task_device",
           false,
         );
         this._cleanup(id);
@@ -124,38 +102,57 @@ class TaskDevicesRunner {
       }
 
       const cfg = taskDevice.config || {};
-      const steps =
-        cfg.workflow?.steps ||
-        (Array.isArray(cfg.steps) ? cfg.steps : DEFAULT_STEPS);
+      const snapshot = cfg.snapshot || {};
+      const steps = Array.isArray(snapshot.steps) ? snapshot.steps : [];
+      if (steps.length === 0) {
+        await this.supabaseSync.failOrRetryTaskDevice(
+          id,
+          pcId,
+          "task_devices.config.snapshot.steps missing or empty",
+          false,
+        );
+        this._cleanup(id);
+        return;
+      }
 
+      const ctx = {
+        target,
+        xiaowei: this.xiaowei,
+        supabase: this.supabaseSync.supabase,
+        taskDeviceId: id,
+        taskDevice,
+        config: cfg,
+      };
+
+      let backgroundPromise = Promise.resolve();
       for (const step of steps) {
-        const module = step.module || "yt_watch_video";
-        const waitSec = step.waitSecAfter ?? 60;
-        const isYtOrAdb =
-          module === "yt_preflight" ||
-          module === "yt_search_video" ||
-          module === "yt_watch_video" ||
-          module === "yt_actions" ||
-          module === "adb_restart" ||
-          module === "adb_optimize";
-        const isLegacyWatch =
-          module === "watch" ||
-          module === "watch_video" ||
-          module === "search_video" ||
-          module === "video_actions";
+        const scriptRef = step.scriptRef;
+        if (!scriptRef?.id || scriptRef.version == null) {
+          await this.supabaseSync.failOrRetryTaskDevice(
+            id,
+            pcId,
+            "Step missing scriptRef.id or scriptRef.version",
+            false,
+          );
+          this._cleanup(id);
+          return;
+        }
 
-        if (isYtOrAdb) {
-          await runYoutubeStep(deviceTarget, this.xiaowei, step, cfg);
-          await _sleep(Math.min(waitSec, 300) * 1000);
-        } else if (isLegacyWatch) {
-          if (this.watchAdapter) {
-            await this.watchAdapter(deviceTarget, { ...cfg, _step: step });
-          } else {
-            await this._defaultWatch(deviceTarget, cfg);
-          }
-          await _sleep(Math.min(waitSec, 300) * 1000);
+        const timeoutMs = step.timeoutMs ?? 180000;
+        const params = step.params ?? {};
+        const isBackground = step.background === true;
+
+        if (isBackground) {
+          backgroundPromise = backgroundPromise.then(() =>
+            this._runOneStep(scriptRef, ctx, params, timeoutMs),
+          );
+        } else {
+          await backgroundPromise;
+          backgroundPromise = Promise.resolve();
+          await this._runOneStep(scriptRef, ctx, params, timeoutMs);
         }
       }
+      await backgroundPromise;
 
       await this.supabaseSync.completeTaskDevice(id, pcId, {
         completed: true,
@@ -163,44 +160,30 @@ class TaskDevicesRunner {
       });
       log.info("[TaskDevicesRunner] Completed task_device %s", id);
     } catch (err) {
-      log.error(
-        "[TaskDevicesRunner] task_device %s error: %s",
-        id,
-        err.message,
-      );
+      log.error("[TaskDevicesRunner] task_device %s error: %s", id, err.message);
       const retryable = err.retryable !== false;
-      await this.supabaseSync.failOrRetryTaskDevice(
-        id,
-        pcId,
-        err.message,
-        retryable,
-      );
+      await this.supabaseSync.failOrRetryTaskDevice(id, pcId, err.message, retryable);
     } finally {
       this._cleanup(id);
     }
   }
 
-  async _defaultWatch(deviceTarget, config) {
-    const videoUrl =
-      config.video_url ||
-      (config.video_id &&
-        `https://www.youtube.com/watch?v=${config.video_id}`) ||
-      null;
-    if (!videoUrl) return;
-    const durationSec = Math.min(Number(config.duration_sec) || 60, 300);
-    try {
-      await this.xiaowei.actionCreate(deviceTarget, "YouTube_시청", {
-        count: 1,
-        taskInterval: [1000, 3000],
-        deviceInterval: "500",
-      });
-    } catch (e) {
-      await this.xiaowei.adbShell(
-        deviceTarget,
-        `am start -a android.intent.action.VIEW -d "${videoUrl}"`,
-      );
-    }
-    await _sleep(durationSec * 1000);
+  /**
+   * Run a single step via script-cache. Resolves on success; throws with retryable set on failure.
+   */
+  async _runOneStep(scriptRef, ctx, params, timeoutMs) {
+    const out = await runScript({
+      supabase: this.supabaseSync.supabase,
+      scriptId: scriptRef.id,
+      version: scriptRef.version,
+      ctx,
+      params,
+      timeoutMs,
+    });
+    if (out.ok) return out.result;
+    const err = new Error(out.error || "Script failed");
+    err.retryable = out.retryable !== false;
+    throw err;
   }
 
   _cleanup(id) {
@@ -213,8 +196,4 @@ class TaskDevicesRunner {
   }
 }
 
-function _sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-module.exports = { TaskDevicesRunner, DEFAULT_STEPS };
+module.exports = { TaskDevicesRunner };

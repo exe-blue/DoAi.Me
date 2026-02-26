@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 export function LoginForm({
@@ -14,7 +15,10 @@ export function LoginForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "error" | "success";
+    text: string;
+  } | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -33,7 +37,9 @@ export function LoginForm({
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?next=${encodeURIComponent(returnTo)}` },
+        options: {
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?next=${encodeURIComponent(returnTo)}`,
+        },
       });
       if (error) {
         setMessage({ type: "error", text: error.message });
@@ -44,7 +50,10 @@ export function LoginForm({
         });
       }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
       if (error) {
         setMessage({ type: "error", text: error.message });
       } else {
@@ -95,8 +104,19 @@ export function LoginForm({
         href={isSignUp ? "/login" : "/login?signup=1"}
         className="text-center text-sm text-muted-foreground hover:text-foreground"
       >
-        {isSignUp ? "이미 계정이 있으신가요? 로그인" : "계정이 없으신가요? 회원가입"}
+        {isSignUp
+          ? "이미 계정이 있으신가요? 로그인"
+          : "계정이 없으신가요? 회원가입"}
       </a>
+      <p className="text-center text-xs text-muted-foreground">
+        <Link href="/agreement" className="underline hover:text-foreground">
+          이용약관
+        </Link>
+        {" · "}
+        <Link href="/privacy" className="underline hover:text-foreground">
+          개인정보처리방침
+        </Link>
+      </p>
     </form>
   );
 }

@@ -1,3 +1,17 @@
+// Load .env.sentry so SENTRY_AUTH_TOKEN is available during build (release + source map upload)
+const path = require("path");
+const fs = require("fs");
+const envSentryPath = path.join(__dirname, ".env.sentry");
+try {
+  const content = fs.readFileSync(envSentryPath, "utf8");
+  content.split("\n").forEach((line) => {
+    const m = line.match(/^\s*([^#=]+)=(.*)$/);
+    if (m) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
+  });
+} catch (_) {
+  // .env.sentry optional (e.g. when token is set only in Vercel env)
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -5,12 +19,12 @@ const nextConfig = {
     // Configure webpack cache to help prevent corruption from concurrent builds
     if (dev && !isServer) {
       config.cache = {
-        type: 'filesystem',
+        type: "filesystem",
         buildDependencies: {
           config: [__filename],
         },
         // Add cache invalidation on config changes
-        version: process.env.NEXT_PUBLIC_BUILD_ID || '1',
+        version: process.env.NEXT_PUBLIC_BUILD_ID || "1",
       };
     }
     return config;
@@ -18,7 +32,6 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
-
 
 // Injected content via Sentry wizard below
 

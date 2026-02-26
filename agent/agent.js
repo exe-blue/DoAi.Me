@@ -345,125 +345,9 @@ async function main() {
     log.info("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Legacy tasks path: Broadcast + postgres_changes + task_queue + poll (only when NOT using task_devices engine)
-  if (!config.useTaskDevicesEngine) {
-    const taskCallback = (task) => {
-      if (task.status === "pending") {
-        taskExecutor.execute(task);
-      }
-    };
-
-    const broadcastResult = await supabaseSync.subscribeToBroadcast(
-      supabaseSync.pcId,
-      taskCallback,
-    );
-    if (broadcastResult.status === "SUBSCRIBED") {
-      log.info("[Agent] ✓ Broadcast room:tasks 구독 완료");
-    } else {
-      log.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
-    }
-
-    const pgResult = await supabaseSync.subscribeToTasks(
-      supabaseSync.pcId,
-      taskCallback,
-    );
-    if (pgResult.status === "SUBSCRIBED") {
-      log.info("[Agent] ✓ postgres_changes 구독 완료");
-    } else {
-      log.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
-    }
-
-    const workerChannelResult =
-      await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
-        onTaskQueue: async (queueRow) => {
-          if (queueRow.status !== "queued") return;
-          const task = await supabaseSync.createTaskFromQueueItem(
-            queueRow,
-            supabaseSync.pcId,
-          );
-          if (task) taskExecutor.execute(task);
-        },
-        onCommand: async (cmdRow) => {
-          if (cmdRow.status !== "pending") return;
-          try {
-            await supabaseSync.supabase
-              .from("commands")
-              .update({ status: "running" })
-              .eq("id", cmdRow.id);
-            await supabaseSync.supabase
-              .from("commands")
-              .update({
-                status: "completed",
-                completed_at: new Date().toISOString(),
-              })
-              .eq("id", cmdRow.id);
-            log.info(`[Agent] Command ${cmdRow.id} completed`);
-          } catch (err) {
-            log.error(`[Agent] Command ${cmdRow.id} failed: ${err.message}`);
-            await supabaseSync.supabase
-              .from("commands")
-              .update({
-                status: "failed",
-                completed_at: new Date().toISOString(),
-                result: { error: err.message },
-              })
-              .eq("id", cmdRow.id);
-          }
-        },
-      });
-    if (workerChannelResult.status === "SUBSCRIBED") {
-      log.info("[Agent] ✓ task_queue + commands 구독 완료");
-    } else {
-      log.warn(
-        `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
-      );
-    }
-
-    const processTaskQueuePending = async () => {
-      try {
-        const items = await supabaseSync.getPendingTaskQueueItems(
-          config.pcNumber,
-        );
-        for (const row of items) {
-          const task = await supabaseSync.createTaskFromQueueItem(
-            row,
-            supabaseSync.pcId,
-          );
-          if (task) taskExecutor.execute(task);
-        }
-      } catch (err) {
-        log.error(`[Agent] Task queue poll error: ${err.message}`);
-      }
-    };
-    taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
-    processTaskQueuePending();
-
-    taskPollHandle = setInterval(async () => {
-      try {
-        const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-        for (const task of tasks) {
-          taskExecutor.execute(task);
-        }
-      } catch (err) {
-        log.error(`[Agent] Task poll error: ${err.message}`);
-      }
-    }, config.taskPollInterval);
-
-    try {
-      const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-      if (tasks.length > 0) {
-        log.info(`[Agent] Found ${tasks.length} pending task(s)`);
-        for (const task of tasks) {
-          taskExecutor.execute(task);
-        }
-      }
-    } catch (err) {
-      log.error(`[Agent] Initial task poll error: ${err.message}`);
-    }
-  } else {
-    // Task-devices path: task_queue → create task + fan-out (no execute); commands → absorb into task + task_devices
-    const workerChannelResult =
-      await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
+  // 12. Task-devices only: task_queue → create task + fan-out; commands → absorb into task + task_devices (no TaskExecutor/tasks/job_assignments execution)
+  const workerChannelResult =
+    await supabaseSync.subscribeToTaskQueueAndCommands(config.pcNumber, {
         onTaskQueue: async (queueRow) => {
           if (queueRow.status !== "queued") return;
           const task = await supabaseSync.createTaskFromQueueItem(
@@ -527,37 +411,34 @@ async function main() {
           }
         },
       });
-    if (workerChannelResult.status === "SUBSCRIBED") {
-      log.info("[Agent] ✓ task_queue + commands 구독 (task_devices fan-out/absorb)");
-    } else {
-      log.warn(
-        `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
-      );
-    }
-
-    const processTaskQueuePending = async () => {
-      try {
-        const items = await supabaseSync.getPendingTaskQueueItems(
-          config.pcNumber,
-        );
-        for (const row of items) {
-          const task = await supabaseSync.createTaskFromQueueItem(
-            row,
-            supabaseSync.pcId,
-          );
-          if (task) {
-            await supabaseSync.fanOutTaskDevicesForTask(task.id, supabaseSync.pcId, {
-              taskConfig: row.task_config,
-            });
-          }
-        }
-      } catch (err) {
-        log.error(`[Agent] Task queue poll error: ${err.message}`);
-      }
-    };
-    taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
-    processTaskQueuePending();
+  if (workerChannelResult.status === "SUBSCRIBED") {
+    log.info("[Agent] ✓ task_queue + commands 구독 (task_devices fan-out/absorb)");
+  } else {
+    log.warn(
+      `[Agent] ✗ task_queue+commands 구독 실패: ${workerChannelResult.status}`,
+    );
   }
+
+  const processTaskQueuePending = async () => {
+    try {
+      const items = await supabaseSync.getPendingTaskQueueItems(config.pcNumber);
+      for (const row of items) {
+        const task = await supabaseSync.createTaskFromQueueItem(
+          row,
+          supabaseSync.pcId,
+        );
+        if (task) {
+          await supabaseSync.fanOutTaskDevicesForTask(task.id, supabaseSync.pcId, {
+            taskConfig: row.task_config,
+          });
+        }
+      }
+    } catch (err) {
+      log.error(`[Agent] Task queue poll error: ${err.message}`);
+    }
+  };
+  taskQueuePollHandle = setInterval(processTaskQueuePending, 60000);
+  processTaskQueuePending();
 
   // 14. Start ADB reconnect monitoring (manager already initialized above)
   if (xiaowei.connected) {
@@ -588,72 +469,22 @@ async function main() {
   scheduleEvaluator.start();
   log.info("[Agent] ✓ Schedule evaluator started");
 
-  // 15b. Start device orchestrator (before VideoDispatcher so nudge target exists)
-  deviceOrchestrator = new DeviceOrchestrator(
-    xiaowei,
-    supabaseSync.supabase,
-    taskExecutor,
-    {
-      pcId: supabaseSync.pcId,
-      maxConcurrent: config.maxConcurrentTasks ?? 10,
-      useTaskDevicesEngine: config.useTaskDevicesEngine,
-    },
-  );
-  log.info(
-    `[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`,
-  );
-  deviceOrchestrator.start();
-  log.info(
-    "[Agent] ✓ Device orchestrator started (Realtime push + 3s fallback)",
-  );
+  // 15b. DeviceOrchestrator not started (execution = task_devices only, no job_assignments)
+  log.info("[Agent] - Device orchestrator skipped (task_devices SSOT)");
 
-  // 15c. Task-devices SSOT runner (when USE_TASK_DEVICES_ENGINE=true)
-  if (config.useTaskDevicesEngine) {
-    const { TaskDevicesRunner } = require("./task-devices-runner");
-    taskDevicesRunner = new TaskDevicesRunner(supabaseSync, xiaowei, config, {
-      watchAdapter: (deviceTarget, cfg) =>
-        taskExecutor.runWatchForDevice(deviceTarget, cfg),
-    });
-    taskDevicesRunner.start();
-    log.info("[Agent] ✓ Task-devices runner started (SSOT engine)");
-  }
+  // 15c. Task-devices SSOT runner (only execution path: claim_task_devices → scriptRef steps)
+  const { TaskDevicesRunner } = require("./task-devices-runner");
+  taskDevicesRunner = new TaskDevicesRunner(supabaseSync, xiaowei, config);
+  taskDevicesRunner.start();
+  log.info("[Agent] ✓ Task-devices runner started (SSOT engine)");
 
   videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  if (config.isPrimaryPc && !config.useTaskDevicesEngine) {
-    // Wire push: VideoDispatcher creates job_assignments → nudge DeviceOrchestrator (legacy only)
-    videoDispatcher.on("nudge", () => {
-      if (deviceOrchestrator) {
-        log.info("[Agent] ⚡ VideoDispatcher → nudge → DeviceOrchestrator");
-        deviceOrchestrator.nudge();
-      }
-    });
-    videoDispatcher.start();
-    log.info(
-      "[Agent] ✓ Video dispatcher started (Realtime push + 60s fallback)",
-    );
-  } else if (config.useTaskDevicesEngine) {
-    log.info(
-      "[Agent] - Video dispatcher skipped (USE_TASK_DEVICES_ENGINE: job_assignments disabled)",
-    );
-  } else {
-    log.info(
-      "[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.",
-    );
-  }
+  log.info(
+    "[Agent] - Video dispatcher skipped (execution = task_devices only, no job_assignments)",
+  );
 
-  // 13a. Poll pending job_assignments only when not using task_devices engine and not DeviceOrchestrator
-  if (config.useTaskDevicesEngine) {
-    log.info(
-      "[Agent] - Job assignment polling skipped (USE_TASK_DEVICES_ENGINE)",
-    );
-  } else if (!deviceOrchestrator) {
-    taskExecutor.startJobAssignmentPolling(15000);
-    log.info("[Agent] ✓ Job assignment polling started");
-  } else {
-    log.info(
-      "[Agent] - Job assignment polling skipped (DeviceOrchestrator active)",
-    );
-  }
+  // 13a. Job assignment polling removed (execution = task_devices only)
+  log.info("[Agent] - Job assignment polling skipped (task_devices SSOT)");
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
@@ -767,13 +598,13 @@ async function shutdown() {
     staleTaskCleaner.stop();
   }
 
-  // Stop device orchestrator
   if (deviceOrchestrator) {
-    if (deviceOrchestrator) deviceOrchestrator.stop();
-    if (taskDevicesRunner) {
-      taskDevicesRunner.stop();
-      taskDevicesRunner = null;
-    }
+    deviceOrchestrator.stop();
+    deviceOrchestrator = null;
+  }
+  if (taskDevicesRunner) {
+    taskDevicesRunner.stop();
+    taskDevicesRunner = null;
   }
 
   // Stop device watchdog
