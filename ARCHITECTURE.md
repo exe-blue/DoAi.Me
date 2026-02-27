@@ -145,7 +145,9 @@
       "action": "autojsCreate",
       "devices": "all",
       "data": [{
-        "path": "D:\\farm_scripts\\youtube_watch.js",
+        // Windows: "D:\\farm_scripts\\youtube_watch.js"
+        // WSL2:    "/mnt/d/farm_scripts/youtube_watch.js"
+        "path": "/mnt/d/farm_scripts/youtube_watch.js",
         "count": 1,
         "taskInterval": [2000, 5000],
         "deviceInterval": "1000"
