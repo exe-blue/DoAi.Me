@@ -296,14 +296,28 @@ class DeviceOrchestrator {
 
     try {
       await this.taskExecutor.runTaskDevice(row);
-      await this.supabase.rpc("complete_task_device", {
+      const res = await this.supabase.rpc("complete_task_device", {
         p_task_device_id: taskDevice.id,
-      }).catch(e => console.warn("[DeviceOrchestrator] complete_task_device:", e.message));
+      });
+      if (res.error) {
+        console.error("[DeviceOrchestrator] complete_task_device failed:", {
+          taskDeviceId: taskDevice.id,
+          error: res.error.message || res.error,
+        });
+        throw new Error(`DB update failed: ${res.error.message || res.error}`);
+      }
     } catch (execErr) {
-      await this.supabase.rpc("fail_or_retry_task_device", {
+      const failRes = await this.supabase.rpc("fail_or_retry_task_device", {
         p_task_device_id: taskDevice.id,
         p_error: execErr.message,
-      }).catch(e => console.warn("[DeviceOrchestrator] fail_or_retry_task_device:", e.message));
+      });
+      if (failRes.error) {
+        console.error("[DeviceOrchestrator] fail_or_retry_task_device failed:", {
+          taskDeviceId: taskDevice.id,
+          execError: execErr.message,
+          dbError: failRes.error.message || failRes.error,
+        });
+      }
       throw execErr;
     } finally {
       this._runningAssignments.delete(taskDevice.id);
