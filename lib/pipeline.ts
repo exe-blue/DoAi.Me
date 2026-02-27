@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import type { Json, VideoRow, TaskDeviceInsert } from "@/lib/supabase/types";
 import type { TaskVariables } from "@/lib/types";
 
@@ -15,7 +15,7 @@ export async function createManualTask(
   channelId: string,
   options: { deviceCount?: number; variables?: TaskVariables; workerId?: string; createdByUserId?: string } = {}
 ) {
-  const supabase = createServerClient();
+  const supabase = createServiceRoleClient();
 
   const payload: Json = {
     ...(options.variables ?? DEFAULT_VARIABLES),
@@ -85,7 +85,7 @@ type BatchTaskOptions = {
 };
 
 export async function createBatchTask(options: BatchTaskOptions) {
-  const supabase = createServerClient();
+  const supabase = createServiceRoleClient();
   const deviceCount = options.deviceCount ?? 20;
   const payload: Json = { ...(options.variables ?? DEFAULT_VARIABLES) };
 
@@ -261,4 +261,64 @@ function _distributeVideos(
   }
 
   return configs;
+}
+
+type TaskWithDevicesOptions = {
+  taskPayload: {
+    type: string;
+    task_type?: string | null;
+    video_id?: string | null;
+    channel_id?: string | null;
+    payload?: Json;
+    status?: string;
+    title?: string | null;
+  };
+  workflowId?: string | null;
+  workflowVersion?: string | null;
+  inputs?: Record<string, unknown> | null;
+  deviceIds?: Array<{ id: string; serial: string; pc_id: string }>;
+};
+
+export async function createTaskWithTaskDevices(options: TaskWithDevicesOptions) {
+  const supabase = createServiceRoleClient();
+
+  const payloadJson: Json = {
+    ...(typeof options.taskPayload.payload === "object" && options.taskPayload.payload !== null
+      ? (options.taskPayload.payload as Record<string, unknown>)
+      : {}),
+    ...(options.workflowId ? { workflow_id: options.workflowId } : {}),
+    ...(options.workflowVersion ? { workflow_version: options.workflowVersion } : {}),
+    ...(options.inputs ? { workflow_inputs: options.inputs } : {}),
+  };
+
+  const { data: task, error } = await supabase
+    .from("tasks")
+    .insert({
+      type: options.taskPayload.type as "youtube" | "preset" | "adb" | "direct" | "batch",
+      task_type: options.taskPayload.task_type ?? null,
+      video_id: options.taskPayload.video_id ?? null,
+      channel_id: options.taskPayload.channel_id ?? null,
+      payload: payloadJson,
+      status: (options.taskPayload.status ?? "pending") as "pending",
+      title: options.taskPayload.title ?? null,
+      device_count: options.deviceIds?.length ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  if (options.deviceIds && options.deviceIds.length > 0) {
+    const taskDevices: TaskDeviceInsert[] = options.deviceIds.map((d) => ({
+      task_id: task.id,
+      device_serial: d.serial,
+      worker_id: d.pc_id,
+      status: "pending" as const,
+      config: {} as Json,
+    }));
+    const { error: devicesError } = await supabase.from("task_devices").insert(taskDevices);
+    if (devicesError) throw devicesError;
+  }
+
+  return task;
 }

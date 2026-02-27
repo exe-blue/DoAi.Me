@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         deviceRows.length > 0
           ? deviceRows
               .filter((d) => d.worker_id != null)
-              .map((d) => ({ id: d.id, pc_id: d.worker_id! }))
+              .map((d) => ({ id: d.id, serial: d.serial, pc_id: d.worker_id! }))
           : undefined,
     });
 

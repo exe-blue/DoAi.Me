@@ -631,8 +631,6 @@ function BulkRegisterModal({
     } finally {
       setLoading(false);
     }
-      setLoading(false);
-    }
   };
 
   return (
