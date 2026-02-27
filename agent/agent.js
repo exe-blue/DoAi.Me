@@ -4,21 +4,21 @@
  * Runs 24/7 on Windows Node PCs
  */
 const config = require("./config");
-const XiaoweiClient = require("./xiaowei-client");
-const SupabaseSync = require("./supabase-sync");
-const { startHeartbeat } = require("./heartbeat");
-const TaskExecutor = require("./task-executor");
-const ProxyManager = require("./proxy-manager");
-const AccountManager = require("./account-manager");
-const ScriptVerifier = require("./script-verifier");
-const DashboardBroadcaster = require("./dashboard-broadcaster");
-const AdbReconnectManager = require("./adb-reconnect");
-const QueueDispatcher = require("./queue-dispatcher");
-const ScheduleEvaluator = require("./schedule-evaluator");
-const StaleTaskCleaner = require("./stale-task-cleaner");
-const DeviceWatchdog = require("./device-watchdog");
-const VideoDispatcher = require("./video-dispatcher");
-const DeviceOrchestrator = require("./device-orchestrator");
+const XiaoweiClient = require("./core/xiaowei-client");
+const SupabaseSync = require("./core/supabase-sync");
+const DashboardBroadcaster = require("./core/dashboard-broadcaster");
+const { startHeartbeat } = require("./device/heartbeat");
+const AdbReconnectManager = require("./device/adb-reconnect");
+const DeviceWatchdog = require("./device/device-watchdog");
+const DeviceOrchestrator = require("./device/device-orchestrator");
+const TaskExecutor = require("./task/task-executor");
+const StaleTaskCleaner = require("./task/stale-task-cleaner");
+const QueueDispatcher = require("./scheduling/queue-dispatcher");
+const ScheduleEvaluator = require("./scheduling/schedule-evaluator");
+const VideoDispatcher = require("./scheduling/video-dispatcher");
+const ProxyManager = require("./setup/proxy-manager");
+const AccountManager = require("./setup/account-manager");
+const ScriptVerifier = require("./setup/script-verifier");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -305,29 +305,16 @@ async function main() {
   console.log("[Agent] ✓ Schedule evaluator started");
 
   videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  if (config.isPrimaryPc) {
-    videoDispatcher.start();
-    console.log("[Agent] ✓ Video dispatcher started (primary PC)");
-  } else {
-    console.log("[Agent] - Video dispatcher skipped (not primary PC). Set IS_PRIMARY_PC=true to create job_assignments.");
-  }
+  console.log("[Agent] - Video dispatcher disabled (job_assignments system replaced by task_devices)");
 
   // 15b. Start device orchestrator
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
     maxConcurrent: config.maxConcurrentTasks || 10,
   });
-  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_assignment)`);
+  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_task_device)`);
   deviceOrchestrator.start();
   console.log("[Agent] ✓ Device orchestrator started");
-
-  // 13a. Poll pending job_assignments only when not using DeviceOrchestrator (orchestrator handles claim_next_assignment)
-  if (!deviceOrchestrator) {
-    taskExecutor.startJobAssignmentPolling(15000);
-    console.log("[Agent] ✓ Job assignment polling started");
-  } else {
-    console.log("[Agent] - Job assignment polling skipped (DeviceOrchestrator active)");
-  }
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {

@@ -693,6 +693,7 @@ export type Database = {
       task_devices: {
         Row: {
           completed_at: string | null
+          config: Json | null
           created_at: string | null
           device_serial: string
           duration_ms: number | null
@@ -711,6 +712,7 @@ export type Database = {
         }
         Insert: {
           completed_at?: string | null
+          config?: Json | null
           created_at?: string | null
           device_serial: string
           duration_ms?: number | null
@@ -729,6 +731,7 @@ export type Database = {
         }
         Update: {
           completed_at?: string | null
+          config?: Json | null
           created_at?: string | null
           device_serial?: string
           duration_ms?: number | null

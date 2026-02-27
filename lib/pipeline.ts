@@ -45,6 +45,30 @@ export async function createManualTask(
     .update({ status: "processing", updated_at: new Date().toISOString() })
     .eq("id", videoId);
 
+  // Create task_devices for each device assigned to this worker
+  if (options.workerId) {
+    const { data: devices } = await supabase
+      .from("devices")
+      .select("serial")
+      .eq("worker_id", options.workerId)
+      .limit(options.deviceCount ?? 20)
+      .returns<Array<{ serial: string }>>();
+
+    if (devices && devices.length > 0) {
+      const taskDevices = devices.map((d) => ({
+        task_id: task.id,
+        device_serial: d.serial,
+        status: "pending" as const,
+        worker_id: options.workerId!,
+        config: {
+          video_url: `https://www.youtube.com/watch?v=${videoId}`,
+          video_id: videoId,
+        } as Json,
+      }));
+      await supabase.from("task_devices").insert(taskDevices);
+    }
+  }
+
   return task;
 }
 
