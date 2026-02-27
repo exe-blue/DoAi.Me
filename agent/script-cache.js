@@ -10,13 +10,8 @@ const { getLogger } = require("./common/logger");
 
 const log = getLogger("script-cache");
 
-const isDevContainer =
-  process.cwd().startsWith("/workspaces") ||
-  process.env.DEVCONTAINER === "true";
-/** Cache base: cache/scripts (DevContainer: agent/cache/scripts; prod: /var/lib/doaime/scripts). */
-const DEFAULT_CACHE_DIR = isDevContainer
-  ? path.join(__dirname, "cache", "scripts")
-  : "/var/lib/doaime/scripts";
+/** Cache base: agent/cache/scripts */
+const DEFAULT_CACHE_DIR = path.join(__dirname, "cache", "scripts");
 
 /**
  * Fetch script from DB by (id, version). Throws if not found or status !== 'active' (강제 규칙 4).
