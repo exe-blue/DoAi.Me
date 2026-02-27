@@ -134,7 +134,7 @@ class DeviceOrchestrator {
   }
 
   /**
-   * 동시 실행 수 체크 → claim_next_task_device → 있으면 실행, 없으면 free_watch 여부
+   * 동시 실행 수 체크 → task_device claim → 있으면 실행, 없으면 free_watch 여부
    */
   async _assignWork(serial) {
     const running = this._runningAssignments.size;
@@ -143,7 +143,7 @@ class DeviceOrchestrator {
     if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
       console.log(`[DeviceOrchestrator] _assignWork(${serial.substring(0, 6)}) pcId=${this.pcId}`);
     }
-    const taskDevice = await this._claimNextTaskDevice();
+    const taskDevice = await this._claimNextTaskDevice(serial);
     if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
       console.log(`[DeviceOrchestrator] claim result: ${taskDevice ? taskDevice.id.substring(0, 8) : "null"}`);
     }
@@ -176,26 +176,80 @@ class DeviceOrchestrator {
   }
 
   /**
-   * RPC claim_task_devices_for_pc(runner_pc_id, max_to_claim) → SETOF task_devices
-   * Resolves device_serial from _deviceIdToSerial map when device_id is a UUID.
+   * Detect function-not-found / signature mismatch RPC errors for fallback.
+   * Handles PostgREST function cache misses and PostgreSQL undefined function cases.
    */
-  async _claimNextTaskDevice() {
+  _isMissingRpcOrSignatureError(error, rpcName) {
+    if (!error) return false;
+    const code = String(error.code || "").toUpperCase();
+    if (code === "PGRST202" || code === "42883") return true;
+    const message = String(error.message || "").toLowerCase();
+    const rpc = String(rpcName || "").toLowerCase();
+    return (
+      message.includes(rpc) && (
+        message.includes("could not find the function") ||
+        message.includes("does not exist") ||
+        message.includes("no function matches the given name and argument types")
+      )
+    );
+  }
+
+  /**
+   * Claim 1 task_device with backward-compatible RPC fallbacks:
+   * 1) claim_task_devices_for_pc(runner_pc_name, max_to_claim) - latest
+   * 2) claim_task_devices_for_pc(runner_pc_id, max_to_claim)   - UUID variant
+   * 3) claim_next_task_device(p_worker_id, p_device_serial)    - legacy
+   * Resolves device_serial from _deviceIdToSerial map when only device_id is returned.
+   */
+  async _claimNextTaskDevice(serial) {
     try {
-      const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
-        runner_pc_name: this.pcId,
-        max_to_claim: 1,
-      });
-      if (error) {
-        console.warn("[DeviceOrchestrator] claim_task_devices_for_pc error:", error.message);
+      const attempts = [
+        {
+          rpc: "claim_task_devices_for_pc",
+          params: { runner_pc_name: this.pcId, max_to_claim: 1 },
+        },
+        this.pcUuid
+          ? {
+            rpc: "claim_task_devices_for_pc",
+            params: { runner_pc_id: this.pcUuid, max_to_claim: 1 },
+          }
+          : null,
+        this.pcUuid
+          ? {
+            rpc: "claim_next_task_device",
+            params: { p_worker_id: this.pcUuid, p_device_serial: serial },
+          }
+          : null,
+      ].filter(Boolean);
+
+      for (let i = 0; i < attempts.length; i++) {
+        const attempt = attempts[i];
+        const { data, error } = await this.supabase.rpc(attempt.rpc, attempt.params);
+        if (!error) {
+          const row = Array.isArray(data) ? data[0] : (data && data.id ? data : null);
+          if (!row) return null;
+          if (!row.device_serial && row.device_id) {
+            row.device_serial = this._deviceIdToSerial.get(row.device_id) || null;
+          }
+          return row;
+        }
+
+        const hasFallback = i < attempts.length - 1;
+        const canFallback = this._isMissingRpcOrSignatureError(error, attempt.rpc);
+        if (hasFallback && canFallback) {
+          if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
+            console.warn(
+              `[DeviceOrchestrator] ${attempt.rpc} signature mismatch -> fallback`,
+            );
+          }
+          continue;
+        }
+
+        console.warn(`[DeviceOrchestrator] ${attempt.rpc} error:`, error.message);
         return null;
       }
-      const row = Array.isArray(data) ? data[0] : (data && data.id ? data : null);
-      if (!row) return null;
-      // Resolve device serial from UUID map if not already present
-      if (!row.device_serial && row.device_id) {
-        row.device_serial = this._deviceIdToSerial.get(row.device_id) || null;
-      }
-      return row;
+
+      return null;
     } catch (err) {
       console.warn("[DeviceOrchestrator] _claimNextTaskDevice:", err.message);
       return null;
