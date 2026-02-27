@@ -20,15 +20,9 @@ export const accountCreateSchema = z.object({
 // Task schemas
 export const taskCreateSchema = z.object({
   videoId: z.string().min(1, "Video ID is required"),
-  channelId: z.string().min(1, "Channel ID is required"),
+  channelId: z.string().uuid("Invalid channel ID"),
   workerId: z.string().uuid("Invalid worker ID").optional(),
   deviceCount: z.number().int().min(1).max(1000).optional(),
-  source: z.enum(["manual", "channel_auto"]).optional(),
-  priority: z.number().int().min(1).max(10).optional(),
-  workflowRef: z
-    .object({ id: z.string().min(1), version: z.number().int().min(1) })
-    .optional(),
-  inputs: z.record(z.unknown()).optional(),
   variables: z
     .object({
       watchPercent: z.number().min(0).max(100).optional(),
@@ -43,18 +37,16 @@ export const taskCreateSchema = z.object({
 // Batch task creation schema (content-aware distribution)
 export const batchTaskCreateSchema = z.object({
   contentMode: z.enum(["single", "channel", "playlist"]),
-  videoId: z.string().min(1).optional(),
-  channelId: z.string().min(1).optional(),
+  // single mode
+  videoId: z.string().uuid().optional(),
+  // channel mode
+  channelId: z.string().uuid().optional(),
   distribution: z.enum(["round_robin", "random", "by_priority"]).optional(),
-  videoIds: z.array(z.string().min(1)).optional(),
+  // playlist mode
+  videoIds: z.array(z.string().uuid()).optional(),
+  // common
   workerId: z.string().uuid().optional(),
   deviceCount: z.number().int().min(1).max(1000).optional(),
-  source: z.enum(["manual", "channel_auto"]).optional(),
-  priority: z.number().int().min(1).max(10).optional(),
-  workflowRef: z
-    .object({ id: z.string().min(1), version: z.number().int().min(1) })
-    .optional(),
-  inputs: z.record(z.unknown()).optional(),
   variables: z
     .object({
       watchPercent: z.number().min(0).max(100).optional(),
@@ -72,6 +64,12 @@ export const taskUpdateSchema = z.object({
   priority: z.number().int().min(0).max(10).optional(),
   result: z.record(z.unknown()).optional(),
   error: z.string().optional(),
+});
+
+// Quick task creation (YouTube URL → 1 device)
+export const quickTaskCreateSchema = z.object({
+  youtube_url: z.string().url("Invalid YouTube URL"),
+  worker_id: z.string().uuid("Invalid worker ID"),
 });
 
 // Worker heartbeat schema

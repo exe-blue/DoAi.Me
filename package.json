@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e-local.js",
+    "test:e2e:watch": "node tests/e2e-youtube-watch.js",
     "test:api": "node tests/run-api-tests.js",
     "agent:dev": "cd agent && npm run dev",
     "agent:start": "cd agent && npm start",

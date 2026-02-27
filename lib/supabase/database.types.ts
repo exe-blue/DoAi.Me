@@ -225,7 +225,6 @@ export type Database = {
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
           created_at: string | null
-          connection_id: string | null
           current_task_id: string | null
           id: string
           ip_intranet: unknown
@@ -260,7 +259,6 @@ export type Database = {
           connection_mode?:
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
-          connection_id?: string | null
           created_at?: string | null
           current_task_id?: string | null
           id?: string
@@ -296,7 +294,6 @@ export type Database = {
           connection_mode?:
             | Database["public"]["Enums"]["device_connection_mode"]
             | null
-          connection_id?: string | null
           created_at?: string | null
           current_task_id?: string | null
           id?: string
@@ -695,7 +692,6 @@ export type Database = {
       }
       task_devices: {
         Row: {
-          claimed_by_pc_id: string | null
           completed_at: string | null
           config: Json | null
           created_at: string | null
@@ -703,10 +699,6 @@ export type Database = {
           duration_ms: number | null
           error: string | null
           id: string
-          last_error_at: string | null
-          lease_expires_at: string | null
-          pc_id: string | null
-          progress: number | null
           result: Json | null
           retry_count: number | null
           started_at: string | null
@@ -719,7 +711,6 @@ export type Database = {
           xiaowei_response: Json | null
         }
         Insert: {
-          claimed_by_pc_id?: string | null
           completed_at?: string | null
           config?: Json | null
           created_at?: string | null
@@ -727,10 +718,6 @@ export type Database = {
           duration_ms?: number | null
           error?: string | null
           id?: string
-          last_error_at?: string | null
-          lease_expires_at?: string | null
-          pc_id?: string | null
-          progress?: number | null
           result?: Json | null
           retry_count?: number | null
           started_at?: string | null
@@ -743,7 +730,6 @@ export type Database = {
           xiaowei_response?: Json | null
         }
         Update: {
-          claimed_by_pc_id?: string | null
           completed_at?: string | null
           config?: Json | null
           created_at?: string | null
@@ -751,10 +737,6 @@ export type Database = {
           duration_ms?: number | null
           error?: string | null
           id?: string
-          last_error_at?: string | null
-          lease_expires_at?: string | null
-          pc_id?: string | null
-          progress?: number | null
           result?: Json | null
           retry_count?: number | null
           started_at?: string | null
@@ -1237,48 +1219,6 @@ export type Database = {
           worker_id?: string | null
           created_at?: string | null
           completed_at?: string | null
-        }
-        Relationships: []
-      }
-      scripts: {
-        Row: {
-          id: string
-          name: string
-          version: number
-          status: string
-          type: string
-          content: string
-          timeout_ms: number
-          params_schema: Json
-          default_params: Json
-          created_at: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          id?: string
-          name: string
-          version: number
-          status?: string
-          type?: string
-          content: string
-          timeout_ms?: number
-          params_schema?: Json
-          default_params?: Json
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          id?: string
-          name?: string
-          version?: number
-          status?: string
-          type?: string
-          content?: string
-          timeout_ms?: number
-          params_schema?: Json
-          default_params?: Json
-          created_at?: string | null
-          updated_at?: string | null
         }
         Relationships: []
       }
