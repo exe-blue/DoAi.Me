@@ -1,16 +1,25 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json, TaskRow, TaskLogRow } from "@/lib/supabase/types";
 
 type TaskWithDetails = TaskRow & {
-  videos: { title: string; thumbnail_url: string | null; duration_seconds: number | null; youtube_video_id: string } | null;
-  channels: { channel_name: string } | null;
+  videos: {
+    title: string;
+    thumbnail_url: string | null;
+    duration_sec: number | null;
+    id: string;
+    target_views: number | null;
+    completed_views: number | null;
+    prob_like: number | null;
+    prob_comment: number | null;
+  } | null;
+  channels: { name: string } | null;
 };
 
 export async function getTasksWithDetails() {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("tasks")
-    .select("*, videos(title, thumbnail_url, duration_seconds, youtube_video_id), channels(channel_name)")
+    .select("*, videos(title, thumbnail_url, duration_sec, id, target_views, completed_views, prob_like, prob_comment), channels(name)")
     .not("video_id", "is", null)
     .order("created_at", { ascending: false })
     .returns<TaskWithDetails[]>();
@@ -28,7 +37,7 @@ export async function createTask(task: {
   priority?: number;
   status?: string;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("tasks")
     .insert({ ...task, status: task.status ?? "pending" } as any)
@@ -47,7 +56,7 @@ export async function updateTask(id: string, fields: {
   started_at?: string;
   completed_at?: string;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("tasks")
     .update(fields as any)
@@ -60,13 +69,13 @@ export async function updateTask(id: string, fields: {
 }
 
 export async function deleteTask(id: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) throw error;
 }
 
 export async function getTaskLogs(taskId: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("task_logs")
     .select("message, created_at")
@@ -78,7 +87,7 @@ export async function getTaskLogs(taskId: string) {
 }
 
 export async function getTaskByVideoId(videoId: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data } = await supabase
     .from("tasks")
     .select("id")

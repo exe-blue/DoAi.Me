@@ -4,17 +4,20 @@
  * Runs 24/7 on Windows Node PCs
  */
 const config = require("./config");
-const XiaoweiClient = require("./xiaowei-client");
-const SupabaseSync = require("./supabase-sync");
-const { startHeartbeat } = require("./heartbeat");
-const TaskExecutor = require("./task-executor");
-const ProxyManager = require("./proxy-manager");
-const AccountManager = require("./account-manager");
-const ScriptVerifier = require("./script-verifier");
-const DashboardBroadcaster = require("./dashboard-broadcaster");
-const AdbReconnectManager = require("./adb-reconnect");
-const QueueDispatcher = require("./queue-dispatcher");
-const ScheduleEvaluator = require("./schedule-evaluator");
+const XiaoweiClient = require("./core/xiaowei-client");
+const SupabaseSync = require("./core/supabase-sync");
+const DashboardBroadcaster = require("./core/dashboard-broadcaster");
+const { startHeartbeat } = require("./device/heartbeat");
+const AdbReconnectManager = require("./device/adb-reconnect");
+const DeviceWatchdog = require("./device/device-watchdog");
+const DeviceOrchestrator = require("./device/device-orchestrator");
+const TaskExecutor = require("./task/task-executor");
+const StaleTaskCleaner = require("./task/stale-task-cleaner");
+const QueueDispatcher = require("./scheduling/queue-dispatcher");
+const ScheduleEvaluator = require("./scheduling/schedule-evaluator");
+const ProxyManager = require("./setup/proxy-manager");
+const AccountManager = require("./setup/account-manager");
+const ScriptVerifier = require("./setup/script-verifier");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -28,6 +31,9 @@ let broadcaster = null;
 let reconnectManager = null;
 let queueDispatcher = null;
 let scheduleEvaluator = null;
+let staleTaskCleaner = null;
+let deviceWatchdog = null;
+let deviceOrchestrator = null;
 let shuttingDown = false;
 
 function sleep(ms) {
@@ -62,7 +68,7 @@ function waitForXiaowei(client, timeoutMs = 10000) {
 }
 
 async function main() {
-  console.log(`[Agent] Starting worker: ${config.workerName}`);
+  console.log(`[Agent] Starting PC: ${config.pcNumber}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
   // 1. Validate required config
@@ -95,12 +101,12 @@ async function main() {
     console.warn(`[Agent] ✗ Settings load failed: ${err.message}`);
   }
 
-  // 3. Register worker
+  // 3. Register PC
   try {
-    const workerId = await supabaseSync.getWorkerId(config.workerName);
-    console.log(`[Agent] Worker ID: ${workerId}`);
+    const pcId = await supabaseSync.getPcId(config.pcNumber);
+    console.log(`[Agent] PC ID: ${pcId}`);
   } catch (err) {
-    console.error(`[Agent] ✗ Worker registration failed: ${err.message}`);
+    console.error(`[Agent] ✗ PC registration failed: ${err.message}`);
     process.exit(1);
   }
 
@@ -130,8 +136,21 @@ async function main() {
   // 5. Initialize task executor
   taskExecutor = new TaskExecutor(xiaowei, supabaseSync, config);
 
+  // 5a. Run stale task recovery (cold start)
+  staleTaskCleaner = new StaleTaskCleaner(supabaseSync, config);
+  try {
+    const recovered = await staleTaskCleaner.recoverStaleTasks();
+    if (recovered > 0) {
+      console.log(`[Agent] ✓ Recovered ${recovered} stale tasks from previous crash`);
+    }
+    staleTaskCleaner.startPeriodicCheck();
+    console.log('[Agent] ✓ Stale task cleaner started');
+  } catch (err) {
+    console.warn(`[Agent] ✗ Stale task recovery failed: ${err.message}`);
+  }
+
   // 6. Initialize dashboard broadcaster
-  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.workerId);
+  broadcaster = new DashboardBroadcaster(supabaseSync.supabase, supabaseSync.pcId);
   try {
     await broadcaster.init();
     console.log("[Agent] ✓ Dashboard broadcaster initialized");
@@ -144,17 +163,17 @@ async function main() {
   reconnectManager = new AdbReconnectManager(xiaowei, supabaseSync, broadcaster, config);
 
   // 8. Start heartbeat loop and wait for first beat
-  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
+  heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
 
   // Wait briefly for first heartbeat to complete
   await sleep(2000);
-  console.log(`[Agent] ✓ Worker registered: ${config.workerName} (heartbeat OK)`);
+  console.log(`[Agent] ✓ PC registered: ${config.pcNumber} (heartbeat OK)`);
 
   // 9. Proxy setup — load assignments from Supabase and apply to devices
   proxyManager = new ProxyManager(xiaowei, supabaseSync, config, broadcaster);
   if (xiaowei.connected) {
     try {
-      const count = await proxyManager.loadAssignments(supabaseSync.workerId);
+      const count = await proxyManager.loadAssignments(supabaseSync.pcUuid);
       if (count > 0) {
         const { applied, total } = await proxyManager.applyAll();
         console.log(`[Agent] ✓ Proxy setup: ${applied}/${total} devices`);
@@ -162,7 +181,7 @@ async function main() {
         console.log("[Agent] - Proxy setup: no assignments (skipped)");
       }
       // Start periodic proxy check loop
-      proxyManager.startCheckLoop(supabaseSync.workerId);
+      proxyManager.startCheckLoop(supabaseSync.pcUuid);
       console.log("[Agent] ✓ Proxy check loop started");
     } catch (err) {
       console.warn(`[Agent] ✗ Proxy setup failed: ${err.message}`);
@@ -175,7 +194,7 @@ async function main() {
   accountManager = new AccountManager(xiaowei, supabaseSync);
   if (xiaowei.connected) {
     try {
-      const count = await accountManager.loadAssignments(supabaseSync.workerId);
+      const count = await accountManager.loadAssignments(supabaseSync.pcUuid);
       if (count > 0) {
         const { verified, total } = await accountManager.verifyAll();
         console.log(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
@@ -221,7 +240,7 @@ async function main() {
   };
 
   // Primary: Broadcast channel (room:tasks) — lower latency
-  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.workerId, taskCallback);
+  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.pcId, taskCallback);
   if (broadcastResult.status === "SUBSCRIBED") {
     console.log("[Agent] ✓ Broadcast room:tasks 구독 완료");
   } else {
@@ -229,7 +248,7 @@ async function main() {
   }
 
   // Fallback: postgres_changes — in case Broadcast is not configured
-  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.workerId, taskCallback);
+  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.pcId, taskCallback);
   if (pgResult.status === "SUBSCRIBED") {
     console.log("[Agent] ✓ postgres_changes 구독 완료");
   } else {
@@ -239,7 +258,7 @@ async function main() {
   // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
   taskPollHandle = setInterval(async () => {
     try {
-      const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);
+      const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
       for (const task of tasks) {
         taskExecutor.execute(task);
       }
@@ -250,7 +269,7 @@ async function main() {
 
   // Run an initial poll immediately
   try {
-    const tasks = await supabaseSync.getPendingTasks(supabaseSync.workerId);
+    const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
     if (tasks.length > 0) {
       console.log(`[Agent] Found ${tasks.length} pending task(s)`);
       for (const task of tasks) {
@@ -269,6 +288,11 @@ async function main() {
     console.log("[Agent] - ADB reconnect: Xiaowei offline (will start when connected)");
   }
 
+  // 14a. Start device watchdog
+  deviceWatchdog = new DeviceWatchdog(xiaowei, supabaseSync, config, broadcaster);
+  deviceWatchdog.start();
+  console.log('[Agent] ✓ Device watchdog started');
+
   // 15. Start queue dispatcher and schedule evaluator
   queueDispatcher = new QueueDispatcher(supabaseSync, config, broadcaster);
   queueDispatcher.start();
@@ -278,12 +302,22 @@ async function main() {
   scheduleEvaluator.start();
   console.log("[Agent] ✓ Schedule evaluator started");
 
+  // 15b. Start device orchestrator
+  deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
+    pcId: supabaseSync.pcId,
+    pcUuid: supabaseSync.pcUuid,
+    maxConcurrent: config.maxConcurrentTasks || 10,
+  });
+  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);
+  deviceOrchestrator.start();
+  console.log("[Agent] ✓ Device orchestrator started");
+
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {
     // heartbeat_interval → restart heartbeat loop
     if (key === "heartbeat_interval" && heartbeatHandle) {
       clearInterval(heartbeatHandle);
-      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager);
+      heartbeatHandle = startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster, reconnectManager, () => deviceOrchestrator);
       console.log(`[Agent] Heartbeat restarted with interval ${newValue}ms`);
     }
 
@@ -321,6 +355,21 @@ async function shutdown() {
   shuttingDown = true;
 
   console.log("\n[Agent] Shutting down gracefully...");
+
+  // Stop stale task cleaner
+  if (staleTaskCleaner) {
+    staleTaskCleaner.stop();
+  }
+
+  // Stop device orchestrator
+  if (deviceOrchestrator) {
+    deviceOrchestrator.stop();
+  }
+
+  // Stop device watchdog
+  if (deviceWatchdog) {
+    deviceWatchdog.stop();
+  }
 
   // Stop polling
   if (taskPollHandle) {
@@ -369,16 +418,11 @@ async function shutdown() {
     await supabaseSync.unsubscribe();
   }
 
-  // Update worker status to offline
-  if (supabaseSync && supabaseSync.workerId) {
+  // Update PC status to offline
+  if (supabaseSync && supabaseSync.pcId) {
     try {
-      await supabaseSync.updateWorkerStatus(
-        supabaseSync.workerId,
-        "offline",
-        0,
-        false
-      );
-      console.log("[Agent] Worker status set to offline");
+      await supabaseSync.updatePcStatus(supabaseSync.pcId, "offline");
+      console.log("[Agent] PC status set to offline");
     } catch (err) {
       console.error(`[Agent] Failed to update offline status: ${err.message}`);
     }

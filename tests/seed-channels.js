@@ -74,15 +74,15 @@ async function registerChannel(handle) {
       .from("channels")
       .upsert(
         {
-          youtube_channel_id: channelId,
-          channel_name: channelTitle,
-          channel_url: "https://www.youtube.com/@" + handle,
+          id: channelId,
+          name: channelTitle,
+          profile_url: "https://www.youtube.com/@" + handle,
           thumbnail_url: thumbnail,
-          monitoring_enabled: true,
+          is_monitored: true,
         },
-        { onConflict: "youtube_channel_id" }
+        { onConflict: "id" }
       )
-      .select("id, youtube_channel_id, channel_name")
+      .select("id, name")
       .single();
 
     if (chErr) {
@@ -90,7 +90,7 @@ async function registerChannel(handle) {
       return null;
     }
 
-    console.log("  Channel: " + ch.channel_name + " (" + ch.youtube_channel_id + ")");
+    console.log("  Channel: " + ch.name + " (" + ch.id + ")");
 
     // 3. Fetch latest 3 videos
     const videosUrl =
@@ -132,20 +132,17 @@ async function registerChannel(handle) {
         .from("videos")
         .upsert(
           {
+            id: item.id,
             channel_id: ch.id,
-            youtube_video_id: item.id,
+            channel_name: channelTitle,
             title: title,
-            description: desc,
             thumbnail_url: thumb,
-            published_at: publishedAt,
-            duration_seconds: seconds,
-            view_count: viewCount,
-            like_count: likeCount,
-            status: "detected",
+            duration_sec: seconds,
+            status: "active",
           },
-          { onConflict: "youtube_video_id" }
+          { onConflict: "id" }
         )
-        .select("id, youtube_video_id, title")
+        .select("id, title")
         .single();
 
       if (vErr) {
@@ -155,7 +152,7 @@ async function registerChannel(handle) {
           "    Video: " +
             (vid.title || "[untitled]").substring(0, 60) +
             " (" +
-            vid.youtube_video_id +
+            vid.id +
             ") " +
             seconds +
             "s"

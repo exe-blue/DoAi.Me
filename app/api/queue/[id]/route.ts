@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,16 +10,17 @@ const tq = (sb: any) => sb.from("task_queue");
  * Update priority or task_config (only if status='queued').
  */
 export async function PUT(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
     const body = await request.json();
 
     const updateFields: Record<string, unknown> = {};
     if (typeof body.priority === "number") updateFields.priority = body.priority;
+    if (body.source === "manual" || body.source === "channel_auto") updateFields.source = body.source;
     if (body.task_config && typeof body.task_config === "object") {
       updateFields.task_config = body.task_config;
     }
@@ -60,11 +61,11 @@ export async function PUT(
  * Cancel a single queued item.
  */
 export async function DELETE(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { data, error } = await tq(supabase)

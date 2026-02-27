@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { computeNextRun, validateCron } from "@/lib/cron-utils";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +11,11 @@ const ts = (sb: any) => sb.from("task_schedules");
  * Update name, cron_expression (recompute next_run_at), task_config, is_active.
  */
 export async function PUT(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
     const body = await request.json();
 
@@ -72,11 +72,11 @@ export async function PUT(
  * Hard delete.
  */
 export async function DELETE(
-  request: NextRequest,
+  request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { id } = await params;
 
     const { error } = await ts(supabase)

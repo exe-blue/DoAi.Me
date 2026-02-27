@@ -69,6 +69,12 @@ export interface Task {
   createdAt: string;
   completedAt: string | null;
   logs: string[];
+  /** manual = direct registration, channel_auto = channel sync */
+  source?: "manual" | "channel_auto" | null;
+  targetViews?: number | null;
+  completedViews?: number | null;
+  probLike?: number | null;
+  probComment?: number | null;
   result?: {
     total?: number;
     done?: number;
@@ -104,6 +110,8 @@ export interface Content {
   registeredAt: string;
   taskId: string | null;
   status: ContentStatus;
+  /** manual = direct registration, channel_auto = channel sync */
+  source?: "manual" | "channel_auto" | null;
 }
 
 // Proxy types

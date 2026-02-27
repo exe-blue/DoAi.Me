@@ -29,13 +29,13 @@ export async function POST(request: NextRequest) {
     const info = await resolveChannelHandle(handle);
 
     const row = await upsertChannel({
-      youtube_channel_id: info.id,
-      channel_name: info.title,
-      channel_url: `https://www.youtube.com/${info.handle}`,
+      id: info.id,
+      name: info.title,
+      profile_url: `https://www.youtube.com/${info.handle}`,
       thumbnail_url: info.thumbnail,
-      subscriber_count: info.subscriberCount,
+      subscriber_count: String(info.subscriberCount ?? 0),
       video_count: info.videoCount,
-      monitoring_enabled: true,
+      is_monitored: true,
     });
 
     return NextResponse.json(mapChannelRow(row));
@@ -103,7 +103,7 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, monitoring_enabled, monitoring_interval_minutes } = body;
+    const { id, is_monitored, collect_interval_hours } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -111,8 +111,8 @@ export async function PATCH(request: NextRequest) {
 
     const row = await updateChannelMonitoring(
       id,
-      monitoring_enabled ?? true,
-      monitoring_interval_minutes
+      is_monitored ?? true,
+      collect_interval_hours
     );
 
     return NextResponse.json(mapChannelRow(row));

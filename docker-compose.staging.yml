@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  app:
+    image: ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}
+    container_name: doai-me-app-staging
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=staging
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - SENTRY_ENVIRONMENT=staging
+    env_file:
+      - .env.staging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+    networks:
+      - doai-me-network
+
+  # Optional: Reverse proxy for HTTPS and rate limiting
+  nginx:
+    image: nginx:alpine
+    container_name: doai-me-nginx-staging
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-staging.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - doai-me-network
+
+networks:
+  doai-me-network:
+    driver: bridge

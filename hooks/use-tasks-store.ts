@@ -20,7 +20,7 @@ function mapTaskRow(row: any): Task {
   return {
     id: row.id,
     title: row.video_title ?? row.title ?? "Untitled",
-    channelName: row.channel_name ?? row.channelName ?? "",
+    channelName: row.channels?.name ?? row.channel_name ?? row.channelName ?? "",
     thumbnail: row.video_thumbnail ?? row.thumbnail ?? "",
     duration: row.video_duration ?? row.duration ?? "0:00",
     videoId: row.video_id ?? row.videoId ?? "",

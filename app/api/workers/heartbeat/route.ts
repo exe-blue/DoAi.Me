@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { WorkerRow } from "@/lib/supabase/types";
 import { heartbeatSchema } from "@/lib/schemas";
 
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
     const { hostname, ip_local, ip_public, xiaowei_connected, devices } = result.data;
 
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     // Upsert worker by hostname
     const { data: worker, error: workerErr } = await supabase

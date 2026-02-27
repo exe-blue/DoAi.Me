@@ -97,7 +97,24 @@
     → Supabase Realtime → 대시보드 자동 반영
 ```
 
-### 3.2 Heartbeat 흐름
+### 3.2 인증 흐름 (Supabase Auth)
+
+```text
+[로그인] /login → Supabase signInWithPassword / signUp
+    → /auth/callback (Magic Link 시) → exchangeCodeForSession → /dashboard
+
+[대시보드] middleware → supabase.auth.getUser() → 세션 갱신
+    → 비인증 시 /login?returnTo=... 리다이렉트
+
+[작업 생성] POST /api/tasks (세션)
+    → createAuthServerClient().auth.getUser() → createdByUserId (user.id)
+    → tasks INSERT (created_by = auth user id)
+
+[Agent/API Key] POST /api/tasks (x-api-key)
+    → created_by = NULL
+```
+
+### 3.3 Heartbeat 흐름
 
 ```text
 [매 30초] Agent → Xiaowei list API → 연결된 디바이스 상태 조회
@@ -105,7 +122,7 @@
     → 대시보드: Realtime으로 실시간 상태 표시
 ```
 
-### 3.3 프리셋 실행 흐름
+### 3.4 프리셋 실행 흐름
 
 ```text
 [사전 준비] Xiaowei UI에서 동작 녹화
@@ -128,7 +145,9 @@
       "action": "autojsCreate",
       "devices": "all",
       "data": [{
-        "path": "D:\\farm_scripts\\youtube_watch.js",
+        // Windows: "D:\\farm_scripts\\youtube_watch.js"
+        // WSL2:    "/mnt/d/farm_scripts/youtube_watch.js"
+        "path": "/mnt/d/farm_scripts/youtube_watch.js",
         "count": 1,
         "taskInterval": [2000, 5000],
         "deviceInterval": "1000"
@@ -292,7 +311,7 @@ Supabase PostgreSQL — 10개 테이블 (마이그레이션: `supabase/migration
 
 **tasks** — 작업 큐
 
-- `id`, `worker_id`, `device_id`, `account_id`, `preset_id`, `task_type`, `status`, `priority`, `params`, `result`, `video_id`, `channel_id`, `created_at`, `started_at`, `completed_at`
+- `id`, `worker_id`, `device_id`, `account_id`, `preset_id`, `task_type`, `status`, `priority`, `params`, `result`, `video_id`, `channel_id`, `created_by` (Supabase auth user id), `created_at`, `started_at`, `completed_at`
 
 **task_logs** — 작업 실행 로그
 

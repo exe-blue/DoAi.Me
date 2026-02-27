@@ -1,24 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchRecentVideos } from "@/lib/youtube";
+import { fetchRecentVideos, fetchVideoById } from "@/lib/youtube";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/youtube/videos?channelId=UC...&hours=24
-// Fetch recent videos from a channel
+// GET /api/youtube/videos?videoId=xxx — single video info
+// GET /api/youtube/videos?channelId=UC...&hours=24 — recent videos from channel
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get("videoId");
     const channelId = searchParams.get("channelId");
     const hoursParam = searchParams.get("hours");
 
+    if (videoId) {
+      const video = await fetchVideoById(videoId);
+      return NextResponse.json(video, { status: 200 });
+    }
+
     if (!channelId) {
       return NextResponse.json(
-        { error: "Missing required query parameter: channelId" },
+        { error: "Missing required query parameter: channelId or videoId" },
         { status: 400 }
       );
     }
 
-    // Parse hours parameter (default to 24)
     let hours = 24;
     if (hoursParam) {
       const parsedHours = parseInt(hoursParam, 10);

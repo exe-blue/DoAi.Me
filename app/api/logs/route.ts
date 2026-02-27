@@ -1,27 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { TaskLogRow } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { searchParams } = new URL(request.url);
 
     const taskId = searchParams.get("task_id");
-    if (!taskId) {
-      return NextResponse.json(
-        { error: "task_id is required" },
-        { status: 400 }
-      );
-    }
+    const limit = Math.min(
+      parseInt(searchParams.get("limit") || "200"),
+      1000
+    );
 
     let query = supabase
       .from("task_logs")
       .select("*")
-      .eq("task_id", taskId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (taskId) {
+      query = query.eq("task_id", taskId);
+    }
 
     const deviceId = searchParams.get("device_id");
     if (deviceId) query = query.eq("device_serial", deviceId);
@@ -37,12 +39,6 @@ export async function GET(request: NextRequest) {
 
     const before = searchParams.get("before");
     if (before) query = query.lt("created_at", before);
-
-    const limit = Math.min(
-      parseInt(searchParams.get("limit") || "200"),
-      1000
-    );
-    query = query.limit(limit);
 
     const { data, error } = await query.returns<TaskLogRow[]>();
 

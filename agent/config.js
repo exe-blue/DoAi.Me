@@ -7,6 +7,18 @@
 const EventEmitter = require("events");
 require("dotenv").config();
 
+// Env validation (warn, don't exit — tests may not have env vars)
+const requiredEnv = [
+  ["SUPABASE_URL", process.env.SUPABASE_URL],
+  ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
+  ["PC_NUMBER", process.env.PC_NUMBER],
+];
+for (const [name, val] of requiredEnv) {
+  if (val === undefined || val === "") {
+    console.warn(`[Config] ⚠ Missing env: ${name} (required for production)`);
+  }
+}
+
 // Mapping: DB setting key → config property name
 const SETTING_KEY_MAP = {
   heartbeat_interval: "heartbeatInterval",
@@ -14,6 +26,7 @@ const SETTING_KEY_MAP = {
   proxy_check_interval: "proxyCheckInterval",
   proxy_policy: "proxyPolicy",
   max_concurrent_tasks: "maxConcurrentTasks",
+  task_execution_timeout_ms: "taskExecutionTimeoutMs",
   device_interval: "deviceInterval",
   watch_duration: "watchDuration",
   task_interval: "taskInterval",
@@ -27,8 +40,8 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.workerName = process.env.WORKER_NAME || "node-pc-01";
-    this.workerId = process.env.WORKER_ID || null;
+    this.pcNumber = process.env.PC_NUMBER || "PC-00";
+    this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
@@ -38,18 +51,36 @@ class AgentConfig extends EventEmitter {
     this.configDir = process.env.CONFIG_DIR || "";
 
     // ── Dynamic settings (env defaults, overridden by DB) ──
-    this.heartbeatInterval = parseInt(process.env.HEARTBEAT_INTERVAL || "30000", 10);
-    this.taskPollInterval = parseInt(process.env.TASK_POLL_INTERVAL || "5000", 10);
+    this.heartbeatInterval = parseInt(
+      process.env.HEARTBEAT_INTERVAL || "30000",
+      10,
+    );
+    this.taskPollInterval = parseInt(
+      process.env.TASK_POLL_INTERVAL || "5000",
+      10,
+    );
     this.adbReconnectInterval = 60000;
     this.proxyCheckInterval = 300000;
     this.proxyPolicy = "sticky";
-    this.maxConcurrentTasks = 20;
+    this.maxConcurrentTasks = parseInt(
+      process.env.MAX_CONCURRENT_TASKS || "10",
+      10,
+    );
+    this.taskExecutionTimeoutMs = parseInt(
+      process.env.TASK_EXECUTION_TIMEOUT_MS || "300000",
+      10,
+    ); // 5 min default
     this.deviceInterval = 500;
     this.watchDuration = [30, 120];
     this.taskInterval = [1000, 3000];
     this.maxRetryCount = 3;
     this.logRetentionDays = 7;
     this.commandLogRetentionDays = 30;
+
+    this.isPrimaryPc =
+      process.env.IS_PRIMARY_PC === "true" ||
+      process.env.IS_PRIMARY_PC === "1" ||
+      false;
 
     // Internal
     this._settings = {}; // raw DB values keyed by setting key
@@ -66,7 +97,9 @@ class AgentConfig extends EventEmitter {
       .select("key, value, description, updated_at");
 
     if (error) {
-      console.error(`[Config] Failed to load settings from DB: ${error.message}`);
+      console.error(
+        `[Config] Failed to load settings from DB: ${error.message}`,
+      );
       return;
     }
 
@@ -96,9 +129,11 @@ class AgentConfig extends EventEmitter {
           this._applySettingFromDB(key, value);
 
           const newValue = propName ? this[propName] : this._settings[key];
-          console.log(`[Config] ${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+          console.log(
+            `[Config] ${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`,
+          );
           this.emit("config-updated", { key, oldValue, newValue });
-        }
+        },
       )
       .subscribe((status) => {
         console.log(`[Config] Settings Realtime status: ${status}`);

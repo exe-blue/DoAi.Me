@@ -1,5 +1,7 @@
 # DoAi.Me v2.1
 
+Dev Container에서만 개발/빌드/테스트한다.
+
 500 Galaxy S9 | 5 Node PCs | Serverless Backend
 
 YouTube 자동 시청 파밍 시스템. 500대 물리 디바이스를 5대의 Node PC로 관제하고, Supabase Broadcast 기반 실시간 대시보드로 모니터링합니다.
@@ -115,18 +117,18 @@ node tests/e2e-local.js --no-cleanup
 
 ## npm scripts
 
-| 스크립트 | 설명 |
-| ---------- | ------ |
-| `dev` | Next.js 개발 서버 |
-| `build` | 프로덕션 빌드 |
-| `lint` | ESLint |
-| `test` | Vitest 유닛 테스트 |
-| `test:e2e` | E2E 전체 파이프라인 테스트 |
-| `test:api` | API 라우트 테스트 |
-| `agent:dev` | Agent TypeScript watch 모드 |
-| `agent:start` | Agent 프로덕션 실행 |
-| `db:verify` | Supabase 스키마 검증 |
-| `clean` | .next 폴더 삭제 |
+| 스크립트      | 설명                        |
+| ------------- | --------------------------- |
+| `dev`         | Next.js 개발 서버           |
+| `build`       | 프로덕션 빌드               |
+| `lint`        | ESLint                      |
+| `test`        | Vitest 유닛 테스트          |
+| `test:e2e`    | E2E 전체 파이프라인 테스트  |
+| `test:api`    | API 라우트 테스트           |
+| `agent:dev`   | Agent TypeScript watch 모드 |
+| `agent:start` | Agent 프로덕션 실행         |
+| `db:verify`   | Supabase 스키마 검증        |
+| `clean`       | .next 폴더 삭제             |
 
 ## 스택
 
@@ -138,16 +140,16 @@ node tests/e2e-local.js --no-cleanup
 
 ## Broadcast 토픽
 
-| 토픽 | 용도 |
-| ------ | ------ |
-| `room:dashboard` | 전체 통계 |
-| `room:workers` | 워커 목록 변경 |
-| `room:worker:<id>` | 개별 워커 상태 |
-| `room:devices` | 500대 디바이스 그리드 |
-| `room:tasks` | 태스크 목록 변경 |
+| 토픽                  | 용도                    |
+| --------------------- | ----------------------- |
+| `room:dashboard`      | 전체 통계               |
+| `room:workers`        | 워커 목록 변경          |
+| `room:worker:<id>`    | 개별 워커 상태          |
+| `room:devices`        | 500대 디바이스 그리드   |
+| `room:tasks`          | 태스크 목록 변경        |
 | `room:task:<id>:logs` | 개별 태스크 로그 스트림 |
-| `room:task_logs` | 전체 로그 모니터링 |
-| `room:system` | 시스템 알림 |
+| `room:task_logs`      | 전체 로그 모니터링      |
+| `room:system`         | 시스템 알림             |
 
 ## 문서
 

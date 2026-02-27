@@ -255,7 +255,7 @@ function FailedDevicesSection({
             className="h-7 text-xs"
             asChild
           >
-            <a href={`/dashboard/logs?task_id=${taskId}`}>
+            <a href={`/system/logs?task_id=${taskId}`}>
               <ScrollText className="h-3 w-3 mr-1" />
               로그 보기
             </a>

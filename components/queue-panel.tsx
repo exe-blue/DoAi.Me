@@ -170,6 +170,16 @@ function QueueItemCard({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
+          {item.source === "manual" && (
+            <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
+              직접 등록
+            </Badge>
+          )}
+          {item.source === "channel_auto" && (
+            <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+              자동 등록
+            </Badge>
+          )}
           <Badge
             variant="outline"
             className={cn("text-xs", statusBadgeClass("info"))}
@@ -183,6 +193,7 @@ function QueueItemCard({
               : "태스크"}
           </Badge>
           <span className="text-sm text-foreground truncate">{summary}</span>
+          <span className="text-[10px] font-mono text-muted-foreground">P{item.priority}</span>
         </div>
         <span className="text-xs text-muted-foreground">
           등록: {new Date(item.created_at).toLocaleString("ko-KR", {
