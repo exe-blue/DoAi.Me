@@ -92,10 +92,14 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
 
       // 3. Batch upsert all devices in a single query
       const activeSerials = devices.filter(d => d.serial).map(d => d.serial);
-      await supabaseSync.batchUpsertDevices(devices, pcId);
+      const upsertedRows = await supabaseSync.batchUpsertDevices(devices, pcId);
 
       // 4. Sync device task states from orchestrator (task_status, watch_progress, etc.)
       const orchestrator = typeof getDeviceOrchestrator === "function" ? getDeviceOrchestrator() : null;
+      // Keep device UUID → serial map fresh so orchestrator can resolve claim results
+      if (orchestrator && typeof orchestrator.updateDeviceIdMap === "function" && Array.isArray(upsertedRows)) {
+        orchestrator.updateDeviceIdMap(upsertedRows);
+      }
       if (orchestrator && typeof orchestrator.getDeviceStatesForSync === "function") {
         const stateMap = orchestrator.getDeviceStatesForSync();
         const states = Object.entries(stateMap).map(([serial, s]) => ({

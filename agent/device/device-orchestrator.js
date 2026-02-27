@@ -37,6 +37,8 @@ class DeviceOrchestrator {
 
     /** @type {Map<string, DeviceState>} serial -> state */
     this.deviceStates = new Map();
+    /** @type {Map<string, string>} devices.id (UUID) -> ADB serial */
+    this._deviceIdToSerial = new Map();
     this._pollTimer = null;
     this._runningAssignments = new Set(); // assignment id
   }
@@ -140,22 +142,24 @@ class DeviceOrchestrator {
     if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
       console.log(`[DeviceOrchestrator] _assignWork(${serial.substring(0, 6)}) pcId=${this.pcId}`);
     }
-    const taskDevice = await this._getNextTaskDevice(serial);
+    const taskDevice = await this._claimNextTaskDevice();
     if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
       console.log(`[DeviceOrchestrator] claim result: ${taskDevice ? taskDevice.id.substring(0, 8) : "null"}`);
     }
     if (taskDevice) {
-      console.log(`[DeviceOrchestrator] ${serial.substring(0, 6)} → taskDevice ${taskDevice.id.substring(0, 8)}`);
+      // Use pre-assigned device serial if available, otherwise fall back to current serial
+      const targetSerial = taskDevice.device_serial || serial;
+      console.log(`[DeviceOrchestrator] ${targetSerial.substring(0, 6)} → taskDevice ${taskDevice.id.substring(0, 8)}`);
       const sameTaskCount = await this._countDevicesOnTask(taskDevice.task_id);
       if (sameTaskCount > SAME_JOB_MAX_DEVICES) {
         await this._releaseTaskDevice(taskDevice.id);
         return;
       }
-      this._setState(serial, STATUS.searching, { assignmentId: taskDevice.id, videoTitle: (taskDevice.config?.video_id || null) });
-      this._executeTargetWatch(serial, taskDevice).catch((err) => {
-        console.error(`[DeviceOrchestrator] ${serial.substring(0, 6)} target watch error:`, err.message);
+      this._setState(targetSerial, STATUS.searching, { assignmentId: taskDevice.id, videoTitle: (taskDevice.config?.video_id || null) });
+      this._executeTargetWatch(targetSerial, taskDevice).catch((err) => {
+        console.error(`[DeviceOrchestrator] ${targetSerial.substring(0, 6)} target watch error:`, err.message);
         this._runningAssignments.delete(taskDevice.id);
-        this._setState(serial, STATUS.error, { errorCount: (this.deviceStates.get(serial)?.errorCount || 0) + 1 });
+        this._setState(targetSerial, STATUS.error, { errorCount: (this.deviceStates.get(targetSerial)?.errorCount || 0) + 1 });
       });
       return;
     }
@@ -171,24 +175,42 @@ class DeviceOrchestrator {
   }
 
   /**
-   * RPC claim_next_task_device(p_worker_id, p_device_serial) → one row or null
+   * RPC claim_task_devices_for_pc(runner_pc_id, max_to_claim) → SETOF task_devices
+   * Resolves device_serial from _deviceIdToSerial map when device_id is a UUID.
    */
-  async _getNextTaskDevice(serial) {
+  async _claimNextTaskDevice() {
     try {
-      const { data, error } = await this.supabase.rpc("claim_next_task_device", {
-        p_worker_id: this.pcId,
-        p_device_serial: serial,
+      const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
+        runner_pc_id: this.pcId,
+        max_to_claim: 1,
       });
       if (error) {
-        console.warn("[DeviceOrchestrator] claim_next_task_device error:", error.message);
+        console.warn("[DeviceOrchestrator] claim_task_devices_for_pc error:", error.message);
         return null;
       }
-      if (Array.isArray(data) && data.length > 0) return data[0];
-      if (data && typeof data === "object" && data.id) return data;
-      return null;
+      const row = Array.isArray(data) ? data[0] : (data && data.id ? data : null);
+      if (!row) return null;
+      // Resolve device serial from UUID map if not already present
+      if (!row.device_serial && row.device_id) {
+        row.device_serial = this._deviceIdToSerial.get(row.device_id) || null;
+      }
+      return row;
     } catch (err) {
-      console.warn("[DeviceOrchestrator] _getNextTaskDevice:", err.message);
+      console.warn("[DeviceOrchestrator] _claimNextTaskDevice:", err.message);
       return null;
+    }
+  }
+
+  /**
+   * Update the device UUID → serial mapping from batchUpsertDevices results.
+   * Called by heartbeat after each device sync.
+   * @param {Array<{id: string, serial: string}>} rows
+   */
+  updateDeviceIdMap(rows) {
+    for (const row of rows) {
+      if (row.id && row.serial) {
+        this._deviceIdToSerial.set(row.id, row.serial);
+      }
     }
   }
 
@@ -273,6 +295,15 @@ class DeviceOrchestrator {
 
     try {
       await this.taskExecutor.runTaskDevice(row);
+      await this.supabase.rpc("complete_task_device", {
+        p_task_device_id: taskDevice.id,
+      }).catch(e => console.warn("[DeviceOrchestrator] complete_task_device:", e.message));
+    } catch (execErr) {
+      await this.supabase.rpc("fail_or_retry_task_device", {
+        p_task_device_id: taskDevice.id,
+        p_error: execErr.message,
+      }).catch(e => console.warn("[DeviceOrchestrator] fail_or_retry_task_device:", e.message));
+      throw execErr;
     } finally {
       this._runningAssignments.delete(taskDevice.id);
     }
