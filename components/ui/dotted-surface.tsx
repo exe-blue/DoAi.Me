@@ -163,3 +163,5 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
     />
   );
 }
+
+DottedSurface.displayName = "DottedSurface";

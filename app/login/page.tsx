@@ -18,7 +18,7 @@ export default async function LoginPage({
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background">
-      <DottedBackground />
+      <DottedBackground key="login-bg" />
       <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-4">
         <div className="flex items-center gap-3">
           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary">
