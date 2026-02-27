@@ -17,6 +17,7 @@ class SupabaseSync {
     // Use service role as primary client when available (agent is a trusted component)
     this.supabase = this.supabaseAdmin || anonClient;
     this.pcId = null;
+    this.pcUuid = null;
     this.taskSubscription = null;
     this.broadcastSubscription = null;
     this.logSubscriptions = new Map(); // task_id → channel
@@ -70,9 +71,10 @@ class SupabaseSync {
       .single();
 
     if (existing) {
-      this.pcId = existing.id;
-      console.log(`[Supabase] Found PC: ${this.pcId} (${pcNumber})`);
-      return this.pcId;
+      this.pcId = pcNumber;
+      this.pcUuid = existing.id;
+      console.log(`[Supabase] Found PC: ${pcNumber} (${existing.id})`);
+      return pcNumber;
     }
 
     if (findErr && findErr.code !== "PGRST116") {
@@ -89,9 +91,10 @@ class SupabaseSync {
       throw new Error(`Failed to create PC: ${createErr.message}`);
     }
 
-    this.pcId = created.id;
-    console.log(`[Supabase] Created PC: ${this.pcId} (${pcNumber})`);
-    return this.pcId;
+    this.pcId = pcNumber;
+    this.pcUuid = created.id;
+    console.log(`[Supabase] Created PC: ${pcNumber} (${created.id})`);
+    return pcNumber;
   }
 
   /**
@@ -108,7 +111,7 @@ class SupabaseSync {
     const { error } = await this.supabase
       .from("pcs")
       .update(update)
-      .eq("id", pcId);
+      .eq("id", this.pcUuid);
 
     if (error) {
       console.error(`[Supabase] Failed to update PC status: ${error.message}`);
@@ -161,7 +164,7 @@ class SupabaseSync {
     const rows = devices.map(d => {
       const row = {
         serial: d.serial,
-        pc_id: pcId,
+        pc_id: this.pcUuid,
         status: d.status || 'online',
         model: d.model || null,
         battery_level: d.battery ?? null,
@@ -230,21 +233,21 @@ class SupabaseSync {
     const { count: running } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'running');
 
     // Pending tasks
     const { count: pending } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'pending');
 
     // Completed today
     const { count: completed_today } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'completed')
       .gte('completed_at', todayIso);
 
@@ -252,7 +255,7 @@ class SupabaseSync {
     const { count: failed_today } = await this.supabase
       .from('tasks')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'failed')
       .gte('updated_at', todayIso);
 
@@ -273,24 +276,24 @@ class SupabaseSync {
     const { count: total } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId);
+      .eq('pc_id', this.pcUuid);
 
     const { count: valid } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'valid');
 
     const { count: invalid } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'invalid');
 
     const { count: unassigned } = await this.supabase
       .from('proxies')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .is('device_serial', null);
 
     return {
@@ -310,30 +313,30 @@ class SupabaseSync {
     const { count: total } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId);
+      .eq('pc_id', this.pcUuid);
 
     const { count: online } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'online');
 
     const { count: busy } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'busy');
 
     const { count: error } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'error');
 
     const { count: offline } = await this.supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
-      .eq('pc_id', pcId)
+      .eq('pc_id', this.pcUuid)
       .eq('status', 'offline');
 
     return {
@@ -355,7 +358,7 @@ class SupabaseSync {
       const { error } = await this.supabase
         .from("devices")
         .update({ status: "offline", last_seen_at: new Date().toISOString() })
-        .eq("pc_id", pcId);
+        .eq("pc_id", this.pcUuid);
 
       if (error) {
         console.error(`[Supabase] Failed to mark devices offline: ${error.message}`);
@@ -366,7 +369,7 @@ class SupabaseSync {
     const { error } = await this.supabase
       .from("devices")
       .update({ status: "offline", last_seen_at: new Date().toISOString() })
-      .eq("pc_id", pcId)
+      .eq("pc_id", this.pcUuid)
       .not("serial", "in", `(${activeSerials.join(",")})`);
 
     if (error) {
@@ -384,7 +387,7 @@ class SupabaseSync {
     const { data: assigned, error: assignedErr } = await this.supabase
       .from("tasks")
       .select("*")
-      .eq("pc_id", pcId)
+      .eq("pc_id", this.pcUuid)
       .eq("status", "pending")
       .order("created_at", { ascending: true });
 
@@ -407,14 +410,14 @@ class SupabaseSync {
     for (const task of (unassigned || [])) {
       const { data: claimData, error: claimErr } = await this.supabase
         .from("tasks")
-        .update({ pc_id: pcId })
+        .update({ pc_id: this.pcUuid })
         .eq("id", task.id)
         .is("pc_id", null)
         .select();
 
       if (claimErr) console.error(`[Supabase] Failed to claim task ${task.id}: ${claimErr.message}`);
       if (!claimErr && claimData && claimData.length > 0) {
-        task.pc_id = pcId;
+        task.pc_id = this.pcUuid;
         claimed.push(task);
         console.log(`[Supabase] Claimed unassigned task: ${task.id}`);
       }
@@ -660,7 +663,7 @@ class SupabaseSync {
         .on("broadcast", { event: "insert" }, ({ payload }) => {
           const task = payload?.record;
           if (!task) return;
-          if (task.pc_id === pcId && task.status === "pending") {
+          if (task.pc_id === this.pcUuid && task.status === "pending") {
             this.broadcastReceivedCount++;
             this.lastTaskReceivedAt = Date.now();
             this.lastTaskReceivedVia = "broadcast";
@@ -673,7 +676,7 @@ class SupabaseSync {
           const oldTask = payload?.old_record;
           if (!task) return;
           if (
-            task.pc_id === pcId &&
+            task.pc_id === this.pcUuid &&
             task.status === "pending" &&
             (!oldTask || oldTask.status !== "pending")
           ) {
@@ -719,7 +722,7 @@ class SupabaseSync {
             event: "INSERT",
             schema: "public",
             table: "tasks",
-            filter: `pc_id=eq.${pcId}`,
+            filter: `pc_id=eq.${this.pcUuid}`,
           },
           (payload) => {
             this.pgChangesReceivedCount++;
@@ -735,7 +738,7 @@ class SupabaseSync {
             event: "UPDATE",
             schema: "public",
             table: "tasks",
-            filter: `pc_id=eq.${pcId}`,
+            filter: `pc_id=eq.${this.pcUuid}`,
           },
           (payload) => {
             if (payload.new.status === "pending" && payload.old.status !== "pending") {

@@ -15,7 +15,6 @@ const TaskExecutor = require("./task/task-executor");
 const StaleTaskCleaner = require("./task/stale-task-cleaner");
 const QueueDispatcher = require("./scheduling/queue-dispatcher");
 const ScheduleEvaluator = require("./scheduling/schedule-evaluator");
-const VideoDispatcher = require("./scheduling/video-dispatcher");
 const ProxyManager = require("./setup/proxy-manager");
 const AccountManager = require("./setup/account-manager");
 const ScriptVerifier = require("./setup/script-verifier");
@@ -34,7 +33,6 @@ let queueDispatcher = null;
 let scheduleEvaluator = null;
 let staleTaskCleaner = null;
 let deviceWatchdog = null;
-let videoDispatcher = null;
 let deviceOrchestrator = null;
 let shuttingDown = false;
 
@@ -175,7 +173,7 @@ async function main() {
   proxyManager = new ProxyManager(xiaowei, supabaseSync, config, broadcaster);
   if (xiaowei.connected) {
     try {
-      const count = await proxyManager.loadAssignments(supabaseSync.pcId);
+      const count = await proxyManager.loadAssignments(supabaseSync.pcUuid);
       if (count > 0) {
         const { applied, total } = await proxyManager.applyAll();
         console.log(`[Agent] ✓ Proxy setup: ${applied}/${total} devices`);
@@ -183,7 +181,7 @@ async function main() {
         console.log("[Agent] - Proxy setup: no assignments (skipped)");
       }
       // Start periodic proxy check loop
-      proxyManager.startCheckLoop(supabaseSync.pcId);
+      proxyManager.startCheckLoop(supabaseSync.pcUuid);
       console.log("[Agent] ✓ Proxy check loop started");
     } catch (err) {
       console.warn(`[Agent] ✗ Proxy setup failed: ${err.message}`);
@@ -196,7 +194,7 @@ async function main() {
   accountManager = new AccountManager(xiaowei, supabaseSync);
   if (xiaowei.connected) {
     try {
-      const count = await accountManager.loadAssignments(supabaseSync.pcId);
+      const count = await accountManager.loadAssignments(supabaseSync.pcUuid);
       if (count > 0) {
         const { verified, total } = await accountManager.verifyAll();
         console.log(`[Agent] ✓ Account check: ${verified}/${total} YouTube 로그인`);
@@ -304,15 +302,13 @@ async function main() {
   scheduleEvaluator.start();
   console.log("[Agent] ✓ Schedule evaluator started");
 
-  videoDispatcher = new VideoDispatcher(supabaseSync, config, broadcaster);
-  console.log("[Agent] - Video dispatcher disabled (job_assignments system replaced by task_devices)");
-
   // 15b. Start device orchestrator
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
+    pcUuid: supabaseSync.pcUuid,
     maxConcurrent: config.maxConcurrentTasks || 10,
   });
-  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId} (UUID for claim_next_task_device)`);
+  console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);
   deviceOrchestrator.start();
   console.log("[Agent] ✓ Device orchestrator started");
 
@@ -381,10 +377,6 @@ async function shutdown() {
     taskPollHandle = null;
   }
 
-  if (taskExecutor && taskExecutor.stopJobAssignmentPolling) {
-    taskExecutor.stopJobAssignmentPolling();
-  }
-
   // Stop heartbeat
   if (heartbeatHandle) {
     clearInterval(heartbeatHandle);
@@ -409,10 +401,6 @@ async function shutdown() {
   // Stop schedule evaluator
   if (scheduleEvaluator) {
     scheduleEvaluator.stop();
-  }
-
-  if (videoDispatcher) {
-    videoDispatcher.stop();
   }
 
   // Unsubscribe config Realtime

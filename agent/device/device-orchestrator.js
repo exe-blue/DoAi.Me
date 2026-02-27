@@ -26,13 +26,14 @@ class DeviceOrchestrator {
    * @param {import('./xiaowei-client')} xiaowei
    * @param {import('@supabase/supabase-js').SupabaseClient} supabase
    * @param {import('./task-executor')} taskExecutor
-   * @param {object} config - { pcId (UUID), maxConcurrent? }
+   * @param {object} config - { pcId (name string), pcUuid (UUID), maxConcurrent? }
    */
   constructor(xiaowei, supabase, taskExecutor, config) {
     this.xiaowei = xiaowei;
     this.supabase = supabase;
     this.taskExecutor = taskExecutor;
     this.pcId = config.pcId;
+    this.pcUuid = config.pcUuid || null;
     this.maxConcurrent = config.maxConcurrent ?? 10;
 
     /** @type {Map<string, DeviceState>} serial -> state */
@@ -181,7 +182,7 @@ class DeviceOrchestrator {
   async _claimNextTaskDevice() {
     try {
       const { data, error } = await this.supabase.rpc("claim_task_devices_for_pc", {
-        runner_pc_id: this.pcId,
+        runner_pc_name: this.pcId,
         max_to_claim: 1,
       });
       if (error) {
@@ -219,7 +220,7 @@ class DeviceOrchestrator {
       const { count, error } = await this.supabase
         .from("task_devices")
         .select("id", { count: "exact", head: true })
-        .eq("worker_id", this.pcId)
+        .eq("worker_id", this.pcUuid)
         .eq("status", "pending");
       if (!error && (count || 0) > 0) return true;
       // also check unassigned

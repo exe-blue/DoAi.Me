@@ -19,7 +19,7 @@ class StaleTaskCleaner {
    * @returns {Promise<number>} number of recovered tasks
    */
   async recoverStaleTasks() {
-    const pcId = this.supabaseSync.pcId;
+    const pcId = this.supabaseSync.pcUuid;
     if (!pcId) {
       console.warn('[StaleTaskCleaner] No pcId — skipping recovery');
       return 0;
@@ -126,7 +126,7 @@ class StaleTaskCleaner {
    * Periodic check: find tasks running > 2x stale threshold and mark as 'timeout'.
    */
   async _periodicCheck() {
-    const pcId = this.supabaseSync.pcId;
+    const pcId = this.supabaseSync.pcUuid;
     if (!pcId) return;
 
     try {
