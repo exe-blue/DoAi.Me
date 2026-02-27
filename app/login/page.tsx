@@ -9,6 +9,20 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ returnTo?: string; signup?: string; error?: string }>;
 }) {
+  const { returnTo, signup, error } = await searchParams;
+
+  let user = null;
+  try {
+    const supabase = await createAuthServerClient();
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (err) {
+    console.error("[Login] Auth check failed:", err);
+  }
+
+  // Remove old lines below
+  /*
+
   const supabase = await createAuthServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { returnTo, signup, error } = await searchParams;
@@ -57,4 +71,4 @@ export default async function LoginPage({
       </div>
     </div>
   );
-}
+}

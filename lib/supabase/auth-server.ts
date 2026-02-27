@@ -7,11 +7,24 @@ import type { Database } from "./types";
  * Uses cookies for auth session. Session refresh is done in middleware.
  */
 export async function createAuthServerClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      `Missing Supabase environment variables. Please create .env.local file with:\n` +
+      `NEXT_PUBLIC_SUPABASE_URL=your-supabase-url\n` +
+      `NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key\n\n` +
+      `Run: cp .env.example .env.local`
+    );
+  }
+
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     {
       cookies: {
         getAll() {
@@ -29,4 +42,4 @@ export async function createAuthServerClient() {
       },
     }
   );
-}
+}
