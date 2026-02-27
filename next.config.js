@@ -14,6 +14,7 @@ try {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: path.join(__dirname),
   reactStrictMode: true,
   typescript: {
     ignoreBuildErrors: true,  // Skip TypeScript build errors to allow containerization
