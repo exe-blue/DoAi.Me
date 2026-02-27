@@ -8,6 +8,7 @@
     ".": "./index.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.47.10"
+    "@supabase/supabase-js": "^2.47.10",
+    "@supabase/ssr": "^0.5.2"
   }
 }

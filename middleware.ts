@@ -1,5 +1,6 @@
+import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
-import { auth0 } from "@/lib/auth0";
+import type { Database } from "@/lib/supabase/types";
 
 const PUBLIC_PATHS = ["/auth", "/api/health", "/monitoring", "/login"];
 
@@ -31,10 +32,34 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Auth0 middleware handles session cookie refresh
-  const authRes = await auth0.middleware(request);
+  // 2. Create Supabase client with cookie handling for session refresh
+  const response = NextResponse.next();
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            request.cookies.set(name, value)
+          );
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
 
-  // 3. API routes: accept API key OR Auth0 session
+  // Refresh session if expired - important!
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // 3. API routes: accept API key OR Supabase session
   if (isApiRoute(pathname)) {
     if (request.headers.has("x-api-key")) {
       if (validateApiKey(request)) {
@@ -43,26 +68,24 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
-    const session = await auth0.getSession(request);
-    if (!session) {
+    if (!user) {
       return NextResponse.json(
         { error: "Authentication required" },
         { status: 401 }
       );
     }
 
-    return authRes;
+    return response;
   }
 
   // 4. Dashboard pages: require session, redirect to login if missing
-  const session = await auth0.getSession(request);
-  if (!session) {
-    const loginUrl = new URL("/auth/login", request.url);
+  if (!user) {
+    const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("returnTo", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  return authRes;
+  return response;
 }
 
 export const config = {

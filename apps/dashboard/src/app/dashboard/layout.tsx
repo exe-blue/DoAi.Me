@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/browser";
 import {
   LayoutDashboard,
   Server,
@@ -12,6 +13,7 @@ import {
   Settings,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -29,11 +31,19 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const supabase = createClient();
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
   };
 
   return (
@@ -105,7 +115,16 @@ export default function DashboardLayout({
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-white/5">
-          <p className="text-[11px] text-gray-600">YouTube Agent Farm v2.1</p>
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-200 transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </button>
+          <p className="text-[11px] text-gray-600 mt-2">
+            YouTube Agent Farm v2.1
+          </p>
         </div>
       </aside>
 
