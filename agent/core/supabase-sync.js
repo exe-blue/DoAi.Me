@@ -349,6 +349,27 @@ class SupabaseSync {
   }
 
   /**
+   * Get the ADB connection target (IP:port or serial) for a task_devices row.
+   * Uses device_target if already set, otherwise resolves via device_id → devices.ip_address.
+   * @param {Object} taskDevice - row from task_devices table
+   * @returns {Promise<string|null>}
+   */
+  async getDeviceTargetForTaskDevice(taskDevice) {
+    // Use pre-filled device_target if available
+    if (taskDevice.device_target) return taskDevice.device_target;
+    // Fallback: resolve via device_id FK → devices.ip_address
+    if (!taskDevice.device_id) return null;
+    const { data } = await this.supabase
+      .from('devices')
+      .select('ip_address, serial')
+      .eq('id', taskDevice.device_id)
+      .single();
+    if (data?.ip_address) return `${data.ip_address}:5555`;
+    if (data?.serial) return data.serial;
+    return null;
+  }
+
+  /**
    * Mark devices not in the current list as offline
    * @param {string} pcId
    * @param {string[]} activeSerials - serials currently connected
