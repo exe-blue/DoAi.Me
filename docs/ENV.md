@@ -13,12 +13,22 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase 프로젝트 URL | `https://xxx.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase 익명 키 (클라이언트용) | `eyJhbGciOiJIUzI1NiIs...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase 서비스 키 (API Routes용, 서버 전용) | `eyJhbGciOiJIUzI1NiIs...` |
+| `AUTH0_DOMAIN` | ✅ | Auth0 테넌트 도메인 | `your-tenant.us.auth0.com` |
+| `AUTH0_CLIENT_ID` | ✅ | Auth0 애플리케이션 클라이언트 ID | `abc123...` |
+| `AUTH0_CLIENT_SECRET` | ✅ | Auth0 애플리케이션 클라이언트 시크릿 (서버 전용) | `def456...` |
+| `AUTH0_SECRET` | ✅ | 세션 쿠키 암호화용 랜덤 문자열 (32+ 바이트) | `openssl rand -hex 32` 로 생성 |
+| `APP_BASE_URL` | ✅ | 애플리케이션 베이스 URL (콜백/로그아웃 URL 구성용) | `http://localhost:3000` (개발) / `https://doai.me` (배포) |
 | `YOUTUBE_API_KEY` | ⚠️ | YouTube Data API v3 키 (채널/영상 등록 시) | `AIza...` |
 
 ### 규칙
 
 - `NEXT_PUBLIC_` 접두사: 클라이언트에 노출됨 (브라우저에서 접근 가능)
 - `SUPABASE_SERVICE_ROLE_KEY`: **절대** 클라이언트에 노출 금지. API Routes에서만 사용
+- `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`: **절대** 클라이언트에 노출 금지. 서버 전용
+- `APP_BASE_URL`: 로컬 개발 시 `http://localhost:3000`, Vercel 배포 시 프로덕션 도메인 (`https://doai.me`) 설정 필요
+- Auth0 설정 시 Auth0 대시보드에서 다음 URL 등록 필요:
+  - **Allowed Callback URLs**: `{APP_BASE_URL}/auth/callback`
+  - **Allowed Logout URLs**: `{APP_BASE_URL}`
 
 ---
 
