@@ -1,33 +1,27 @@
+import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase/auth-server";
-
-function safeRedirectPath(next: string | null, origin: string): string {
-  const path = next ?? "/dashboard";
-  if (typeof path !== "string" || path === "") return "/dashboard";
-  if (path.startsWith("/") && !path.startsWith("//")) {
-    try {
-      const url = new URL(path, origin);
-      if (url.origin === origin) return url.pathname + url.search;
-    } catch {
-      // invalid URL
-    }
-  }
-  return "/dashboard";
-}
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next");
+  const next = searchParams.get("next") ?? "/dashboard";
 
   if (code) {
-    const supabase = await createAuthServerClient();
+    const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      const targetPath = safeRedirectPath(next, origin);
-      return NextResponse.redirect(new URL(targetPath, origin));
+      const forwardedHost = request.headers.get("x-forwarded-host");
+      const isLocalEnv = process.env.NODE_ENV === "development";
+      if (isLocalEnv) {
+        return NextResponse.redirect(`${origin}${next}`);
+      } else if (forwardedHost) {
+        return NextResponse.redirect(`https://${forwardedHost}${next}`);
+      } else {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
     }
   }
 
-  return NextResponse.redirect(new URL("/login?error=auth", origin));
+  // Return the user to an error page with instructions
+  return NextResponse.redirect(`${origin}/auth/auth-code-error`);
 }

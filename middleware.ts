@@ -1,20 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { NextRequest, NextResponse } from "next/server";
 import type { Database } from "@/lib/supabase/types";
 
-const PUBLIC_PATHS = [
-  "/auth",
-  "/api/health",
-  "/monitoring",
-  "/login",
-  "/privacy",
-  "/agreement",
-];
-const AUTH_CALLBACK_PATH = "/auth/callback";
+const PUBLIC_PATHS = ["/auth", "/api/health", "/monitoring", "/login"];
 
 function isPublicPath(pathname: string): boolean {
-  if (pathname === "/") return true;
-  if (pathname === AUTH_CALLBACK_PATH) return true;
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 }
 
@@ -37,53 +27,62 @@ function validateApiKey(request: NextRequest): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // 1. Public paths — no auth
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
 
-  let response = NextResponse.next({ request });
-
-  if (url && anonKey) {
-    const supabase = createServerClient<Database>(url, anonKey, {
+  // 2. Create Supabase client with cookie handling for session refresh
+  const response = NextResponse.next();
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
       cookies: {
-        async getAll() {
+        getAll() {
           return request.cookies.getAll();
         },
-        setAll(
-          cookiesToSet: { name: string; value: string; options?: object }[],
-        ) {
+        setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            (response as any).cookies.set(name, value, options),
+            request.cookies.set(name, value)
+          );
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
           );
         },
       },
-    });
-
-    await supabase.auth.getUser();
-
-    if (!isPublicPath(pathname)) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        if (isApiRoute(pathname)) {
-          if (request.headers.has("x-api-key") && validateApiKey(request)) {
-            return response;
-          }
-          return NextResponse.json(
-            { error: "Authentication required" },
-            { status: 401 },
-          );
-        }
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("returnTo", pathname);
-        return NextResponse.redirect(loginUrl);
-      }
-
-      if (isApiRoute(pathname) && !request.headers.has("x-api-key")) {
-        // API route with session is allowed
-      }
     }
+  );
+
+  // Refresh session if expired - important!
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // 3. API routes: accept API key OR Supabase session
+  if (isApiRoute(pathname)) {
+    if (request.headers.has("x-api-key")) {
+      if (validateApiKey(request)) {
+        return NextResponse.next();
+      }
+      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    return response;
+  }
+
+  // 4. Dashboard pages: require session, redirect to login if missing
+  if (!user) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("returnTo", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return response;
