@@ -12,7 +12,7 @@ on:
 
 jobs:
   claude-review:
-    # Skip forked PRs as they don't have access to repository secrets
+    # Only run on PRs from the same repository (skip forks that lack secrets)
     if: github.event.pull_request.head.repo.full_name == github.repository
 
     runs-on: ubuntu-latest
