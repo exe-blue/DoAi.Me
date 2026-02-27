@@ -2,9 +2,10 @@
 -- Also resets existing failed records caused by null device_target
 
 -- Reset failed task_devices where error = 'No device target'
+-- Uses host() to strip CIDR /32 from inet type (e.g. 192.168.1.1/32 → 192.168.1.1)
 UPDATE task_devices td
 SET
-  device_target  = d.ip_address::text || ':5555',
+  device_target  = host(d.ip_address) || ':5555',
   status         = 'pending',
   error          = NULL,
   attempt        = 0,
@@ -17,13 +18,14 @@ WHERE td.device_id = d.id
   AND td.error LIKE '%No device target%';
 
 -- Trigger function: auto-fill device_target before insert if not provided
+-- Uses host() to avoid CIDR notation from inet::text cast
 CREATE OR REPLACE FUNCTION public.fill_device_target()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
   IF NEW.device_target IS NULL AND NEW.device_id IS NOT NULL THEN
-    SELECT ip_address::text || ':5555'
+    SELECT host(ip_address) || ':5555'
     INTO NEW.device_target
     FROM devices
     WHERE id = NEW.device_id

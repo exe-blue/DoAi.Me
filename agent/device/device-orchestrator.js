@@ -274,14 +274,14 @@ class DeviceOrchestrator {
       const { count, error } = await this.supabase
         .from("task_devices")
         .select("id", { count: "exact", head: true })
-        .eq("worker_id", this.pcUuid)
+        .eq("pc_id", this.pcUuid)
         .eq("status", "pending");
       if (!error && (count || 0) > 0) return true;
       // also check unassigned
       const { count: c2 } = await this.supabase
         .from("task_devices")
         .select("id", { count: "exact", head: true })
-        .is("worker_id", null)
+        .is("pc_id", null)
         .eq("status", "pending");
       return (c2 || 0) > 0;
     } catch {

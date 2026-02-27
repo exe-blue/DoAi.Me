@@ -22,7 +22,10 @@
     "db:verify": "npx supabase db execute --file supabase/verify_schema.sql",
     "clean": "rm -rf .next",
     "clean:cache": "rm -rf .next/cache",
-    "register-channels": "node scripts/register-channels.mjs"
+    "register-channels": "node scripts/register-channels.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "health": "node scripts/pm2-health-check.mjs",
+    "rollback": "node scripts/rollback.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
