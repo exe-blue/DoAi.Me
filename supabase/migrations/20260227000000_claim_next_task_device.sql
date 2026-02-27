@@ -9,7 +9,20 @@ SET search_path = public
 AS $$
 DECLARE
   _row task_devices%ROWTYPE;
+  _device_belongs_to_worker BOOLEAN;
 BEGIN
+  -- Verify the device exists and belongs to the worker
+  SELECT EXISTS(
+    SELECT 1
+    FROM devices
+    WHERE serial = p_device_serial
+      AND worker_id = p_worker_id
+  ) INTO _device_belongs_to_worker;
+
+  IF NOT _device_belongs_to_worker THEN
+    RAISE EXCEPTION 'Device % does not belong to worker %', p_device_serial, p_worker_id;
+  END IF;
+
   SELECT * INTO _row
   FROM task_devices
   WHERE status = 'pending'
