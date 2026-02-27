@@ -9,17 +9,19 @@ import { mapVideoRow } from "@/lib/mappers";
 
 export const dynamic = "force-dynamic";
 
-// Helper to extract video id from YouTube URL
+// Helper to extract video id from YouTube URL (watch, youtu.be, shorts)
 function extractYoutubeVideoId(url: string): string | null {
   if (!url) return null;
+  const trimmed = url.trim();
 
-  // Match youtube.com/watch?v=VIDEO_ID
-  const vMatch = url.match(/[?&]v=([^&]+)/);
+  const vMatch = trimmed.match(/[?&]v=([^&]+)/);
   if (vMatch) return vMatch[1];
 
-  // Match youtu.be/VIDEO_ID
-  const shortMatch = url.match(/youtu\.be\/([^?]+)/);
+  const shortMatch = trimmed.match(/youtu\.be\/([^/?]+)/);
   if (shortMatch) return shortMatch[1];
+
+  const shortsMatch = trimmed.match(/youtube\.com\/shorts\/([^/?]+)/);
+  if (shortsMatch) return shortsMatch[1];
 
   return null;
 }
@@ -88,7 +90,23 @@ export async function POST(
     }
 
     // Single creation
-    const { title, youtube_url, priority, status } = body;
+    const {
+      title,
+      youtube_url,
+      priority,
+      status,
+      channel_name,
+      thumbnail_url,
+      duration_sec,
+      target_views,
+      prob_like,
+      prob_comment,
+      watch_duration_sec,
+      watch_duration_min_pct,
+      watch_duration_max_pct,
+      prob_subscribe,
+      source,
+    } = body;
 
     if (!title || !youtube_url) {
       return NextResponse.json(
@@ -109,8 +127,19 @@ export async function POST(
       channel_id: channelId,
       id: videoId,
       title,
+      channel_name: channel_name ?? null,
+      thumbnail_url: thumbnail_url ?? null,
+      duration_sec: duration_sec != null ? Number(duration_sec) : null,
       priority: priority ?? "normal",
       status: status ?? "active",
+      source: source === "manual" || source === "channel_auto" ? source : null,
+      target_views: target_views != null ? Number(target_views) : null,
+      prob_like: prob_like != null ? Number(prob_like) : null,
+      prob_comment: prob_comment != null ? Number(prob_comment) : null,
+      watch_duration_sec: watch_duration_sec != null ? Number(watch_duration_sec) : null,
+      watch_duration_min_pct: watch_duration_min_pct != null ? Number(watch_duration_min_pct) : null,
+      watch_duration_max_pct: watch_duration_max_pct != null ? Number(watch_duration_max_pct) : null,
+      prob_subscribe: prob_subscribe != null ? Number(prob_subscribe) : null,
     });
 
     return NextResponse.json({

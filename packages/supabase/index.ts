@@ -42,7 +42,7 @@ export type PresetType = Enums["preset_type"];
 export type LogLevel = Enums["log_level"];
 
 // ── Supabase server client ────────────────────────────────────────
-export function createServerClient() {
+export function createSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {

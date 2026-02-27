@@ -1,0 +1,11 @@
+# Normalize line endings for source (LF in repo)
+* text=auto eol=lf
+*.{js,ts,tsx,jsx,mjs,cjs} text eol=lf
+*.{json,md,yml,yaml,sh} text eol=lf
+# PowerShell: LF kept for cross-platform; CRLF can break in WSL/Git Bash
+*.ps1 text eol=lf
+
+# Binary / lock (no EOL conversion)
+*.{png,jpg,jpeg,gif,ico,webp} -text
+*.{woff,woff2,ttf,eot,otf} -text
+*.lock -text

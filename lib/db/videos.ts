@@ -1,10 +1,10 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { VideoRow } from "@/lib/supabase/types";
 
 type VideoWithChannel = VideoRow & { channels: { name: string } | null };
 
 export async function getVideosWithChannelName() {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("videos")
     .select("*, channels(name)")
@@ -15,7 +15,7 @@ export async function getVideosWithChannelName() {
 }
 
 export async function getVideosByChannelId(channelId: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("videos")
     .select("*")
@@ -33,14 +33,13 @@ export async function upsertVideo(video: {
   channel_name?: string | null;
   thumbnail_url?: string | null;
   duration_sec?: number | null;
+  source?: "manual" | "channel_auto" | null;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
+  const row = { ...video, updated_at: new Date().toISOString() } as any;
   const { data, error } = await supabase
     .from("videos")
-    .upsert(
-      { ...video, updated_at: new Date().toISOString() } as any,
-      { onConflict: "id" }
-    )
+    .upsert(row, { onConflict: "id" })
     .select()
     .returns<VideoRow[]>()
     .single();
@@ -49,7 +48,7 @@ export async function upsertVideo(video: {
 }
 
 export async function updateVideoStatus(id: string, status: string) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { error } = await supabase
     .from("videos")
     .update({ status, updated_at: new Date().toISOString() } as any)
@@ -64,7 +63,7 @@ export async function getVideosByChannelIdWithFilters(
     status?: string;
   }
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   let query = supabase
     .from("videos")
     .select("*")
@@ -87,10 +86,20 @@ export async function createVideo(video: {
   id: string;
   title: string;
   channel_name?: string | null;
+  thumbnail_url?: string | null;
+  duration_sec?: number | null;
   priority?: string | null;
   status?: string | null;
+  source?: "manual" | "channel_auto" | null;
+  target_views?: number | null;
+  prob_like?: number | null;
+  prob_comment?: number | null;
+  watch_duration_sec?: number | null;
+  watch_duration_min_pct?: number | null;
+  watch_duration_max_pct?: number | null;
+  prob_subscribe?: number | null;
 }) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("videos")
     .insert(video as any)
@@ -111,7 +120,7 @@ export async function bulkCreateVideos(
     status?: string | null;
   }>
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("videos")
     .insert(videos as any)
@@ -128,9 +137,16 @@ export async function updateVideo(
     priority?: string | null;
     status?: string | null;
     duration_sec?: number | null;
+    target_views?: number | null;
+    prob_like?: number | null;
+    prob_comment?: number | null;
+    watch_duration_sec?: number | null;
+    watch_duration_min_pct?: number | null;
+    watch_duration_max_pct?: number | null;
+    prob_subscribe?: number | null;
   }
 ) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("videos")
     .update({ ...updates, updated_at: new Date().toISOString() } as any)
@@ -143,7 +159,7 @@ export async function updateVideo(
 }
 
 export async function bulkDeleteVideos(ids: string[]) {
-  const supabase = createServerClient();
+  const supabase = createSupabaseServerClient();
   const { error } = await supabase.from("videos").delete().in("id", ids);
   if (error) throw error;
 }

@@ -1,38 +1,45 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
-import type { WorkerRow } from "@/lib/supabase/types";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const supabase = createServerClient();
-    const { data, error } = await supabase
+    const supabase = createSupabaseServerClient();
+
+    const { data: workersRows, error: workersErr } = await supabase
       .from("workers")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .returns<WorkerRow[]>();
+      .select("id, hostname, status, last_heartbeat, device_capacity")
+      .order("hostname", { ascending: true });
 
-    if (error) throw error;
+    if (workersErr) throw workersErr;
 
-    // Fetch device counts per worker
     const { data: devices, error: devErr } = await supabase
       .from("devices")
-      .select("worker_id")
-      .returns<{ worker_id: string | null }[]>();
+      .select("worker_id, status");
 
     if (devErr) throw devErr;
 
-    const countMap: Record<string, number> = {};
+    const countMap: Record<string, { total: number; online: number }> = {};
     for (const d of devices ?? []) {
       if (d.worker_id) {
-        countMap[d.worker_id] = (countMap[d.worker_id] || 0) + 1;
+        if (!countMap[d.worker_id]) countMap[d.worker_id] = { total: 0, online: 0 };
+        countMap[d.worker_id].total++;
+        if (d.status === "online" || d.status === "busy") {
+          countMap[d.worker_id].online++;
+        }
       }
     }
 
-    const workers = (data ?? []).map((w) => ({
-      ...w,
-      device_count: countMap[w.id] ?? w.device_count,
+    const workers = (workersRows ?? []).map((w) => ({
+      id: w.id,
+      pc_number: w.hostname ?? w.id,
+      hostname: w.hostname,
+      status: w.status ?? "offline",
+      last_heartbeat: w.last_heartbeat,
+      device_count: countMap[w.id]?.total ?? 0,
+      online_count: countMap[w.id]?.online ?? 0,
+      max_devices: w.device_capacity ?? 20,
     }));
 
     return NextResponse.json({ workers });
@@ -40,7 +47,7 @@ export async function GET() {
     console.error("Error fetching workers:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to fetch workers" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

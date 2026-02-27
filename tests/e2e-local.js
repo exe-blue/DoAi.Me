@@ -11,14 +11,22 @@
  *   3. At least one channel registered in the DB with a video
  *
  * Usage: node tests/e2e-local.js [--no-cleanup]
+ *
+ * Task-devices flow (MVP queue -> dispatch -> verify):
+ *   node tests/seed-e2e-mvp.js   # output E2E_CHANNEL_ID, E2E_VIDEO_ID
+ *   export E2E_CHANNEL_ID=... E2E_VIDEO_ID=... CRON_SECRET=...
+ *   node tests/e2e-local.js --task-devices
+ * Requires: Next.js running (BASE_URL, default http://localhost:3000), CRON_SECRET.
  */
 require("dotenv").config({ path: require("path").join(__dirname, "../agent/.env") });
+require("dotenv").config({ path: require("path").join(__dirname, "../.env.local") });
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const WORKER_NAME = process.env.WORKER_NAME || "local-test-pc";
 const SKIP_CLEANUP = process.argv.includes("--no-cleanup");
+const TASK_DEVICES_FLOW = process.argv.includes("--task-devices");
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error("[E2E] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
@@ -849,9 +857,125 @@ async function step11_cleanup() {
   }
 }
 
+// ─── Task-devices flow (MVP: queue → dispatch → verify) ──
+
+async function runTaskDevicesFlow() {
+  const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+  const CRON_SECRET = process.env.CRON_SECRET;
+  const channelId = process.env.E2E_CHANNEL_ID;
+  const videoId = process.env.E2E_VIDEO_ID;
+
+  console.log("\n[E2E] ── task_devices flow (queue → dispatch → verify) ──");
+  console.log(`  BASE_URL: ${BASE_URL}`);
+  if (!channelId || !videoId) {
+    console.error("  E2E_CHANNEL_ID and E2E_VIDEO_ID required. Run: node tests/seed-e2e-mvp.js");
+    process.exit(1);
+  }
+  if (!CRON_SECRET) {
+    console.error("  CRON_SECRET required for GET /api/cron/dispatch-queue");
+    process.exit(1);
+  }
+
+  const videoUrl = process.env.E2E_VIDEO_URL || `https://www.youtube.com/watch?v=${process.env.E2E_VIDEO_YOUTUBE_ID || videoId}`;
+
+  // 1) POST /api/queue
+  logStep("TD-1", "POST /api/queue");
+  let queueRes;
+  try {
+    queueRes = await fetch(`${BASE_URL}/api/queue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task_config: {
+          videoId,
+          channelId,
+          video_url: videoUrl,
+          keyword: videoId,
+        },
+        priority: 5,
+        source: "channel_auto",
+      }),
+    });
+  } catch (err) {
+    logFail(`Queue POST failed: ${err.message}. Is Next.js running at ${BASE_URL}?`);
+    process.exit(1);
+  }
+  if (!queueRes.ok) {
+    const text = await queueRes.text();
+    logFail(`Queue POST ${queueRes.status}: ${text}`);
+    process.exit(1);
+  }
+  logOK("Queue item created");
+
+  // 2) GET /api/cron/dispatch-queue (Bearer CRON_SECRET)
+  logStep("TD-2", "GET /api/cron/dispatch-queue");
+  let dispatchRes;
+  try {
+    dispatchRes = await fetch(`${BASE_URL}/api/cron/dispatch-queue`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${CRON_SECRET}` },
+    });
+  } catch (err) {
+    logFail(`Dispatch GET failed: ${err.message}`);
+    process.exit(1);
+  }
+  if (!dispatchRes.ok) {
+    const text = await dispatchRes.text();
+    logFail(`Dispatch GET ${dispatchRes.status}: ${text}`);
+    process.exit(1);
+  }
+  const dispatchJson = await dispatchRes.json();
+  if (!dispatchJson.ok || dispatchJson.dispatched !== 1) {
+    logFail(`Dispatch did not dispatch 1 item: ${JSON.stringify(dispatchJson)}`);
+    process.exit(1);
+  }
+  const taskId = dispatchJson.task_id;
+  logOK(`Dispatched task_id: ${taskId}`);
+
+  // 3) Poll for task_devices completed or tasks.devices_done >= 1
+  logStep("TD-3", "Poll for task_devices/tasks completion");
+  process.stdout.write("  Waiting for at least one task_device completed");
+  let done = false;
+  try {
+    const result = await waitForCondition("task_devices completed", async () => {
+      const { data: tdRows } = await supabase
+        .from("task_devices")
+        .select("id, status")
+        .eq("task_id", taskId);
+      const completed = (tdRows || []).filter((r) => r.status === "completed").length;
+      if (completed > 0) {
+        return { completed, total: (tdRows || []).length };
+      }
+      const { data: taskRow } = await supabase
+        .from("tasks")
+        .select("devices_done, devices_failed, devices_total")
+        .eq("id", taskId)
+        .single();
+      if (taskRow && (taskRow.devices_done || 0) >= 1) {
+        return { completed: taskRow.devices_done, total: taskRow.devices_total };
+      }
+      return null;
+    }, 120000, 3000);
+    console.log("");
+    logOK(`Completed: ${result.completed} (total: ${result.total})`);
+    done = true;
+  } catch {
+    console.log("");
+    logFail("No task_device completed within 120s. Is the agent running with task_devices engine?");
+  }
+
+  console.log("\n[E2E] task_devices flow " + (done ? "PASSED" : "FAILED") + "\n");
+  process.exit(done ? 0 : 1);
+}
+
 // ─── Main ───────────────────────────────────────────────
 
 async function main() {
+  if (TASK_DEVICES_FLOW) {
+    await runTaskDevicesFlow();
+    return;
+  }
+
   console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
   console.log("\u2551  DoAi.Me - E2E Test (Real Channel Data)          \u2551");
   console.log("\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d");

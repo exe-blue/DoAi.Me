@@ -37,6 +37,7 @@ ORDER=(
   "20260213080500_step10_task_devices_config.sql"
   "20260213080600_step11_channels_content.sql"
   "20260213_step12_task_queue_schedules.sql"
+  "20260227000000_release1_task_devices_scripts.sql"
 )
 
 for f in "${ORDER[@]}"; do

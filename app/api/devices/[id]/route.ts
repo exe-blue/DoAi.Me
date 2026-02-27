@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { NextRequest } from "next/server";
+import { getServerClient } from "@/lib/supabase/server";
 import type { DeviceRow } from "@/lib/supabase/types";
+import { ok, err, errFrom } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = getServerClient();
     const { id } = await params;
 
     const { data, error } = await supabase
@@ -19,15 +20,17 @@ export async function GET(
       .single()
       .returns<DeviceRow>();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "PGRST116") {
+        return err("NOT_FOUND", `Device not found: ${id}`, 404);
+      }
+      throw error;
+    }
 
-    return NextResponse.json({ device: data });
-  } catch (error) {
-    console.error("Error fetching device:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch device" },
-      { status: 500 }
-    );
+    return ok(data);
+  } catch (e) {
+    console.error("Error fetching device:", e);
+    return errFrom(e, "DEVICE_ERROR", 500);
   }
 }
 
@@ -36,11 +39,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = getServerClient();
     const { id } = await params;
     const body = await request.json();
 
-    // Only allow updating safe fields
     const allowedFields: (keyof DeviceRow)[] = [
       "nickname",
       "status",
@@ -67,22 +69,19 @@ export async function PUT(
 
     if (error) throw error;
 
-    return NextResponse.json({ device: data });
-  } catch (error) {
-    console.error("Error updating device:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to update device" },
-      { status: 500 }
-    );
+    return ok(data);
+  } catch (e) {
+    console.error("Error updating device:", e);
+    return errFrom(e, "DEVICE_UPDATE_ERROR", 500);
   }
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = getServerClient();
     const { id } = await params;
 
     const { data: device, error } = await supabase
@@ -95,18 +94,12 @@ export async function DELETE(
     if (error) throw error;
 
     if (!device) {
-      return NextResponse.json(
-        { error: `Device not found: ${id}` },
-        { status: 404 }
-      );
+      return err("NOT_FOUND", `Device not found: ${id}`, 404);
     }
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting device:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to delete device" },
-      { status: 500 }
-    );
+    return ok({ deleted: true });
+  } catch (e) {
+    console.error("Error deleting device:", e);
+    return errFrom(e, "DEVICE_DELETE_ERROR", 500);
   }
 }

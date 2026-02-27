@@ -1,0 +1,14 @@
+
+{
+    "name": "DoAi.Me",
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+    "workspaceFolder": "/workspaces/DoAi.Me",
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "dbaeumer.vscode-eslint",
+          "esbenp.prettier-vscode"
+        ]
+      }
+    }
+  }

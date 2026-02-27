@@ -1,24 +1,13 @@
 /**
- * QueueDispatcher — Dispatches queued tasks to the system
+ * QueueDispatcher — Dispatches queued tasks to the system (Push-based)
  *
- * Runs a 10-second dispatch loop that:
- * 1. Counts currently running tasks
- * 2. If running < max_concurrent_tasks, dequeues highest-priority items
- * 3. Creates real tasks from task_config (via POST /api/tasks logic)
- * 4. Updates queue entry with dispatched_task_id + status
- * 5. Publishes system events for dashboard
- *
- * Respects config changes dynamically. Never cancels running tasks.
+ * Primary: Supabase Realtime on task_queue INSERT → immediate dispatch.
+ * Fallback: 10-second poll for any missed events.
  */
 
-const DEFAULT_DISPATCH_INTERVAL = 10000; // 10 seconds
+const DEFAULT_DISPATCH_INTERVAL = 10000;
 
 class QueueDispatcher {
-  /**
-   * @param {object} supabaseSync - SupabaseSync instance
-   * @param {object} config - AgentConfig instance
-   * @param {object} broadcaster - DashboardBroadcaster instance (nullable)
-   */
   constructor(supabaseSync, config, broadcaster) {
     this.supabaseSync = supabaseSync;
     this.config = config;
@@ -27,33 +16,59 @@ class QueueDispatcher {
 
     this._dispatchInterval = null;
     this._running = false;
-    this._lastQueueSize = -1; // Track for state-transition logging
+    this._lastQueueSize = -1;
+    this._queueChannel = null;
   }
 
-  /**
-   * Start the dispatch loop
-   */
   start() {
     if (this._dispatchInterval) return;
 
     const interval = DEFAULT_DISPATCH_INTERVAL;
     this._dispatchInterval = setInterval(() => this._tick(), interval);
-
-    // Run first tick immediately
     this._tick();
+    this._subscribeToQueue();
 
-    console.log(`[QueueDispatcher] Started (interval: ${interval}ms)`);
+    console.log(
+      `[QueueDispatcher] Started (Realtime push + ${interval / 1000}s fallback)`,
+    );
   }
 
-  /**
-   * Stop the dispatch loop
-   */
   stop() {
     if (this._dispatchInterval) {
       clearInterval(this._dispatchInterval);
       this._dispatchInterval = null;
     }
+    if (this._queueChannel) {
+      this.supabase.removeChannel(this._queueChannel);
+      this._queueChannel = null;
+    }
     console.log("[QueueDispatcher] Stopped");
+  }
+
+  /**
+   * Realtime: task_queue INSERT with status='queued' → immediate dispatch
+   */
+  _subscribeToQueue() {
+    this._queueChannel = this.supabase
+      .channel("qd-queue-push")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "task_queue",
+          filter: "status=eq.queued",
+        },
+        () => {
+          console.log(
+            "[QueueDispatcher] ⚡ Realtime: new queue item → immediate dispatch",
+          );
+          this._tick();
+        },
+      )
+      .subscribe((status) => {
+        console.log(`[QueueDispatcher] task_queue Realtime: ${status}`);
+      });
   }
 
   /**
@@ -71,11 +86,13 @@ class QueueDispatcher {
         .eq("status", "running");
 
       if (countErr) {
-        console.error(`[QueueDispatcher] Failed to count running tasks: ${countErr.message}`);
+        console.error(
+          `[QueueDispatcher] Failed to count running tasks: ${countErr.message}`,
+        );
         return;
       }
 
-      const maxConcurrent = this.config.maxConcurrentTasks || 20;
+      const maxConcurrent = this.config.maxConcurrentTasks ?? 10;
       const available = Math.max(0, maxConcurrent - (runningCount || 0));
 
       // 2. Check queue size for state-transition logging
@@ -96,17 +113,20 @@ class QueueDispatcher {
 
       if (available === 0 || currentQueueSize === 0) return;
 
-      // 3. Dequeue items (up to available slots)
+      // 3. Dequeue items (target_worker NULL만 — 지정 PC 항목은 해당 Agent가 Realtime으로 수신)
       const { data: queueItems, error: dequeueErr } = await this.supabase
         .from("task_queue")
         .select("*")
         .eq("status", "queued")
+        .is("target_worker", null)
         .order("priority", { ascending: false })
         .order("created_at", { ascending: true })
         .limit(available);
 
       if (dequeueErr) {
-        console.error(`[QueueDispatcher] Failed to dequeue: ${dequeueErr.message}`);
+        console.error(
+          `[QueueDispatcher] Failed to dequeue: ${dequeueErr.message}`,
+        );
         return;
       }
 
@@ -116,17 +136,21 @@ class QueueDispatcher {
       for (const item of queueItems) {
         try {
           const taskId = await this._dispatchItem(item);
-          console.log(`[QueueDispatcher] Dispatched queue=${item.id} → task=${taskId} (priority=${item.priority})`);
+          console.log(
+            `[QueueDispatcher] Dispatched queue=${item.id} → task=${taskId} (priority=${item.priority})`,
+          );
 
           if (this.broadcaster) {
             await this.broadcaster.publishSystemEvent(
               "task_dispatched",
               `Queue item dispatched (priority ${item.priority})`,
-              { queue_id: item.id, task_id: taskId }
+              { queue_id: item.id, task_id: taskId },
             );
           }
         } catch (err) {
-          console.error(`[QueueDispatcher] Failed to dispatch queue=${item.id}: ${err.message}`);
+          console.error(
+            `[QueueDispatcher] Failed to dispatch queue=${item.id}: ${err.message}`,
+          );
         }
       }
     } catch (err) {
@@ -151,13 +175,14 @@ class QueueDispatcher {
       type: taskConfig.type || "youtube",
       task_type: taskConfig.taskType || taskConfig.task_type || "view_farm",
       device_count: taskConfig.deviceCount || taskConfig.device_count || 20,
-      payload: taskConfig.variables || taskConfig.payload || {
-        watchPercent: 80,
-        commentProb: 10,
-        likeProb: 40,
-        saveProb: 5,
-        subscribeToggle: false,
-      },
+      payload: taskConfig.variables ||
+        taskConfig.payload || {
+          watchPercent: 80,
+          commentProb: 10,
+          likeProb: 40,
+          saveProb: 5,
+          subscribeToggle: false,
+        },
       status: "pending",
       ...(taskConfig.pcId || taskConfig.pc_id
         ? { pc_id: taskConfig.pcId || taskConfig.pc_id }
@@ -183,7 +208,9 @@ class QueueDispatcher {
       .eq("id", item.id);
 
     if (updateErr) {
-      console.error(`[QueueDispatcher] Failed to update queue entry: ${updateErr.message}`);
+      console.error(
+        `[QueueDispatcher] Failed to update queue entry: ${updateErr.message}`,
+      );
     }
 
     return task.id;

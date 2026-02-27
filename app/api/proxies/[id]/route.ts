@@ -1,14 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { getServerClient } from "@/lib/supabase/server";
+import { ok, err, errFrom } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
 export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = getServerClient();
     const { id } = await params;
     const body = await request.json();
 
@@ -43,25 +44,22 @@ export async function PUT(
 
     if (error) throw error;
 
-    return NextResponse.json({ proxy: data });
-  } catch (error) {
-    console.error("Error updating proxy:", error);
-    return NextResponse.json(
-      { error: "Failed to update proxy" },
-      { status: 500 }
-    );
+    return ok({ data });
+  } catch (e) {
+    console.error("Error updating proxy:", e);
+    return errFrom(e, "PROXY_UPDATE_ERROR", 500);
   }
 }
 
+/** DELETE /api/proxies/[id]. Assigned proxies cannot be deleted (unassign first). */
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = getServerClient();
     const { id } = await params;
 
-    // First, get the proxy to check if it has a device assigned
     const { data: proxy, error: fetchError } = await supabase
       .from("proxies")
       .select("device_id")
@@ -70,33 +68,24 @@ export async function DELETE(
       .returns<{ device_id: string | null }>();
 
     if (fetchError) throw fetchError;
-
-    // If the proxy is assigned to a device, unassign it first
-    if (proxy?.device_id) {
-      const { error: updateError } = await supabase
-        .from("devices")
-        .update({ proxy_id: null })
-        .eq("id", proxy.device_id)
-        .returns<{ id: string }>();
-
-      if (updateError) throw updateError;
+    if (!proxy) return err("NOT_FOUND", "Proxy not found", 404);
+    if (proxy.device_id) {
+      return err(
+        "BAD_REQUEST",
+        "Cannot delete assigned proxy; unassign the device first",
+        400,
+      );
     }
 
-    // Delete the proxy
     const { error: deleteError } = await supabase
       .from("proxies")
       .delete()
-      .eq("id", id)
-      .returns<{ id: string }>();
-
+      .eq("id", id);
     if (deleteError) throw deleteError;
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting proxy:", error);
-    return NextResponse.json(
-      { error: "Failed to delete proxy" },
-      { status: 500 }
-    );
+    return ok({ deleted: id });
+  } catch (e) {
+    console.error("Error deleting proxy:", e);
+    return errFrom(e, "PROXY_DELETE_ERROR", 500);
   }
 }

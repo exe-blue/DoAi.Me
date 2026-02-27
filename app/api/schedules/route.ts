@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { computeNextRun, validateCron } from "@/lib/cron-utils";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ const ts = (sb: any) => sb.from("task_schedules");
  */
 export async function GET() {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
 
     const { data, error } = await ts(supabase)
       .select("*")
@@ -37,7 +37,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const body = await request.json();
 
     // Validate required fields

@@ -3,7 +3,7 @@ import { getAllChannels, createChannel } from "@/lib/db/channels";
 import { getVideosWithChannelName } from "@/lib/db/videos";
 import { getTaskByVideoId } from "@/lib/db/tasks";
 import { mapChannelRow, mapVideoRow } from "@/lib/mappers";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { resolveChannelHandle } from "@/lib/youtube";
 import type { ChannelRow } from "@/lib/supabase/types";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     // Fix N+1 query: get channels with video_count in a single query
-    const supabase = createServerClient();
+    const supabase = createSupabaseServerClient();
     const { data: channelsWithCount, error: channelsError } = await supabase
       .from("channels")
       .select("*, videos(count)")
@@ -25,7 +25,12 @@ export async function GET() {
 
     const mappedChannels = channelsWithCount.map((ch) => ({
       ...mapChannelRow(ch),
-      video_count: ch.videos?.[0]?.count || 0,
+      video_count: ch.videos?.[0]?.count ?? 0,
+      last_collected_at: ch.last_collected_at ?? null,
+      is_monitored: ch.is_monitored ?? false,
+      handle: ch.handle ?? null,
+      status: ch.status ?? null,
+      auto_collect: ch.auto_collect ?? false,
     }));
 
     const mappedContents = await Promise.all(

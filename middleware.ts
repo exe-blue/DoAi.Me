@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/lib/supabase/types";
 
-const PUBLIC_PATHS = ["/auth", "/api/health", "/monitoring", "/login"];
+const PUBLIC_PATHS = [
+  "/auth",
+  "/api/health",
+  "/monitoring",
+  "/login",
+  "/privacy",
+  "/agreement",
+];
 const AUTH_CALLBACK_PATH = "/auth/callback";
 
 function isPublicPath(pathname: string): boolean {
@@ -38,12 +45,14 @@ export async function middleware(request: NextRequest) {
   if (url && anonKey) {
     const supabase = createServerClient<Database>(url, anonKey, {
       cookies: {
-        getAll() {
+        async getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(
+          cookiesToSet: { name: string; value: string; options?: object }[],
+        ) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            (response as any).cookies.set(name, value, options),
           );
         },
       },
@@ -63,7 +72,7 @@ export async function middleware(request: NextRequest) {
           }
           return NextResponse.json(
             { error: "Authentication required" },
-            { status: 401 }
+            { status: 401 },
           );
         }
         const loginUrl = new URL("/login", request.url);

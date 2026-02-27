@@ -1,38 +1,91 @@
 import { redirect } from "next/navigation";
 import { createAuthServerClient } from "@/lib/supabase/auth-server";
 import { LoginForm } from "./login-form";
+import { DottedBackground } from "@/components/dotted-background";
+import Image from "next/image";
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ returnTo?: string; signup?: string; error?: string }>;
 }) {
-  const supabase = await createAuthServerClient();
-  const { data } = await supabase.auth.getSession();
-  if (data.session) {
-    redirect("/dashboard");
+  // Try to create Supabase client - if credentials are missing, show setup error
+  let user = null;
+  let setupError = null;
+  let supabase;
+  try {
+    supabase = await createAuthServerClient();
+  } catch (err) {
+    setupError = err instanceof Error ? err.message : "Supabase client initialization failed";
+    console.error("[Login] Supabase initialization failed:", err);
   }
-
+  if (supabase) {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  }
   const { returnTo, signup, error } = await searchParams;
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <svg
-              className="h-6 w-6 text-primary-foreground"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+  if (user) {
+    // Same-origin path only to avoid open redirect
+    const safePath =
+      typeof returnTo === "string" &&
+      returnTo.startsWith("/") &&
+      !returnTo.startsWith("//")
+        ? returnTo
+        : "/dashboard";
+    redirect(safePath);
+  }
+
+  // If Supabase is not configured, show setup instructions
+  if (setupError) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-background">
+        <DottedBackground />
+        <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center gap-6 px-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary">
+              <Image
+                src="/images/logo.PNG"
+                alt="DoAi.Me"
+                width={48}
+                height={48}
+                className="object-contain"
+                priority
               />
-            </svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">DoAi.Me</h1>
+              <p className="text-sm text-muted-foreground">Console</p>
+            </div>
+          </div>
+          <div className="w-full rounded-lg border border-destructive/50 bg-destructive/10 p-6">
+            <h2 className="mb-4 text-lg font-semibold text-destructive">
+              Supabase Setup Required
+            </h2>
+            <pre className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
+              {setupError}
+            </pre>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background">
+      <DottedBackground />
+      <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-4">
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary">
+            <Image
+              src="/images/logo.PNG"
+              alt="DoAi.Me"
+              width={48}
+              height={48}
+              className="object-contain"
+              priority
+            />
           </div>
           <div>
             <h1 className="text-2xl font-bold">DoAi.Me</h1>
@@ -52,4 +105,4 @@ export default async function LoginPage({
       </div>
     </div>
   );
-}
+}
