@@ -37,3 +37,4 @@ See `package.json` scripts. Summary:
 - `npm workspaces` are defined (`packages/*`) for shared packages; root `npm install` covers them.
 - Vitest tests do NOT require Supabase or any external services; they mock all DB calls.
 - Production is single stack: root `app/` (web) + legacy agent `agent/agent.js` only.
+- **Devcontainer guard:** `package.json` pre-hooks (`preinstall`, `prebuild`, `pretest`) run `scripts/guard-devcontainer.mjs` which blocks execution outside a devcontainer. In Cursor Cloud, set `SKIP_DEVCONTAINER_GUARD=1` before `npm install`, `npm test`, or `npm run build`. The update script already handles this. For ad-hoc commands, prefix with `SKIP_DEVCONTAINER_GUARD=1`.
