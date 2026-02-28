@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const TaskExecutor = require("../agent/task-executor");
+const TaskExecutor = require("../agent/task/task-executor");
 
 describe("TaskExecutor._findAndTap", () => {
   it("matches content-desc exactly to avoid tapping playlist action", async () => {
