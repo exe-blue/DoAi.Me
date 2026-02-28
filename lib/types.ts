@@ -50,6 +50,29 @@ export interface TaskVariables {
   likeProb: number;
   saveProb: number;
   subscribeToggle: boolean;
+  /** Layer 3: min/max watch percentage (0–100). If set, overrides single watchPercent for duration. */
+  watchMinPct?: number;
+  watchMaxPct?: number;
+  /** Layer 3: min/max wait seconds per step (random delay). */
+  waitMinSec?: number;
+  waitMaxSec?: number;
+}
+
+/** Layer 3: task_devices.config shape for agent execution. */
+export interface TaskDeviceConfig {
+  video_url: string;
+  video_id: string;
+  title?: string;
+  keyword?: string;
+  min_wait_sec?: number;
+  max_wait_sec?: number;
+  watch_min_pct?: number;
+  watch_max_pct?: number;
+  prob_like?: number;
+  prob_comment?: number;
+  prob_playlist?: number;
+  comment_content?: string;
+  action_touch_coords?: { x?: number; y?: number } | number[];
 }
 
 export interface Task {

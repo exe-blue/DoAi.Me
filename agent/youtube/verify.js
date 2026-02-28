@@ -4,7 +4,7 @@
  * video_id 추출 (URL), 제목/채널 추출 (XML → YouTube API 폴백).
  */
 const { getLogger } = require('../common/logger');
-const { dumpUI } = require('../adb/screen');
+const { dumpUI, getPlaybackState } = require('../adb/screen');
 const { RES } = require('./selectors');
 
 const log = getLogger('youtube.verify');
@@ -128,7 +128,6 @@ async function _fetchFromAPI(videoId, apiKey) {
  * @returns {Promise<boolean>}
  */
 async function verifyPlaying(dev) {
-  const { getPlaybackState } = require('../adb/screen');
   const state = await getPlaybackState(dev);
   return state === 'playing';
 }

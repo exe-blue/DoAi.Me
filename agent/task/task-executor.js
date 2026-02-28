@@ -28,6 +28,22 @@ function _randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/** Layer 3: run async fn up to maxAttempts times; on throw retries after short delay, then rethrows. */
+async function _withRetry(fn, maxAttempts = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        await _sleep(500 * attempt);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /** YouTube UI 요소 (resource-id / content-desc). docs/youtube-ui-objects.md 참고. */
 const YT = {
   SEARCH_BUTTON: { resourceId: "com.google.android.youtube:id/menu_item_1" },
@@ -51,6 +67,8 @@ const YT = {
   SAVE_PLAYLIST: { resourceId: "com.google.android.youtube:id/save_to_playlist_button" },
   SAVE_PLAYLIST_ALT: { contentDesc: "재생목록에 저장" },
   WATCH_LATER: { textContains: "나중에 볼 동영상" },
+  SAVE_ADD: { textContains: "담기" },
+  SAVE_ADD_ALT: { contentDesc: "담기" },
   HOME_FEED: { resourceId: "com.google.android.youtube:id/results" },
   RELATED_VIDEO: { resourceId: "com.google.android.youtube:id/thumbnail" },
   AUTOPLAY_TOGGLE: { resourceId: "com.google.android.youtube:id/autonav_toggle" },
@@ -122,7 +140,8 @@ class TaskExecutor {
 
   /**
    * Execute a single task_device row (called by DeviceOrchestrator).
-   * @param {object} taskDevice - { id, task_id, device_serial, config: { video_url, video_id }, worker_id }
+   * Layer 3: config may include title, keyword, min/max wait, watch %, probs, comment_content.
+   * @param {object} taskDevice - { id, task_id, device_serial, config: { video_url, video_id, title?, keyword?, ... }, worker_id }
    */
   async runTaskDevice(taskDevice) {
     if (!taskDevice?.id) throw new Error("runTaskDevice: missing id");
@@ -138,31 +157,108 @@ class TaskExecutor {
       await this._updateTaskDevice(taskDevice.id, "failed", { error: "No video_url in config" });
       return;
     }
+    const searchKeyword = cfg.keyword ?? cfg.title ?? null;
+    const videoTitle = cfg.title ?? null;
+    const waitMinSec = Math.max(0, Number(cfg.min_wait_sec) || 1);
+    const waitMaxSec = Math.max(waitMinSec, Number(cfg.max_wait_sec) || 5);
+    const durationSec = this._resolveWatchDurationSec(cfg);
+    const engagementConfig = {
+      probLike: Number(cfg.prob_like) || DEFAULT_PROBS.like,
+      probComment: Number(cfg.prob_comment) || DEFAULT_PROBS.comment,
+      probSubscribe: DEFAULT_PROBS.subscribe,
+      probPlaylist: Number(cfg.prob_playlist) || DEFAULT_PROBS.playlist,
+      channelName: "",
+      videoId,
+      warmupSec: this._shouldWarmup(serial) ? _randInt(60, 180) : 0,
+      waitMinSec,
+      waitMaxSec,
+      commentContent: cfg.comment_content ?? null,
+      actionTouchCoords: cfg.action_touch_coords ?? null,
+    };
     this._jobRunning.add(taskDevice.id);
+
+    this.supabaseSync.insertExecutionLog(
+      taskDevice.id,
+      serial,
+      "run_task_device_start",
+      { task_id: taskDevice.task_id, video_id: videoId },
+      null,
+      "info",
+      `Task device started at ${new Date().toISOString()}`
+    );
+
     try {
-      const durationSec = _randInt(45, 120);
-      const engagementConfig = {
-        probLike: DEFAULT_PROBS.like,
-        probComment: DEFAULT_PROBS.comment,
-        probSubscribe: DEFAULT_PROBS.subscribe,
-        probPlaylist: DEFAULT_PROBS.playlist,
-        channelName: "",
-        videoId,
-        warmupSec: this._shouldWarmup(serial) ? _randInt(60, 180) : 0,
-      };
-      const result = await this._watchVideoOnDevice(serial, videoUrl, durationSec, null, null, engagementConfig);
+      const result = await this._watchVideoOnDevice(
+        serial,
+        videoUrl,
+        durationSec,
+        searchKeyword,
+        videoTitle,
+        engagementConfig
+      );
       await this._updateTaskDevice(taskDevice.id, "completed", {
         completed_at: new Date().toISOString(),
         duration_ms: result.actualDurationSec != null ? result.actualDurationSec * 1000 : null,
-        result: { watchPercentage: result.watchPercentage, liked: result.liked ?? false, commented: result.commented ?? false },
+        result: {
+          watchPercentage: result.watchPercentage,
+          liked: result.liked ?? false,
+          commented: result.commented ?? false,
+          playlisted: result.playlisted ?? false,
+        },
       });
+      this.supabaseSync.insertExecutionLog(
+        taskDevice.id,
+        serial,
+        "run_task_device_completed",
+        {
+          task_id: taskDevice.task_id,
+          duration_ms: result.actualDurationSec != null ? result.actualDurationSec * 1000 : null,
+          watchPercentage: result.watchPercentage,
+          liked: result.liked ?? false,
+          commented: result.commented ?? false,
+          playlisted: result.playlisted ?? false,
+        },
+        null,
+        "success",
+        `Completed in ${result.actualDurationSec ?? 0}s, watch ${result.watchPercentage ?? 0}%`
+      );
       console.log(`[TaskExecutor] ✓ task_device ${taskDevice.id.substring(0, 8)} completed`);
     } catch (err) {
       console.error(`[TaskExecutor] ✗ task_device ${taskDevice.id.substring(0, 8)} failed: ${err.message}`);
+      this.supabaseSync.insertExecutionLog(
+        taskDevice.id,
+        serial,
+        "run_task_device_failed",
+        { task_id: taskDevice.task_id, error: err.message },
+        null,
+        "error",
+        err.message
+      );
       await this._updateTaskDevice(taskDevice.id, "failed", { error: err.message });
     } finally {
       this._jobRunning.delete(taskDevice.id);
     }
+  }
+
+  /**
+   * Layer 3: resolve watch duration from config (duration_sec * watch_min~max_pct) or fallback.
+   */
+  _resolveWatchDurationSec(cfg) {
+    const durationSec = Number(cfg.duration_sec);
+    const minPct = Number(cfg.watch_min_pct);
+    const maxPct = Number(cfg.watch_max_pct);
+    if (Number.isFinite(durationSec) && durationSec > 0 && Number.isFinite(minPct) && Number.isFinite(maxPct)) {
+      const pct = _randInt(Math.min(minPct, maxPct), Math.max(minPct, maxPct));
+      return Math.max(10, Math.round((durationSec * pct) / 100));
+    }
+    return _randInt(45, 120);
+  }
+
+  /**
+   * Layer 3: adbShell with up to 3 retries on failure (무응답/에러 시 재시도).
+   */
+  async _adbShellWithRetry(serial, command, maxAttempts = 3) {
+    return _withRetry(() => this.xiaowei.adbShell(serial, command), maxAttempts);
   }
 
   async _updateTaskDevice(id, status, extra = {}) {
@@ -187,17 +283,21 @@ class TaskExecutor {
   async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig) {
     const startTime = Date.now();
     const eng = engagementConfig || {};
+    const waitMinMs = () => (eng.waitMinSec != null ? eng.waitMinSec * 1000 : 1000);
+    const waitMaxMs = () => (eng.waitMaxSec != null ? eng.waitMaxSec * 1000 : 5000);
+    const stepWait = () => _sleep(_randInt(waitMinMs(), waitMaxMs()));
 
     if (eng.warmupSec && eng.warmupSec > 0) {
       await this._doWarmup(serial, eng.warmupSec);
     }
+    await stepWait();
 
     const personality = this._getPersonality(serial);
 
     const willLike = Math.random() < this._calcProb(eng.probLike ?? DEFAULT_PROBS.like, personality.likeMult);
     const willSubscribe = Math.random() < this._calcProb(eng.probSubscribe ?? DEFAULT_PROBS.subscribe, personality.subscribeMult);
     const willComment =
-      this.commentGenerator &&
+      (eng.commentContent || this.commentGenerator) &&
       Math.random() < this._calcProb(eng.probComment ?? DEFAULT_PROBS.comment, personality.commentMult);
     const willPlaylist =
       Math.random() < this._calcProb(eng.probPlaylist ?? DEFAULT_PROBS.playlist, personality.playlistMult);
@@ -207,8 +307,8 @@ class TaskExecutor {
     const playlistAtSec = durationSec * (_randInt(85, 95) / 100);
     const actions = { liked: false, subscribed: false, commented: false, playlisted: false };
 
-    let commentText = null;
-    if (willComment) {
+    let commentText = eng.commentContent || null;
+    if (willComment && !commentText && this.commentGenerator) {
       commentText = await this.commentGenerator.generate(
         videoTitle || "영상",
         eng.channelName || "",
@@ -225,29 +325,33 @@ class TaskExecutor {
       );
     }
 
-    await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+    await this._adbShellWithRetry(serial, "input keyevent KEYCODE_WAKEUP");
     await _sleep(500);
+    await stepWait();
 
-    // 세로 모드 강제 (Galaxy S9)
-    await this.xiaowei.adbShell(serial, "settings put system accelerometer_rotation 0");
-    await this.xiaowei.adbShell(serial, "settings put system user_rotation 0");
-    await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+    // 세로 모드 강제 (Galaxy S9) — 1-1 유튜브 화면 진입 (Layer 3: 3회 재시도)
+    await this._adbShellWithRetry(serial, "settings put system accelerometer_rotation 0");
+    await this._adbShellWithRetry(serial, "settings put system user_rotation 0");
+    await this._adbShellWithRetry(serial, "am force-stop com.google.android.youtube");
     await _sleep(1000);
-    await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
+    await this._adbShellWithRetry(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
     await _sleep(_randInt(3000, 5000));
+    await stepWait();
 
     const query = this._buildSearchQuery(searchKeyword, videoTitle, videoUrl);
     console.log(`[TaskExecutor] 🔍 ${serial} searching: "${query}"`);
 
     const searchSuccess = await this._searchAndSelectVideo(serial, query);
+    await stepWait();
 
     if (!searchSuccess) {
       console.log(`[TaskExecutor] ⚠ ${serial} search failed, falling back to direct URL`);
-      await this.xiaowei.adbShell(serial, `am start -a android.intent.action.VIEW -d '${videoUrl}'`);
+      await this._adbShellWithRetry(serial, `am start -a android.intent.action.VIEW -d '${videoUrl}'`);
       await _sleep(_randInt(4000, 7000));
     }
 
-    await _sleep(3000);
+    // Layer 3: 6초 딜레이 후 광고 스킵
+    await _sleep(6000);
     await this._trySkipAd(serial);
     await this._ensurePlaying(serial);
 
@@ -774,7 +878,8 @@ class TaskExecutor {
   }
 
   /**
-   * 재생목록에 저장 실행. 저장 버튼 → "나중에 볼 동영상" 또는 첫 번째 항목 선택.
+   * Layer 3: 재생목록 담기 — 명령 아이콘 터치 후 좌로 스와이프 2회, "담기" 클릭.
+   * Fallback: 기존 방식 (저장 버튼 → 나중에 볼 동영상 또는 첫 항목).
    * @param {string} serial
    * @returns {Promise<boolean>}
    */
@@ -788,12 +893,29 @@ class TaskExecutor {
       }
       await _sleep(_randInt(1500, 2500));
 
+      const screen = await this._getScreenSize(serial);
+      const midY = Math.round(screen.height * 0.5);
+      const fromX = Math.round(screen.width * 0.8);
+      const toX = Math.round(screen.width * 0.2);
+      const duration = _randInt(300, 500);
+      await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
+      await _sleep(400);
+      await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
+      await _sleep(_randInt(800, 1200));
+
+      let tapped = await this._findAndTap(serial, YT.SAVE_ADD, 1);
+      if (!tapped) tapped = await this._findAndTap(serial, YT.SAVE_ADD_ALT, 1);
+      if (tapped) {
+        await _sleep(_randInt(1000, 1500));
+        console.log(`[Engagement] 📋 ${serial.substring(0, 6)} 담기 (스와이프 2회 후 탭)`);
+        return true;
+      }
+
       const selected = await this._findAndTap(serial, YT.WATCH_LATER, 1);
       if (selected) {
         await _sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`);
       } else {
-        const screen = await this._getScreenSize(serial);
         await this.xiaowei.adbShell(
           serial,
           `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`

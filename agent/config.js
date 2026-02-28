@@ -5,7 +5,7 @@
  * Emits 'config-updated' with { key, oldValue, newValue } on every change.
  */
 const EventEmitter = require("events");
-require("dotenv").config();
+require("dotenv").config({ path: require("path").resolve(__dirname, ".env"), override: true });
 
 // Env validation (warn, don't exit — tests may not have env vars)
 const requiredEnv = [

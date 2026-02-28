@@ -65,7 +65,7 @@ class DashboardService {
   }
 
   /**
-   * 일별 미션 리포트
+   * 일별 미션 리포트 (task_devices SSOT — 완료/실패 집계)
    * @param {string} [date] - YYYY-MM-DD (기본: 오늘)
    * @returns {Promise<object>}
    */
@@ -74,33 +74,36 @@ class DashboardService {
     const startOfDay = `${targetDate}T00:00:00.000Z`;
     const endOfDay = `${targetDate}T23:59:59.999Z`;
 
-    // 해당 일 완료된 job_assignments
-    const { data: assignments, error } = await this.supabase
-      .from('job_assignments')
-      .select('job_id, status, final_duration_sec, watch_percentage, did_like, did_comment, did_playlist')
+    const { data: rows, error } = await this.supabase
+      .from('task_devices')
+      .select('id, status, completed_at, duration_ms, result')
       .gte('completed_at', startOfDay)
       .lte('completed_at', endOfDay);
 
     if (error) { log.error('mission_report_failed', { error: error.message }); return {}; }
 
-    const rows = assignments || [];
-    const completed = rows.filter(r => r.status === 'completed');
-    const failed = rows.filter(r => r.status === 'failed');
+    const list = rows || [];
+    const completed = list.filter(r => r.status === 'completed' || r.status === 'done');
+    const failed = list.filter(r => r.status === 'failed');
+
+    const likes = completed.filter(r => r.result && typeof r.result === 'object' && r.result.liked).length;
+    const comments = completed.filter(r => r.result && typeof r.result === 'object' && r.result.commented).length;
+    const playlists = completed.filter(r => r.result && typeof r.result === 'object' && r.result.playlisted).length;
 
     return {
       date: targetDate,
-      total: rows.length,
+      total: list.length,
       completed: completed.length,
       failed: failed.length,
       avgWatchSec: completed.length > 0
-        ? Math.round(completed.reduce((s, r) => s + (r.final_duration_sec || 0), 0) / completed.length)
+        ? Math.round(completed.reduce((s, r) => s + (r.duration_ms || 0) / 1000, 0) / completed.length)
         : 0,
       avgWatchPct: completed.length > 0
-        ? Math.round(completed.reduce((s, r) => s + (r.watch_percentage || 0), 0) / completed.length)
+        ? Math.round(completed.reduce((s, r) => s + (r.result && r.result.watchPercentage ? r.result.watchPercentage : 0), 0) / completed.length)
         : 0,
-      likes: completed.filter(r => r.did_like).length,
-      comments: completed.filter(r => r.did_comment).length,
-      playlists: completed.filter(r => r.did_playlist).length,
+      likes,
+      comments,
+      playlists,
     };
   }
 
@@ -231,25 +234,30 @@ class DashboardService {
     const today = new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z';
 
     const { count: views } = await this.supabase
-      .from('job_assignments').select('*', { count: 'exact', head: true })
-      .eq('status', 'completed').gte('completed_at', today);
+      .from('task_devices').select('*', { count: 'exact', head: true })
+      .in('status', ['completed', 'done']).gte('completed_at', today);
 
     const { count: errors } = await this.supabase
-      .from('job_assignments').select('*', { count: 'exact', head: true })
+      .from('task_devices').select('*', { count: 'exact', head: true })
       .eq('status', 'failed').gte('created_at', today);
 
-    const { data: likesData } = await this.supabase
-      .from('job_assignments').select('did_like, did_comment, did_playlist')
-      .eq('status', 'completed').eq('did_like', true).gte('completed_at', today);
+    const { data: completedRows } = await this.supabase
+      .from('task_devices').select('result')
+      .in('status', ['completed', 'done']).gte('completed_at', today);
 
-    const { data: commentsData } = await this.supabase
-      .from('job_assignments').select('id')
-      .eq('status', 'completed').eq('did_comment', true).gte('completed_at', today);
+    let likes = 0;
+    let comments = 0;
+    for (const r of completedRows || []) {
+      if (r.result && typeof r.result === 'object') {
+        if (r.result.liked) likes++;
+        if (r.result.commented) comments++;
+      }
+    }
 
     return {
       views: views || 0,
-      likes: likesData?.length || 0,
-      comments: commentsData?.length || 0,
+      likes,
+      comments,
       errors: errors || 0,
     };
   }

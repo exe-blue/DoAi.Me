@@ -18,6 +18,8 @@ const { searchAndSelect } = require('./search');
 const { handlePrerollAds, ensurePlaying, watchVideo, trySkipAd } = require('./watch');
 const { getVideoInfo, verifyVideoMatch, verifyPlaying, detectBotWarning } = require('./verify');
 const { likeVideo, subscribeChannel, writeComment, saveToPlaylist } = require('./action');
+const fs = require('fs');
+const path = require('path');
 
 const log = getLogger('youtube.flows');
 
@@ -325,9 +327,6 @@ async function _handleBotDetection(type, services, serial) {
  * 경로: agent/screenshots/YYYY-MM-DD/{serial}_{timestamp}_{videoId}.png
  */
 async function _saveScreenshot(dev, videoId) {
-  const fs = require('fs');
-  const path = require('path');
-
   const date = new Date();
   const dateStr = date.toISOString().slice(0, 10);
   const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19);

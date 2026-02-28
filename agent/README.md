@@ -15,16 +15,15 @@ Ensure Node, env config, and Xiaowei are set up so the agent can talk to Supabas
 ## Key modules
 
 - **agent.js** — Main entry; wires Xiaowei, Supabase, heartbeat, and dispatchers.
-- **device-orchestrator.js** — Tracks device state and assigns work via `claim_next_assignment` RPC.
-- **video-dispatcher.js** — Creates jobs and job_assignments from active videos (60s interval).
-- **task-executor.js** — Runs assigned tasks on devices via Xiaowei/ADB.
+- **device-orchestrator.js** — Tracks device state and assigns work via `claim_task_devices_for_pc` / `claim_next_task_device` RPC (task_devices SSOT).
+- **video-dispatcher.js** — Legacy: previously created jobs/job_assignments; pipeline now uses **task_devices**. Create tasks + task_devices via web dashboard or queue-dispatcher.
+- **task-executor.js** — Runs claimed **task_device** rows on devices via Xiaowei/ADB (`runTaskDevice`).
 - **supabase-sync.js** — Supabase client, device sync, and Realtime subscriptions.
 
 ## E2E pipeline diagnostics
 
-If the orchestrator stays in warmup and never claims assignments, run the SQL in **Supabase SQL Editor** (project `vyfxrplzhskncigyfkaz`):
+If the orchestrator never claims work, run diagnostics in **Supabase SQL Editor**:
 
-- **Queries:** `supabase/migrations/20260225000000_e2e_diagnostic_queries.sql` (Step 1 → Step 2 or 3 → Step 4).
-- **Step 1:** Pending assignments exist? If no → VideoDispatcher or primary PC; if yes → Step 3 (claim RPC / pc_id).
-- **Step 3:** `claim_next_assignment(pc_uuid, 'test_serial')` returns a row? If yes, RPC is fine (check Orchestrator `pcId`); if no, fix pc_id or run migration `20260225110000` for nullable `device_id`.
-- **Debug logs:** Set `DEBUG_ORCHESTRATOR=1` or `DEBUG_ORCHESTRATOR_CLAIM=1` to log each claim attempt and result. Claim success always logs `[DeviceOrchestrator] <serial> → assignment <id>`.
+- **Step 1:** Pending task_devices? `SELECT * FROM task_devices WHERE status = 'pending' AND (pc_id = '<your_pc_uuid>' OR pc_id IS NULL) LIMIT 5;`
+- **Step 2:** Claim RPC: `SELECT * FROM claim_task_devices_for_pc(runner_pc_id := '<pc_uuid>'::uuid, max_to_claim := 1);` or `claim_next_task_device(p_worker_id := '<pc_uuid>'::uuid, p_device_serial := 'test_serial');` If no row → check pc_id, devices.serial_number, and migrations.
+- **Debug logs:** Set `DEBUG_ORCHESTRATOR=1` or `DEBUG_ORCHESTRATOR_CLAIM=1`.

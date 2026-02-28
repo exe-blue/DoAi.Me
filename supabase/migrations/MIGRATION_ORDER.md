@@ -28,3 +28,6 @@ Migrations in `supabase/migrations` listed by filename; apply in this order.
 - `20260225100000_job_assignments_pc_video_claim.sql` — job_assignments PC/video claim
 - `20260225110000_job_assignments_device_id_nullable.sql` — device_id nullable
 - `run_step6_and_step7.sql` — run step6 and step7
+- `20260229000000_task_devices_on_task_insert_trigger.sql` — Layer 3: create task_devices on tasks INSERT (server-side)
+- `20260229000001_task_devices_on_device_insert_trigger.sql` — add task_device when new device inserted (current running task)
+- `20260229000002_task_and_task_device_timeouts.sql` — task 30min / task_device 20min timeout + cron

@@ -263,8 +263,8 @@ class DeviceOrchestrator {
    */
   updateDeviceIdMap(rows) {
     for (const row of rows) {
-      if (row.id && row.serial) {
-        this._deviceIdToSerial.set(row.id, row.serial);
+      if (row.id && (row.serial_number ?? row.serial)) {
+        this._deviceIdToSerial.set(row.id, row.serial_number ?? row.serial);
       }
     }
   }

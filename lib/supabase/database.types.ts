@@ -366,6 +366,42 @@ export type Database = {
           },
         ]
       }
+      execution_logs: {
+        Row: {
+          id: string
+          execution_id: string
+          device_id: string | null
+          status: string
+          data: Json | null
+          details: Json | null
+          level: string
+          message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          execution_id: string
+          device_id?: string | null
+          status?: string
+          data?: Json | null
+          details?: Json | null
+          level?: string
+          message?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          execution_id?: string
+          device_id?: string | null
+          status?: string
+          data?: Json | null
+          details?: Json | null
+          level?: string
+          message?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       presets: {
         Row: {
           category: string | null
@@ -859,6 +895,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      task_queue: {
+        Row: {
+          id: string
+          task_config: Json
+          priority: number
+          status: string
+          dispatched_task_id: string | null
+          created_at: string
+          dispatched_at: string | null
+        }
+        Insert: {
+          id?: string
+          task_config: Json
+          priority?: number
+          status?: string
+          dispatched_task_id?: string | null
+          created_at?: string
+          dispatched_at?: string | null
+        }
+        Update: {
+          id?: string
+          task_config?: Json
+          priority?: number
+          status?: string
+          dispatched_task_id?: string | null
+          created_at?: string
+          dispatched_at?: string | null
+        }
+        Relationships: []
       }
       tasks: {
         Row: {

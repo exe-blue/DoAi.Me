@@ -1,9 +1,11 @@
 # Agent 상세 코드 리뷰 (DoAi.Me 규칙 + 검색 실패 원인 + 의존성/경로)
 
+**SSOT:** 실행 단위는 **task_devices**. job_assignments/jobs는 레거시 참고용.
+
 ## 규칙 준수 체크 (code-review-doai)
 
 - **Backend**: Agent 영역 — 해당 없음. (API는 `app/api/` 기준 유지)
-- **DB**: job_assignments, jobs, videos, devices, pcs 사용. migration 경로는 `supabase/migrations/` (프로젝트 루트).
+- **DB**: task_devices, tasks, devices, pcs 사용. migration 경로는 `supabase/migrations/` (프로젝트 루트). job_assignments/jobs는 레거시.
 - **Agent**: Xiaowei WebSocket만 사용, uiautomator2 미사용 ✅
 - **Docs**: ENV.md에 Agent 변수 있으나 **이름 불일치** (아래 Critical)
 - **Banned**: FastAPI/Celery/Redis/uiautomator2 없음. SUPABASE_SERVICE_ROLE_KEY는 Agent 서버 측만 사용(노출 금지 준수).
@@ -55,27 +57,15 @@ Job insert 시 `video_title: video.title` (또는 동일한 값) 추가해 두�
 
 ## Suggestion (규칙·일관성 정리)
 
-### 4. **claim_next_assignment 2인자 vs 3인자 — device_id 일관성**
+### 4. **claim_next_task_device / task_devices — device_serial 일관성**
 
-- DeviceOrchestrator는 `claim_next_assignment(p_pc_id, p_device_serial)` 2인자만 사용.  
-- RPC는 `device_serial`만 갱신하고 **device_id는 그대로** 두므로, 다른 기기가 claim하면 row가 `device_id=A`, `device_serial=B` 처럼 어긋날 수 있음.  
-- 통계/보고에서 “어느 기기가 완료했는지”를 device_id로 보면 잘못된 기기가 나올 수 있음.
-
-**권장:**  
-`claim_next_assignment(p_pc_id, p_device_id, p_device_serial)` 3인자 버전 사용하고, claim 시 **device_id도 해당 기기로 갱신**하거나, 최소한 serial→device_id 매핑 후 3인자 호출해 DB와 실제 실행 기기 일치시키기.
+- DeviceOrchestrator는 `claim_task_devices_for_pc` 또는 `claim_next_task_device(p_worker_id, p_device_serial)` 사용. task_devices 행의 device_serial이 실제 실행 기기와 일치하는지 확인.
 
 ---
 
-### 5. **DeviceOrchestrator — runAssignment 분기**
+### 5. **DeviceOrchestrator — runTaskDevice**
 
-- `device-orchestrator.js`에서 `this.taskExecutor.runAssignment ?? this.taskExecutor._executeJobAssignment` 호출.
-- TaskExecutor에는 **`runAssignment` 메서드가 없음** → 항상 `_executeJobAssignment`만 호출됨.  
-- 동작은 맞지만, “공개 API” 의도라면 구현이 비어 있는 상태.
-
-**권장:**  
-- TaskExecutor에 `runAssignment(assignment) { return this._executeJobAssignment(assignment); }` 추가하거나,  
-- Orchestrator에서는 `_executeJobAssignment`만 호출하고 `runAssignment` 분기 제거.
-
+- DeviceOrchestrator는 `taskExecutor.runTaskDevice(taskDevice)` 호출 (task_devices 한 행). TaskExecutor에 runTaskDevice 구현됨.  
 ---
 
 ### 6. **UI dump 실패 시 관찰 가능성**

@@ -2,7 +2,7 @@
 {
     "name": "DoAi.Me",
     "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
-    "workspaceFolder": "/workspaces/DoAi.Me",
+    "workspaceFolder": "/workspaces/doai.me",
     "customizations": {
       "vscode": {
         "extensions": [

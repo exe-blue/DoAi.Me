@@ -147,19 +147,25 @@ export async function runSyncChannels(): Promise<
           status: "active",
           sort_by: "created_at",
         });
-        const sortedByOldest = [...activeVideos].sort(
-          (a, b) =>
-            new Date(a.created_at ?? 0).getTime() -
-            new Date(b.created_at ?? 0).getTime(),
-        );
-        for (const v of sortedByOldest) {
+        // Oldest first, then 가나다 (title) for same-cycle ordering
+        const sortedByOldestThenTitle = [...activeVideos].sort((a, b) => {
+          const ta = new Date(a.created_at ?? 0).getTime();
+          const tb = new Date(b.created_at ?? 0).getTime();
+          if (ta !== tb) return ta - tb;
+          const titleA = (a as { title?: string }).title ?? "";
+          const titleB = (b as { title?: string }).title ?? "";
+          return titleA.localeCompare(titleB, "ko");
+        });
+        for (const v of sortedByOldestThenTitle) {
           const hasTask = await getTaskByVideoId(v.id);
           if (hasTask) continue;
           if (queuedVideoIds.includes(v.id)) continue;
+          const title = (v as { title?: string }).title ?? "";
+          const keyword = (v as { search_keyword?: string }).search_keyword ?? title || v.id;
           const inputs = {
             videoId: v.id,
             channelId: channel.id,
-            keyword: (v as { title?: string }).title ?? v.id,
+            keyword,
             video_url: `https://www.youtube.com/watch?v=${v.id}`,
           };
           const workflowConfig = await buildConfigFromWorkflow(
@@ -173,6 +179,10 @@ export async function runSyncChannels(): Promise<
               contentMode: "single",
               videoId: v.id,
               channelId: channel.id,
+              channel: channel.id,
+              video_url: `https://www.youtube.com/watch?v=${v.id}`,
+              title,
+              keyword,
             },
             priority: 5,
             status: "queued",

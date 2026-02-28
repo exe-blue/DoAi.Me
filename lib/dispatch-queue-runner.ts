@@ -37,6 +37,18 @@ export type DispatchResult =
 
 export async function runDispatchQueue(): Promise<DispatchResult> {
   const supabase = createSupabaseServerClient();
+
+  // Single active task: skip dispatch if any task is pending or running
+  const { data: activeTask } = await (supabase as any)
+    .from("tasks")
+    .select("id")
+    .in("status", ["pending", "running"])
+    .limit(1)
+    .maybeSingle();
+  if (activeTask) {
+    return { ok: true, dispatched: 0, message: "Active task exists; dispatch skipped" };
+  }
+
   const { data: items } = await tq(supabase)
     .select("*")
     .eq("status", "queued")

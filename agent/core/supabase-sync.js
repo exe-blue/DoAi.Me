@@ -131,14 +131,14 @@ class SupabaseSync {
       .from("devices")
       .upsert(
         {
-          serial,
+          serial_number: serial,
           pc_id: pcId,
           status,
           model: model || null,
           battery_level: battery || null,
-          last_seen_at: new Date().toISOString(),
+          last_heartbeat: new Date().toISOString(),
         },
-        { onConflict: "serial" }
+        { onConflict: "serial_number" }
       );
 
     if (error) {
@@ -163,12 +163,12 @@ class SupabaseSync {
     const now = new Date().toISOString();
     const rows = devices.map(d => {
       const row = {
-        serial: d.serial,
+        serial_number: d.serial,
         pc_id: this.pcUuid,
         status: d.status || 'online',
         model: d.model || null,
         battery_level: d.battery ?? null,
-        last_seen_at: now,
+        last_heartbeat: now,
       };
       if (d.task_status != null) row.task_status = d.task_status;
       if (d.current_assignment_id != null) row.current_assignment_id = d.current_assignment_id;
@@ -182,11 +182,11 @@ class SupabaseSync {
 
     const { data, error } = await this.supabase
       .from('devices')
-      .upsert(rows, { onConflict: 'serial' })
-      .select('id, serial');
+      .upsert(rows, { onConflict: 'serial_number' })
+      .select('id, serial_number');
 
     if (error) {
-      console.error(`[Supabase] Batch upsert failed: ${error.message}`);
+      console.error(`[Supabase] Batch upsert failed: ${error.message} (code: ${error.code}, rows: ${rows.length})`);
       return [];
     }
 
@@ -211,7 +211,7 @@ class SupabaseSync {
             daily_watch_count: state.dailyWatchCount ?? 0,
             daily_watch_seconds: state.dailyWatchSeconds ?? 0,
           })
-          .eq("serial", state.serial);
+          .eq("serial_number", state.serial);
         if (error) console.warn(`[Supabase] syncDeviceTaskStates failed for ${state.serial}: ${error.message}`);
       } catch (err) {
         console.warn(`[SupabaseSync] syncDeviceTaskStates error: ${err.message}`);
@@ -361,37 +361,55 @@ class SupabaseSync {
     if (!taskDevice.device_id) return null;
     const { data } = await this.supabase
       .from('devices')
-      .select('ip_address, serial')
+      .select('ip_address, serial_number')
       .eq('id', taskDevice.device_id)
       .single();
     if (data?.ip_address) return `${data.ip_address}:5555`;
-    if (data?.serial) return data.serial;
+    if (data?.serial_number) return data.serial_number;
     return null;
   }
 
   /**
-   * Mark devices not in the current list as offline
+   * Mark devices not in the current list as offline, and optionally mark error serials as "error"
    * @param {string} pcId
    * @param {string[]} activeSerials - serials currently connected
+   * @param {string[]} [errorSerials] - serials to mark as "error" (e.g. recently missing, Xiaowei still connected)
    */
-  async markOfflineDevices(pcId, activeSerials) {
-    if (!activeSerials.length) {
+  async markOfflineDevices(pcId, activeSerials, errorSerials = []) {
+    const now = new Date().toISOString();
+    const errorSet = new Set(errorSerials);
+    const allKnownSerials = [...new Set([...activeSerials, ...errorSerials])];
+
+    if (allKnownSerials.length === 0) {
       const { error } = await this.supabase
         .from("devices")
-        .update({ status: "offline", last_seen_at: new Date().toISOString() })
+        .update({ status: "offline", last_heartbeat: now })
         .eq("pc_id", this.pcUuid);
-
       if (error) {
         console.error(`[Supabase] Failed to mark devices offline: ${error.message}`);
       }
       return;
     }
 
+    // Mark error serials as "error"
+    if (errorSet.size > 0) {
+      const errorArray = [...errorSet];
+      const { error: errError } = await this.supabase
+        .from("devices")
+        .update({ status: "error", last_heartbeat: now })
+        .eq("pc_id", this.pcUuid)
+        .in("serial_number", errorArray);
+      if (errError) {
+        console.error(`[Supabase] Failed to mark error devices: ${errError.message}`);
+      }
+    }
+
+    // Mark remaining missing devices as offline (parameterized: no string concat)
     const { error } = await this.supabase
       .from("devices")
-      .update({ status: "offline", last_seen_at: new Date().toISOString() })
+      .update({ status: "offline", last_heartbeat: now })
       .eq("pc_id", this.pcUuid)
-      .not("serial", "in", `(${activeSerials.join(",")})`);
+      .not("serial_number", "in", allKnownSerials);
 
     if (error) {
       console.error(`[Supabase] Failed to mark offline devices: ${error.message}`);

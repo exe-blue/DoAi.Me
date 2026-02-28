@@ -27,11 +27,11 @@ Initialization order: Core → Task → Heartbeat → Setup → Subscriptions �
 | `device/heartbeat.js` | 30s interval: syncs device list from Xiaowei → `devices` table, updates worker `last_heartbeat`, reports task stats + subscription status in `metadata`. |
 | `device/adb-reconnect.js` | Detects offline devices and issues ADB TCP reconnect commands via Xiaowei. Tracks per-device failure counts. |
 | `device/device-watchdog.js` | Monitors for error-rate spikes and mass device dropout events. Triggers alerts via `broadcaster`. |
-| `device/device-orchestrator.js` | Device state machine driven by `claim_next_assignment` RPC. Manages the claim → execute → release lifecycle for `job_assignments`. Primary path for scheduled YouTube jobs. |
+| `device/device-orchestrator.js` | Device state machine driven by `claim_task_devices_for_pc` / `claim_next_task_device` RPC. Manages the claim → execute → release lifecycle for **task_devices** (one row per device). Primary path for YouTube watch and all task execution. |
 | `device/device-presets.js` | Xiaowei preset actions for device initialization: `scan`, `optimize`, `ytTest`, `warmup`. |
 | `device/index.js` | Barrel export for the device layer. |
 
-**DB tables accessed:** `devices`, `job_assignments` (via RPC), `workers`
+**DB tables accessed:** `devices`, `task_devices` (via RPC: claim_task_devices_for_pc, claim_next_task_device, complete_task_device, fail_or_retry_task_device), `pcs` / `workers`
 
 ---
 
@@ -56,10 +56,9 @@ Initialization order: Core → Task → Heartbeat → Setup → Subscriptions �
 |--------|------|
 | `scheduling/queue-dispatcher.js` | Converts `task_queue` entries into real `tasks`. Respects device availability and concurrency limits. |
 | `scheduling/schedule-evaluator.js` | Evaluates cron-style `task_schedules` entries. On match, inserts into `task_queue`. Runs on a 60s tick. |
-| `scheduling/video-dispatcher.js` | **Primary PC only** (`IS_PRIMARY_PC=true`). Creates `jobs` and `job_assignments` for active `videos`. Drives the bulk YouTube watch pipeline. |
 | `scheduling/index.js` | Barrel export for the scheduling layer. |
 
-**DB tables accessed:** `task_queue`, `task_schedules`, `tasks`, `videos`, `jobs`, `job_assignments`
+**DB tables accessed:** `task_queue`, `task_schedules`, `tasks`, `task_devices`
 
 ---
 
@@ -94,11 +93,11 @@ Initialization order: Core → Task → Heartbeat → Setup → Subscriptions �
 |-------|---------|
 | `pcs` / `workers` | `supabase-sync`, `heartbeat` |
 | `devices` | `heartbeat`, `adb-reconnect`, `device-orchestrator`, `proxy-manager` |
-| `tasks` | `task-executor`, `stale-task-cleaner`, `queue-dispatcher`, `supabase-sync` |
+| `tasks` | `task-executor`, `stale-task-cleaner`, `queue-dispatcher`, `supabase-sync`, `schedule-evaluator` |
 | `task_logs` | `task-executor` (via `supabase-sync` batch pipeline) |
-| `job_assignments` | `device-orchestrator` (via `claim_next_assignment` RPC), `video-dispatcher` |
-| `jobs` | `video-dispatcher` |
-| `videos` | `video-dispatcher` |
+| `task_devices` | `device-orchestrator` (via claim_task_devices_for_pc / claim_next_task_device RPC), `task-executor` (runTaskDevice), queue-dispatcher, pipeline |
+| `jobs` | (legacy; video-dispatcher skipped in favor of task_devices) |
+| `videos` | `video-dispatcher` (legacy), pipeline |
 | `task_queue` | `queue-dispatcher`, `schedule-evaluator` |
 | `task_schedules` | `schedule-evaluator` |
 | `proxies` | `proxy-manager` |

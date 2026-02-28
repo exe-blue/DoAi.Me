@@ -22,7 +22,6 @@ const ScriptVerifier = require("./setup/script-verifier");
 let xiaowei = null;
 let supabaseSync = null;
 let heartbeatHandle = null;
-let taskPollHandle = null;
 let taskExecutor = null;
 let proxyManager = null;
 let accountManager = null;
@@ -232,55 +231,8 @@ async function main() {
     console.log("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Subscribe to tasks via Broadcast (primary) + postgres_changes (fallback)
-  const taskCallback = (task) => {
-    if (task.status === "pending") {
-      taskExecutor.execute(task);
-    }
-  };
-
-  // Primary: Broadcast channel (room:tasks) — lower latency
-  const broadcastResult = await supabaseSync.subscribeToBroadcast(supabaseSync.pcId, taskCallback);
-  if (broadcastResult.status === "SUBSCRIBED") {
-    console.log("[Agent] ✓ Broadcast room:tasks 구독 완료");
-  } else {
-    console.warn(`[Agent] ✗ Broadcast 구독 실패: ${broadcastResult.status}`);
-  }
-
-  // Fallback: postgres_changes — in case Broadcast is not configured
-  const pgResult = await supabaseSync.subscribeToTasks(supabaseSync.pcId, taskCallback);
-  if (pgResult.status === "SUBSCRIBED") {
-    console.log("[Agent] ✓ postgres_changes 구독 완료");
-  } else {
-    console.warn(`[Agent] ✗ postgres_changes 구독 실패: ${pgResult.status}`);
-  }
-
-  // 13. Poll for pending tasks as triple-fallback (Realtime may miss events)
-  taskPollHandle = setInterval(async () => {
-    try {
-      const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
-      }
-    } catch (err) {
-      console.error(`[Agent] Task poll error: ${err.message}`);
-    }
-  }, config.taskPollInterval);
-
-  // Run an initial poll immediately
-  try {
-    const tasks = await supabaseSync.getPendingTasks(supabaseSync.pcId);
-    if (tasks.length > 0) {
-      console.log(`[Agent] Found ${tasks.length} pending task(s)`);
-      for (const task of tasks) {
-        taskExecutor.execute(task);
-      }
-    }
-  } catch (err) {
-    console.error(`[Agent] Initial task poll error: ${err.message}`);
-  }
-
-  // 14. Start ADB reconnect monitoring (manager already initialized above)
+  // 12. Task execution: DeviceOrchestrator only (task_devices claim → runTaskDevice). No tasks-table subscription/poll.
+  // 13. Start ADB reconnect monitoring (manager already initialized above)
   if (xiaowei.connected) {
     reconnectManager.start();
     console.log("[Agent] ✓ ADB reconnect manager started");
@@ -369,12 +321,6 @@ async function shutdown() {
   // Stop device watchdog
   if (deviceWatchdog) {
     deviceWatchdog.stop();
-  }
-
-  // Stop polling
-  if (taskPollHandle) {
-    clearInterval(taskPollHandle);
-    taskPollHandle = null;
   }
 
   // Stop heartbeat

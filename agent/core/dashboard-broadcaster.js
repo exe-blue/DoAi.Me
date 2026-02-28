@@ -10,6 +10,7 @@ class DashboardBroadcaster {
     this.pcId = pcId;
     this.dashboardChannel = null;
     this.systemChannel = null;
+    this.devicesChannel = null;
     this.previousDeviceStates = new Map(); // serial → status
   }
 
@@ -23,11 +24,13 @@ class DashboardBroadcaster {
     // Create persistent broadcast channels
     this.dashboardChannel = this.supabase.channel('room:dashboard');
     this.systemChannel = this.supabase.channel('room:system');
+    this.devicesChannel = this.supabase.channel('room:devices');
 
     await this.dashboardChannel.subscribe();
     await this.systemChannel.subscribe();
+    await this.devicesChannel.subscribe();
 
-    console.log('[Broadcaster] ✓ Channels initialized (room:dashboard, room:system)');
+    console.log('[Broadcaster] ✓ Channels initialized (room:dashboard, room:system, room:devices)');
   }
 
   /**
@@ -79,6 +82,25 @@ class DashboardBroadcaster {
       });
     } catch (err) {
       console.error(`[Broadcaster] Failed to publish event: ${err.message}`);
+    }
+  }
+
+  /**
+   * Broadcast device list to room:devices for dashboard real-time updates
+   * @param {string} workerId - Worker/PC UUID (for dashboard to match node.id)
+   * @param {Array<{serial: string, status: string, model?: string, battery?: number}>} devices
+   * @returns {Promise<void>}
+   */
+  async broadcastWorkerDevices(workerId, devices) {
+    if (!this.devicesChannel) return;
+    try {
+      await this.devicesChannel.send({
+        type: 'broadcast',
+        event: 'update',
+        payload: { worker_id: workerId, devices }
+      });
+    } catch (err) {
+      console.error(`[Broadcaster] Failed to broadcast devices: ${err.message}`);
     }
   }
 
@@ -137,6 +159,10 @@ class DashboardBroadcaster {
     if (this.systemChannel) {
       await this.supabase.removeChannel(this.systemChannel);
       this.systemChannel = null;
+    }
+    if (this.devicesChannel) {
+      await this.supabase.removeChannel(this.devicesChannel);
+      this.devicesChannel = null;
     }
 
     console.log('[Broadcaster] ✓ Channels cleaned up');

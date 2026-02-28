@@ -468,12 +468,12 @@ git commit -m "feat(dashboard): incremental device updates via room:devices broa
 
 **Step 1: Agent TypeScript build**
 
-Run: `cd /home/choi/projects/doai.me/agent && npx tsc --noEmit`
+Run: `cd /workspaces/doai.me/agent && npx tsc --noEmit`
 Expected: Clean build or only pre-existing warnings
 
 **Step 2: Dashboard TypeScript build**
 
-Run: `cd /home/choi/projects/doai.me && npx tsc --noEmit`
+Run: `cd /workspaces/doai.me && npx tsc --noEmit`
 Expected: Clean build or only pre-existing warnings
 
 **Step 3: Event name audit**

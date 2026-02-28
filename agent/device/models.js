@@ -3,7 +3,7 @@
  *
  * 실제 프로덕션 스키마 기반:
  *   pcs: { id, pc_number, status, last_heartbeat, created_at }
- *   devices: { id, serial, pc_id, status, model, battery_level, last_seen_at, ... }
+ *   devices: { id, serial_number, pc_id, status, model, battery_level, last_heartbeat, ... }
  *
  * 사용법:
  *   const { pcModels, deviceModels } = require('./device/models');
@@ -137,12 +137,12 @@ const deviceModels = {
     return data;
   },
 
-  /** 디바이스 조회 by serial */
+  /** 디바이스 조회 by serial_number */
   async getBySerial(serial) {
     const { data, error } = await _db()
       .from("devices")
       .select("*")
-      .eq("serial", serial)
+      .eq("serial_number", serial)
       .maybeSingle();
     if (error) {
       log.error("device_get_failed", { serial, error: error.message });
@@ -159,7 +159,7 @@ const deviceModels = {
         ? query.in("status", statusFilter)
         : query.eq("status", statusFilter);
     }
-    const { data, error } = await query.order("serial");
+    const { data, error } = await query.order("serial_number");
     if (error) {
       log.error("device_list_failed", { pcId, error: error.message });
       return [];
@@ -167,24 +167,23 @@ const deviceModels = {
     return data || [];
   },
 
-  /** 디바이스 upsert (serial 기준) */
+  /** 디바이스 upsert (serial_number 기준) */
   async upsert(serial, pcId, fields = {}) {
     const row = {
-      serial,
+      serial_number: serial,
       pc_id: pcId,
       status: fields.status || "online",
       model: fields.model || null,
       battery_level: fields.battery ?? null,
-      last_seen_at: new Date().toISOString(),
+      last_heartbeat: new Date().toISOString(),
       ...fields,
     };
-    // serial, pc_id는 항상 포함
-    row.serial = serial;
+    row.serial_number = serial;
     row.pc_id = pcId;
 
     const { data, error } = await _db()
       .from("devices")
-      .upsert(row, { onConflict: "serial" })
+      .upsert(row, { onConflict: "serial_number" })
       .select("id")
       .maybeSingle();
 
@@ -201,12 +200,12 @@ const deviceModels = {
 
     const rows = devices.map((d) => {
       const row = {
-        serial: d.serial,
+        serial_number: d.serial,
         pc_id: pcId,
         status: d.status || "online",
         model: d.model || null,
         battery_level: d.battery ?? d.battery_level ?? null,
-        last_seen_at: new Date().toISOString(),
+        last_heartbeat: new Date().toISOString(),
       };
       const connId = d.connection_id ?? d.connectionId;
       if (connId != null) row.connection_id = connId;
@@ -215,7 +214,7 @@ const deviceModels = {
 
     const { error } = await _db()
       .from("devices")
-      .upsert(rows, { onConflict: "serial" });
+      .upsert(rows, { onConflict: "serial_number" });
 
     if (error) {
       log.error("device_bulk_upsert_failed", {
@@ -233,7 +232,7 @@ const deviceModels = {
   async updateStatus(deviceId, status) {
     const { error } = await _db()
       .from("devices")
-      .update({ status, last_seen_at: new Date().toISOString() })
+      .update({ status, last_heartbeat: new Date().toISOString() })
       .eq("id", deviceId);
     if (error) {
       log.error("device_status_failed", {
@@ -251,7 +250,7 @@ const deviceModels = {
     if (!deviceIds || deviceIds.length === 0) return true;
     const { error } = await _db()
       .from("devices")
-      .update({ status, last_seen_at: new Date().toISOString() })
+      .update({ status, last_heartbeat: new Date().toISOString() })
       .in("id", deviceIds);
     if (error) {
       log.error("device_bulk_status_failed", {
@@ -264,12 +263,12 @@ const deviceModels = {
     return true;
   },
 
-  /** 현재 리스트에 없는 디바이스를 offline으로 마킹 */
+  /** 현재 리스트에 없는 디바이스를 offline으로 마킹 (parameterized: no string concat) */
   async markMissingOffline(pcId, activeSerials) {
     if (!activeSerials || activeSerials.length === 0) {
       const { error } = await _db()
         .from("devices")
-        .update({ status: "offline", last_seen_at: new Date().toISOString() })
+        .update({ status: "offline", last_heartbeat: new Date().toISOString() })
         .eq("pc_id", pcId);
       if (error)
         log.error("device_mark_offline_failed", { pcId, error: error.message });
@@ -278,9 +277,9 @@ const deviceModels = {
 
     const { error } = await _db()
       .from("devices")
-      .update({ status: "offline", last_seen_at: new Date().toISOString() })
+      .update({ status: "offline", last_heartbeat: new Date().toISOString() })
       .eq("pc_id", pcId)
-      .not("serial", "in", `(${activeSerials.join(",")})`);
+      .not("serial_number", "in", activeSerials);
 
     if (error)
       log.error("device_mark_offline_failed", { pcId, error: error.message });

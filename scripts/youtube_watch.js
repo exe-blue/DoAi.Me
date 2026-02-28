@@ -1,6 +1,6 @@
 // Xiaowei AutoJS - YouTube 시청 스크립트
 // Agent가 adbShell로 YouTube 앱을 먼저 실행한 후 이 스크립트를 autojsCreate로 호출
-// 파라미터는 Xiaowei autojsCreate의 execArgv로 전달됨
+// 파라미터는 Xiaowei autojsCreate의 data/execArgv로 전달됨 (videoUrl, watchDuration)
 
 var videoUrl = engines.myEngine().execArgv.videoUrl || "";
 var watchDuration = engines.myEngine().execArgv.watchDuration || 30000;
