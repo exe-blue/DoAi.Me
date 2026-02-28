@@ -147,17 +147,15 @@ class SupabaseSync {
   }
 
   /**
-   * Batch upsert multiple devices in a single query
-   * @param {Array<{serial: string, status: string, model?: string, battery?: number, ipIntranet?: string}>} devices
+   * Batch upsert multiple devices in a single query.
+   * serial = hardware serial (stable identity). connectionId = current Xiaowei target (IP:5555 or serial).
+   * @param {Array<{serial: string, connectionId?: string, status?: string, model?: string, battery?: number, ipIntranet?: string, task_status?: string, current_assignment_id?: string, current_video_title?: string, watch_progress?: number, consecutive_errors?: number, daily_watch_count?: number, daily_watch_seconds?: number}>} devices
    * @param {string} pcId
-   * @returns {Promise<boolean>} success status
-   */
-  /**
-   * @param {Array<{serial: string, status?: string, model?: string, battery?: number, ipIntranet?: string, task_status?: string, current_assignment_id?: string, current_video_title?: string, watch_progress?: number, consecutive_errors?: number, daily_watch_count?: number, daily_watch_seconds?: number}>} devices
+   * @returns {Promise<Array>} upserted rows with id, serial_number
    */
   async batchUpsertDevices(devices, pcId) {
     if (!devices || devices.length === 0) {
-      return true;
+      return [];
     }
 
     const now = new Date().toISOString();
@@ -170,6 +168,7 @@ class SupabaseSync {
         battery_level: d.battery ?? null,
         last_heartbeat: now,
       };
+      if (d.connectionId != null) row.connection_id = d.connectionId;
       if (d.task_status != null) row.task_status = d.task_status;
       if (d.current_assignment_id != null) row.current_assignment_id = d.current_assignment_id;
       if (d.current_video_title != null) row.current_video_title = d.current_video_title;
@@ -350,27 +349,27 @@ class SupabaseSync {
 
   /**
    * Get the ADB connection target (IP:port or serial) for a task_devices row.
-   * Uses device_target if already set, otherwise resolves via device_id → devices.ip_address.
+   * Prefer device_target, then devices.connection_id (current IP:5555), then serial_number.
    * @param {Object} taskDevice - row from task_devices table
    * @returns {Promise<string|null>}
    */
   async getDeviceTargetForTaskDevice(taskDevice) {
-    // Use pre-filled device_target if available
     if (taskDevice.device_target) return taskDevice.device_target;
-    // Fallback: resolve via device_id FK → devices.ip_address
-    if (!taskDevice.device_id) return null;
+    if (!taskDevice.device_id) return taskDevice.device_serial || null;
     const { data } = await this.supabase
       .from('devices')
-      .select('ip_address, serial_number')
+      .select('connection_id, ip_address, serial_number')
       .eq('id', taskDevice.device_id)
       .single();
-    if (data?.ip_address) return `${data.ip_address}:5555`;
+    if (data?.connection_id) return data.connection_id;
+    if (data?.ip_address) return typeof data.ip_address === 'string' ? data.ip_address : `${data.ip_address}:5555`;
     if (data?.serial_number) return data.serial_number;
-    return null;
+    return taskDevice.device_serial || null;
   }
 
   /**
    * Mark devices not in the current list as offline, and optionally mark error serials as "error"
+   * Phase 7: use mark_device_offline RPC so task_devices are rolled back (zombie cleanup).
    * @param {string} pcId
    * @param {string[]} activeSerials - serials currently connected
    * @param {string[]} [errorSerials] - serials to mark as "error" (e.g. recently missing, Xiaowei still connected)
@@ -378,15 +377,17 @@ class SupabaseSync {
   async markOfflineDevices(pcId, activeSerials, errorSerials = []) {
     const now = new Date().toISOString();
     const errorSet = new Set(errorSerials);
+    const activeSet = new Set(activeSerials);
     const allKnownSerials = [...new Set([...activeSerials, ...errorSerials])];
 
     if (allKnownSerials.length === 0) {
-      const { error } = await this.supabase
+      const { data: allDevices } = await this.supabase
         .from("devices")
-        .update({ status: "offline", last_heartbeat: now })
+        .select("serial_number, serial")
         .eq("pc_id", this.pcUuid);
-      if (error) {
-        console.error(`[Supabase] Failed to mark devices offline: ${error.message}`);
+      const serials = (allDevices || []).map((d) => d.serial_number || d.serial).filter(Boolean);
+      for (const ser of serials) {
+        await this.supabase.rpc("mark_device_offline", { p_device_serial: ser }).catch(() => {});
       }
       return;
     }
@@ -404,15 +405,17 @@ class SupabaseSync {
       }
     }
 
-    // Mark remaining missing devices as offline (parameterized: no string concat)
-    const { error } = await this.supabase
+    // Get serials to mark offline (on this PC, not in active list)
+    const { data: toOffline } = await this.supabase
       .from("devices")
-      .update({ status: "offline", last_heartbeat: now })
-      .eq("pc_id", this.pcUuid)
-      .not("serial_number", "in", allKnownSerials);
+      .select("serial_number, serial")
+      .eq("pc_id", this.pcUuid);
+    const offlineSerials = (toOffline || [])
+      .map((d) => d.serial_number || d.serial)
+      .filter((s) => s && !activeSet.has(s));
 
-    if (error) {
-      console.error(`[Supabase] Failed to mark offline devices: ${error.message}`);
+    for (const ser of offlineSerials) {
+      await this.supabase.rpc("mark_device_offline", { p_device_serial: ser }).catch(() => {});
     }
   }
 

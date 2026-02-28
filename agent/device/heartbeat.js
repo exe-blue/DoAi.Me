@@ -1,7 +1,9 @@
 /**
  * DoAi.Me - Heartbeat Loop
  * Periodically syncs device status and worker health to Supabase
+ * Resolves IP:PORT connection ids to hardware serial so devices are identified by serial_number when IP changes.
  */
+const { resolveHardwareSerialsForList } = require("./device-serial-resolver");
 
 /**
  * Parse device list from Xiaowei response
@@ -78,12 +80,14 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
 
   async function beat() {
     try {
-      // 1. Get device list from Xiaowei
+      // 1. Get device list from Xiaowei (connection ids: IP:5555 or serial)
       let devices = [];
       if (xiaowei.connected) {
         try {
           const response = await xiaowei.list();
           devices = parseDeviceList(response);
+          // Resolve IP:PORT to hardware serial so DB identity is stable when IP changes
+          devices = await resolveHardwareSerialsForList(xiaowei, devices);
         } catch (err) {
           console.error(`[Heartbeat] Failed to list devices: ${err.message}`);
         }

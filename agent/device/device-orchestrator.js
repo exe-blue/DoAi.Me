@@ -4,6 +4,7 @@
  * claim_next_task_device RPC로 작업 선점 후 TaskExecutor로 실행.
  */
 const presets = require("./device-presets");
+const { takeScreenshotOnComplete } = require("./screenshot-on-complete");
 
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,6 +36,7 @@ class DeviceOrchestrator {
     this.pcId = config.pcId;
     this.pcUuid = config.pcUuid || null;
     this.maxConcurrent = config.maxConcurrent ?? 10;
+    this.loggingDir = config.loggingDir || null;
 
     /** @type {Map<string, DeviceState>} serial -> state */
     this.deviceStates = new Map();
@@ -350,14 +352,24 @@ class DeviceOrchestrator {
 
     try {
       await this.taskExecutor.runTaskDevice(row);
-      await this.supabase.rpc("complete_task_device", {
+      const nextDailyCount = (state.dailyWatchCount || 0) + 1;
+      if (this.loggingDir) {
+        takeScreenshotOnComplete(this.xiaowei, serial, nextDailyCount, this.loggingDir).catch(() => {});
+      }
+      const { data: completeData } = await this.supabase.rpc("complete_task_device", {
         p_task_device_id: taskDevice.id,
-      }).catch(e => console.warn("[DeviceOrchestrator] complete_task_device:", e.message));
+      });
+      if (completeData == null) {
+        console.log("[DeviceOrchestrator] complete_task_device 0 rows (already terminated e.g. timeout)");
+      }
     } catch (execErr) {
-      await this.supabase.rpc("fail_or_retry_task_device", {
+      const { data: failData } = await this.supabase.rpc("fail_or_retry_task_device", {
         p_task_device_id: taskDevice.id,
         p_error: execErr.message,
-      }).catch(e => console.warn("[DeviceOrchestrator] fail_or_retry_task_device:", e.message));
+      }).catch(() => ({ data: null }));
+      if (failData == null) {
+        console.log("[DeviceOrchestrator] fail_or_retry_task_device 0 rows (already terminated)");
+      }
       throw execErr;
     } finally {
       this._runningAssignments.delete(taskDevice.id);

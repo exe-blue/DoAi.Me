@@ -31,3 +31,9 @@ Migrations in `supabase/migrations` listed by filename; apply in this order.
 - `20260229000000_task_devices_on_task_insert_trigger.sql` — Layer 3: create task_devices on tasks INSERT (server-side)
 - `20260229000001_task_devices_on_device_insert_trigger.sql` — add task_device when new device inserted (current running task)
 - `20260229000002_task_and_task_device_timeouts.sql` — task 30min / task_device 20min timeout + cron
+- `20260301000000_task_queue_columns_and_dequeue_rpc.sql` — task_queue video_id, discovered_run_id, order_key, processing_started_at; dequeue_task_queue_item RPC
+- `20260301000001_task_devices_comment_status_timeout.sql` — task_devices comment_status, timeout_at; fn_timeout prefers timeout_at
+- `20260301000002_mark_device_offline.sql` — mark_device_offline RPC; system_config offline_threshold
+- `20260301000003_task_devices_trigger_pc_filter.sql` — fn_create_task_devices_on_task_insert PC별 1개 (exclude busy PCs)
+- `20260301000004_device_insert_pending_only.sql` — fn_add_task_device_for_new_device pending only (late-join policy A)
+- `20260301000005_sync_lock_rpc.sql` — try_sync_lock / release_sync_lock

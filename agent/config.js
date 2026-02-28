@@ -49,6 +49,10 @@ class AgentConfig extends EventEmitter {
     this.scriptsDir = process.env.SCRIPTS_DIR || "";
     this.screenshotsDir = process.env.SCREENSHOTS_DIR || "";
     this.configDir = process.env.CONFIG_DIR || "";
+    /** 시청 완료 시 스크린샷 저장 경로 (날짜시간-그날작업갯수누적.png). 기본 c:\logging */
+    this.loggingDir = process.env.LOGGING_DIR || (process.platform === "win32" ? "c:\\logging" : "/tmp/logging");
+    /** Xiaowei 연결 직후 모든 디바이스에 optimize(효과 줄임·해상도 1080x1920) 1회 실행. env RUN_OPTIMIZE_ON_CONNECT=1 */
+    this.runOptimizeOnConnect = process.env.RUN_OPTIMIZE_ON_CONNECT === "1" || process.env.RUN_OPTIMIZE_ON_CONNECT === "true";
 
     // ── Dynamic settings (env defaults, overridden by DB) ──
     this.heartbeatInterval = parseInt(

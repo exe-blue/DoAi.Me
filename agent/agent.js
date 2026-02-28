@@ -18,6 +18,7 @@ const ScheduleEvaluator = require("./scheduling/schedule-evaluator");
 const ProxyManager = require("./setup/proxy-manager");
 const AccountManager = require("./setup/account-manager");
 const ScriptVerifier = require("./setup/script-verifier");
+const presets = require("./device/device-presets");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -130,6 +131,24 @@ async function main() {
   } catch (err) {
     console.warn(`[Agent] ✗ Xiaowei connection failed: ${err.message}`);
     console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect");
+  }
+
+  // 4a. Run optimize on all devices once on first connect (effects off, resolution 1080x1920)
+  if (xiaowei.connected && config.runOptimizeOnConnect) {
+    try {
+      const listRes = await xiaowei.list();
+      const devices = listRes.data || listRes || [];
+      const serials = devices.map((d) => d.onlySerial || d.serial || d.serialNumber || d.id).filter(Boolean);
+      if (serials.length > 0) {
+        console.log(`[Agent] Running optimize on ${serials.length} device(s) (first connect)...`);
+        for (const serial of serials) {
+          await presets.optimize(xiaowei, serial);
+        }
+        console.log("[Agent] ✓ Optimize on connect done");
+      }
+    } catch (err) {
+      console.warn(`[Agent] ✗ Optimize on connect failed: ${err.message}`);
+    }
   }
 
   // 5. Initialize task executor
@@ -259,6 +278,7 @@ async function main() {
     pcId: supabaseSync.pcId,
     pcUuid: supabaseSync.pcUuid,
     maxConcurrent: config.maxConcurrentTasks || 10,
+    loggingDir: config.loggingDir,
   });
   console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);
   deviceOrchestrator.start();

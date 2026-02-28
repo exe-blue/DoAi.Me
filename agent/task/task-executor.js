@@ -162,6 +162,24 @@ class TaskExecutor {
     const waitMinSec = Math.max(0, Number(cfg.min_wait_sec) || 1);
     const waitMaxSec = Math.max(waitMinSec, Number(cfg.max_wait_sec) || 5);
     const durationSec = this._resolveWatchDurationSec(cfg);
+
+    // Phase 1: comment_status ready → use pre-generated; pending → agent fallback (generate + set fallback)
+    let commentContent = null;
+    const commentStatus = taskDevice.comment_status ?? cfg.comment_status ?? "pending";
+    if (commentStatus === "ready" && (cfg.comment_content || taskDevice.comment_content)) {
+      commentContent = cfg.comment_content ?? taskDevice.comment_content;
+    } else if (commentStatus === "pending" && this.commentGenerator) {
+      try {
+        commentContent = await this.commentGenerator.generate(videoTitle || "", "");
+        await this.supabaseSync.supabase
+          .from("task_devices")
+          .update({ comment_status: "fallback" })
+          .eq("id", taskDevice.id);
+      } catch (e) {
+        console.warn("[TaskExecutor] Comment fallback generate failed:", e.message);
+      }
+    }
+
     const engagementConfig = {
       probLike: Number(cfg.prob_like) || DEFAULT_PROBS.like,
       probComment: Number(cfg.prob_comment) || DEFAULT_PROBS.comment,
@@ -172,7 +190,7 @@ class TaskExecutor {
       warmupSec: this._shouldWarmup(serial) ? _randInt(60, 180) : 0,
       waitMinSec,
       waitMaxSec,
-      commentContent: cfg.comment_content ?? null,
+      commentContent,
       actionTouchCoords: cfg.action_touch_coords ?? null,
     };
     this._jobRunning.add(taskDevice.id);
@@ -242,16 +260,41 @@ class TaskExecutor {
 
   /**
    * Layer 3: resolve watch duration from config (duration_sec * watch_min~max_pct) or fallback.
+   * Phase 5: absolute min 15s (Shorts bot detection), max 20min (timeout alignment).
    */
   _resolveWatchDurationSec(cfg) {
+    const ABSOLUTE_MIN_SEC = 15;
+    const ABSOLUTE_MAX_SEC = 20 * 60;
     const durationSec = Number(cfg.duration_sec);
     const minPct = Number(cfg.watch_min_pct);
     const maxPct = Number(cfg.watch_max_pct);
     if (Number.isFinite(durationSec) && durationSec > 0 && Number.isFinite(minPct) && Number.isFinite(maxPct)) {
       const pct = _randInt(Math.min(minPct, maxPct), Math.max(minPct, maxPct));
-      return Math.max(10, Math.round((durationSec * pct) / 100));
+      const calculated = Math.round((durationSec * pct) / 100);
+      return Math.min(ABSOLUTE_MAX_SEC, Math.max(ABSOLUTE_MIN_SEC, calculated));
     }
-    return _randInt(45, 120);
+    return Math.min(ABSOLUTE_MAX_SEC, Math.max(ABSOLUTE_MIN_SEC, _randInt(45, 120)));
+  }
+
+  /**
+   * Phase 11: Convert ratio (0–1) or absolute coords to absolute pixels using device screen size.
+   * @param {string} serial
+   * @param {{ x_ratio?: number, y_ratio?: number, x?: number, y?: number }} coords
+   * @returns {Promise<{x: number, y: number}|null>}
+   */
+  async _toAbsCoords(serial, coords) {
+    if (!coords) return null;
+    const screen = await this._getScreenSize(serial);
+    if (coords.x_ratio != null && coords.y_ratio != null) {
+      return {
+        x: Math.round(Number(coords.x_ratio) * screen.width),
+        y: Math.round(Number(coords.y_ratio) * screen.height),
+      };
+    }
+    if (coords.x != null && coords.y != null) {
+      return { x: Math.round(Number(coords.x)), y: Math.round(Number(coords.y)) };
+    }
+    return null;
   }
 
   /**
@@ -329,11 +372,12 @@ class TaskExecutor {
     await _sleep(500);
     await stepWait();
 
-    // 세로 모드 강제 (Galaxy S9) — 1-1 유튜브 화면 진입 (Layer 3: 3회 재시도)
+    // 세로 모드 강제 (유튜브 명령 전 필수) — accelerometer off, user_rotation 0, content://settings 반영, YouTube 재시작
     await this._adbShellWithRetry(serial, "settings put system accelerometer_rotation 0");
     await this._adbShellWithRetry(serial, "settings put system user_rotation 0");
+    await this._adbShellWithRetry(serial, "content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:0");
     await this._adbShellWithRetry(serial, "am force-stop com.google.android.youtube");
-    await _sleep(1000);
+    await _sleep(500);
     await this._adbShellWithRetry(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
     await _sleep(_randInt(3000, 5000));
     await stepWait();
@@ -373,16 +417,16 @@ class TaskExecutor {
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
       }
       if (willLike && !actions.liked && elapsedSec >= likeAtSec) {
-        actions.liked = await this._doLike(serial);
+        actions.liked = await this._doLike(serial, eng);
       }
       if (willSubscribe && !actions.subscribed && elapsedSec >= subscribeAtSec) {
-        actions.subscribed = await this._doSubscribe(serial);
+        actions.subscribed = await this._doSubscribe(serial, eng);
       }
       if (willComment && commentText && !actions.commented && elapsedSec >= commentAtSec) {
-        actions.commented = await this._doComment(serial, commentText);
+        actions.commented = await this._doComment(serial, commentText, eng);
       }
       if (willPlaylist && !actions.playlisted && elapsedSec >= playlistAtSec) {
-        actions.playlisted = await this._doSavePlaylist(serial);
+        actions.playlisted = await this._doSavePlaylist(serial, eng);
       }
     }
 
@@ -743,10 +787,12 @@ class TaskExecutor {
 
   /**
    * 좋아요 실행. 스크롤 → LIKE_BUTTON 터치 → 스크롤 복귀.
+   * Phase 11: fallback to actionTouchCoords.like_button (ratio → abs) when UI find fails.
    * @param {string} serial
+   * @param {object} [eng] - engagementConfig with actionTouchCoords
    * @returns {Promise<boolean>}
    */
-  async _doLike(serial) {
+  async _doLike(serial, eng) {
     try {
       const screen = await this._getScreenSize(serial);
       const midX = Math.round(screen.width / 2);
@@ -755,7 +801,14 @@ class TaskExecutor {
       await this.xiaowei.adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
       await _sleep(_randInt(800, 1500));
 
-      const tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
+      let tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
+      if (!tapped && eng?.actionTouchCoords?.like_button) {
+        const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.like_button);
+        if (abs) {
+          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          tapped = true;
+        }
+      }
       if (!tapped) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} like button not found`);
         return false;
@@ -774,10 +827,12 @@ class TaskExecutor {
 
   /**
    * 구독 실행. 이미 구독 중이면 스킵. SUBSCRIBE_BUTTON 또는 contentDesc "구독" 터치.
+   * Phase 11: fallback to actionTouchCoords.subscribe (ratio → abs).
    * @param {string} serial
+   * @param {object} [eng] - engagementConfig with actionTouchCoords
    * @returns {Promise<boolean>}
    */
-  async _doSubscribe(serial) {
+  async _doSubscribe(serial, eng) {
     try {
       const alreadySubscribed = await this._hasElement(serial, YT.SUBSCRIBE_TEXT);
       if (alreadySubscribed) {
@@ -785,8 +840,13 @@ class TaskExecutor {
         return false;
       }
       let tapped = await this._findAndTap(serial, YT.SUBSCRIBE_BUTTON, 1);
-      if (!tapped) {
-        tapped = await this._findAndTap(serial, { contentDesc: "구독" }, 1);
+      if (!tapped) tapped = await this._findAndTap(serial, { contentDesc: "구독" }, 1);
+      if (!tapped && eng?.actionTouchCoords?.subscribe) {
+        const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.subscribe);
+        if (abs) {
+          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          tapped = true;
+        }
       }
       if (!tapped) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} subscribe button not found`);
@@ -808,11 +868,13 @@ class TaskExecutor {
 
   /**
    * 댓글 작성 실행. 스크롤 → 입력창 터치 → _inputText → 등록 버튼 → 스크롤 복귀.
+   * Phase 11: fallback to actionTouchCoords.comment_button (ratio → abs).
    * @param {string} serial - 디바이스 시리얼
    * @param {string} commentText - 작성할 댓글 텍스트
+   * @param {object} [eng] - engagementConfig with actionTouchCoords
    * @returns {Promise<boolean>} 성공 여부
    */
-  async _doComment(serial, commentText) {
+  async _doComment(serial, commentText, eng) {
     try {
       const screen = await this._getScreenSize(serial);
       const midX = Math.round(screen.width / 2);
@@ -828,6 +890,13 @@ class TaskExecutor {
 
       let found = await this._findAndTap(serial, YT.COMMENT_INPUT, 2);
       if (!found) found = await this._findAndTap(serial, YT.COMMENT_INPUT_ALT, 1);
+      if (!found && eng?.actionTouchCoords?.comment_input) {
+        const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.comment_input);
+        if (abs) {
+          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          found = true;
+        }
+      }
       if (!found) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment input not found`);
         await this._scrollBackToVideo(serial, screen);
@@ -879,14 +948,22 @@ class TaskExecutor {
 
   /**
    * Layer 3: 재생목록 담기 — 명령 아이콘 터치 후 좌로 스와이프 2회, "담기" 클릭.
-   * Fallback: 기존 방식 (저장 버튼 → 나중에 볼 동영상 또는 첫 항목).
+   * Phase 11: fallback to actionTouchCoords.save_playlist (ratio → abs).
    * @param {string} serial
+   * @param {object} [eng] - engagementConfig with actionTouchCoords
    * @returns {Promise<boolean>}
    */
-  async _doSavePlaylist(serial) {
+  async _doSavePlaylist(serial, eng) {
     try {
       let found = await this._findAndTap(serial, YT.SAVE_PLAYLIST, 1);
       if (!found) found = await this._findAndTap(serial, YT.SAVE_PLAYLIST_ALT, 1);
+      if (!found && eng?.actionTouchCoords?.save_playlist) {
+        const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.save_playlist);
+        if (abs) {
+          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          found = true;
+        }
+      }
       if (!found) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} playlist save button not found`);
         return false;
