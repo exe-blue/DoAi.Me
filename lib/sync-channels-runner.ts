@@ -19,6 +19,16 @@ import type { ChannelRow } from "@/lib/supabase/types";
 const tq = (sb: ReturnType<typeof createSupabaseServerClient>) =>
   (sb as any).from("task_queue");
 
+/** Normalize title for stable sort (Phase 9: order_key). */
+function orderKeyFromTitle(title: string): string {
+  return (title ?? "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .slice(0, 200);
+}
+
 export type SyncChannelsResult = {
   ok: true;
   channels_synced: number;
@@ -50,11 +60,16 @@ export async function runSyncChannels(): Promise<
       };
     }
 
+    // Phase 2.4: round-robin channel sync to reduce YouTube API quota per run
+    const ROUND_ROBIN_N = 5;
+    const runIndex = Math.floor(Date.now() / 60_000) % ROUND_ROBIN_N;
+    const monitoredThisRun = monitored.filter((_, i) => i % ROUND_ROBIN_N === runIndex);
+
     let totalNew = 0;
     let totalUpdated = 0;
     let errors = 0;
 
-    for (const channel of monitored) {
+    for (const channel of monitoredThisRun) {
       try {
         const videos = await fetchRecentVideos(channel.id, 2);
 
@@ -125,82 +140,116 @@ export async function runSyncChannels(): Promise<
 
     let totalEnqueued = 0;
     const supabase = createSupabaseServerClient();
-    let queuedVideoIds: string[] = [];
-    try {
-      const { data: queuedItems } = await tq(supabase)
-        .select("task_config")
-        .eq("status", "queued");
-      queuedVideoIds = (queuedItems ?? [])
-        .map(
-          (r: { task_config?: { videoId?: string; video_id?: string } }) =>
-            (r.task_config?.videoId ?? r.task_config?.video_id) as string,
-        )
-        .filter(Boolean);
-    } catch {
-      /* ignore */
+
+    // Phase 2.3: prevent overlapping sync runs
+    const { data: lockAcquired } = await (supabase as any).rpc("try_sync_lock");
+    if (!lockAcquired) {
+      const elapsed = Date.now() - startTime;
+      return {
+        ok: true,
+        channels_synced: monitored.length,
+        new_videos: totalNew,
+        updated_videos: totalUpdated,
+        enqueued: 0,
+        errors,
+        elapsed_ms: elapsed,
+      };
     }
 
-    for (const channel of monitored) {
-      if (!(channel as any).auto_collect) continue;
+    try {
+      let queuedVideoIds: string[] = [];
       try {
-        const activeVideos = await getVideosByChannelIdWithFilters(channel.id, {
-          status: "active",
-          sort_by: "created_at",
-        });
-        const sortedByOldest = [...activeVideos].sort(
-          (a, b) =>
-            new Date(a.created_at ?? 0).getTime() -
-            new Date(b.created_at ?? 0).getTime(),
-        );
-        for (const v of sortedByOldest) {
-          const hasTask = await getTaskByVideoId(v.id);
-          if (hasTask) continue;
-          if (queuedVideoIds.includes(v.id)) continue;
-          const inputs = {
-            videoId: v.id,
-            channelId: channel.id,
-            keyword: (v as { title?: string }).title ?? v.id,
-            video_url: `https://www.youtube.com/watch?v=${v.id}`,
-          };
-          const workflowConfig = await buildConfigFromWorkflow(
-            DEFAULT_WATCH_WORKFLOW_ID,
-            DEFAULT_WATCH_WORKFLOW_VERSION,
-            inputs,
-          );
-          const insertRow: Record<string, unknown> = {
-            task_config: {
-              ...workflowConfig,
-              contentMode: "single",
+        const { data: queuedItems } = await tq(supabase)
+          .select("task_config, video_id")
+          .eq("status", "queued");
+        queuedVideoIds = (queuedItems ?? []).map(
+          (r: { task_config?: { videoId?: string; video_id?: string }; video_id?: string }) =>
+            (r.video_id ?? r.task_config?.videoId ?? r.task_config?.video_id) as string,
+        ).filter(Boolean);
+      } catch {
+        /* ignore */
+      }
+
+      const discoveredRunId = crypto.randomUUID();
+
+      for (const channel of monitored) {
+        if (!(channel as any).auto_collect) continue;
+        try {
+          const activeVideos = await getVideosByChannelIdWithFilters(channel.id, {
+            status: "active",
+            sort_by: "created_at",
+          });
+          const sortedByOldestThenTitle = [...activeVideos].sort((a, b) => {
+            const ta = new Date(a.created_at ?? 0).getTime();
+            const tb = new Date(b.created_at ?? 0).getTime();
+            if (ta !== tb) return ta - tb;
+            const titleA = (a as { title?: string }).title ?? "";
+            const titleB = (b as { title?: string }).title ?? "";
+            return titleA.localeCompare(titleB, "ko");
+          });
+          for (const v of sortedByOldestThenTitle) {
+            const hasTask = await getTaskByVideoId(v.id);
+            if (hasTask) continue;
+            if (queuedVideoIds.includes(v.id)) continue;
+            const title = (v as { title?: string }).title ?? "";
+            const keyword = (v as { search_keyword?: string }).search_keyword ?? title ?? v.id;
+            const inputs = {
               videoId: v.id,
               channelId: channel.id,
-            },
-            priority: 5,
-            status: "queued",
-          };
-          try {
-            const probe = await tq(supabase)
-              .select("source")
-              .limit(1)
-              .maybeSingle();
-            if (probe && "source" in probe) insertRow.source = "channel_auto";
-          } catch {
-            /* ignore */
+              keyword,
+              video_url: `https://www.youtube.com/watch?v=${v.id}`,
+            };
+            const workflowConfig = await buildConfigFromWorkflow(
+              DEFAULT_WATCH_WORKFLOW_ID,
+              DEFAULT_WATCH_WORKFLOW_VERSION,
+              inputs,
+            );
+            const insertRow: Record<string, unknown> = {
+              task_config: {
+                ...workflowConfig,
+                contentMode: "single",
+                videoId: v.id,
+                channelId: channel.id,
+                channel: channel.id,
+                video_url: `https://www.youtube.com/watch?v=${v.id}`,
+                title,
+                keyword,
+              },
+              priority: 5,
+              status: "queued",
+              video_id: v.id,
+              discovered_run_id: discoveredRunId,
+              order_key: orderKeyFromTitle(title),
+            };
+            try {
+              const probe = await tq(supabase)
+                .select("source")
+                .limit(1)
+                .maybeSingle();
+              if (probe && "source" in probe) insertRow.source = "channel_auto";
+            } catch {
+              /* ignore */
+            }
+            const { error: eqErr } = await tq(supabase).insert(insertRow);
+            if (!eqErr) {
+              queuedVideoIds.push(v.id);
+              totalEnqueued++;
+            }
           }
-          const { error: eqErr } = await tq(supabase).insert(insertRow);
-          if (!eqErr) {
-            queuedVideoIds.push(v.id);
-            totalEnqueued++;
-          }
+        } catch (err) {
+          console.error(`[Sync] Enqueue failed for ${channel.name}:`, err);
         }
-      } catch (err) {
-        console.error(`[Sync] Enqueue failed for ${channel.name}:`, err);
       }
+
+      await (supabase as any).rpc("release_sync_lock");
+    } catch (_) {
+      await (supabase as any).rpc("release_sync_lock").catch(() => {});
     }
 
     const elapsed = Date.now() - startTime;
     return {
       ok: true,
-      channels_synced: monitored.length,
+      channels_synced: monitoredThisRun.length,
       new_videos: totalNew,
       updated_videos: totalUpdated,
       enqueued: totalEnqueued,

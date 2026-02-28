@@ -377,8 +377,8 @@ git commit -m "feat(dashboard): show real per-device progress from task result"
 **Step 1: TypeScript build 확인 (agent + dashboard)**
 
 ```bash
-cd /home/choi/projects/doai.me/agent && npx tsc --noEmit
-cd /home/choi/projects/doai.me && npx next build 2>&1 | tail -5
+cd /workspaces/doai.me/agent && npx tsc --noEmit
+cd /workspaces/doai.me && npx next build 2>&1 | tail -5
 ```
 
 **Step 2: 코드 흐름 검증**

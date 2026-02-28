@@ -74,7 +74,7 @@ class DeviceWatchdog {
       // 1. Get current device list from DB
       const { data: devices, error } = await this.supabaseSync.supabase
         .from('devices')
-        .select('serial, status, last_seen_at')
+        .select('serial_number, status, last_heartbeat')
         .eq('pc_id', pcId);
 
       if (error || !devices) {
@@ -104,29 +104,30 @@ class DeviceWatchdog {
 
       // 3. For devices with status='error' — track consecutive errors and attempt recovery
       for (const device of errorDevices) {
-        const count = (this._errorCounts.get(device.serial) || 0) + 1;
-        this._errorCounts.set(device.serial, count);
+        const sn = device.serial_number;
+        const count = (this._errorCounts.get(sn) || 0) + 1;
+        this._errorCounts.set(sn, count);
 
         if (count >= this.ERROR_COUNT_TRIGGER) {
-          await this._attemptRecovery(device.serial);
+          await this._attemptRecovery(sn);
         }
       }
 
       // Clear error counts for devices that are no longer in error
       for (const [serial] of this._errorCounts) {
-        const dev = devices.find(d => d.serial === serial);
+        const dev = devices.find(d => d.serial_number === serial);
         if (dev && dev.status !== 'error') {
           this._errorCounts.delete(serial);
           this._recoveryAttempts.delete(serial);
         }
       }
 
-      // 4. For online devices with stale last_seen — check ping
+      // 4. For online devices with stale last_heartbeat — check ping
       for (const device of onlineDevices) {
-        if (!device.last_seen) continue;
-        const lastSeen = new Date(device.last_seen).getTime();
+        if (!device.last_heartbeat) continue;
+        const lastSeen = new Date(device.last_heartbeat).getTime();
         if ((now - lastSeen) > this.LAST_SEEN_STALE_MS) {
-          await this._checkPing(device.serial);
+          await this._checkPing(device.serial_number);
         }
       }
     } catch (err) {
@@ -204,9 +205,9 @@ class DeviceWatchdog {
         .from('devices')
         .update({
           status: 'offline',
-          last_seen_at: new Date().toISOString(),
+          last_heartbeat: new Date().toISOString(),
         })
-        .eq('serial', serial)
+        .eq('serial_number', serial)
         .eq('pc_id', pcId);
     } catch (err) {
       console.error(`[DeviceWatchdog] Failed to mark ${serial} as dead: ${err.message}`);

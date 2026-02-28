@@ -1,21 +1,18 @@
 # Agent 동작·코드 비판적 리뷰
 
+**SSOT:** 실행 단위는 **task_devices** (claim_task_devices_for_pc / claim_next_task_device → runTaskDevice). 아래 job_assignment/claim_next_assignment 언급은 레거시 경로 정리용 참고.
+
 ## 1. 아키텍처·데이터 일관성
 
-### 1.1 Job assignment 이중 소비 방지 — OK
-- `deviceOrchestrator`가 있으면 `taskExecutor.startJobAssignmentPolling()`을 **호출하지 않음** (agent.js 323–328).
-- 따라서 assignment는 **DeviceOrchestrator → claim_next_assignment → TaskExecutor 실행** 한 경로만 사용됨. 중복 실행 위험 없음.
+### 1.1 Job assignment 이중 소비 방지 — OK (레거시; 현재는 task_devices)
+- **현재:** DeviceOrchestrator는 **task_devices**를 claim (`claim_task_devices_for_pc` / `claim_next_task_device`)하고 `taskExecutor.runTaskDevice(taskDevice)`만 호출. 한 경로만 사용됨.
+- (레거시) assignment는 **DeviceOrchestrator → claim_next_assignment → TaskExecutor 실행** 한 경로만 사용됨. 중복 실행 위험 없음.
 
-### 1.2 claim_next_assignment 2인자 vs 3인자 — 일관성 문제
-- **현재:** DeviceOrchestrator는 `claim_next_assignment(p_pc_id, p_device_serial)` 2인자 RPC만 사용.
+### 1.2 claim_next_task_device / device_id 일관성 (task_devices 기준)
+- **현재:** DeviceOrchestrator는 `claim_task_devices_for_pc(runner_pc_id, max_to_claim)` 또는 `claim_next_task_device(p_worker_id, p_device_serial)` 사용. task_devices 행의 device_serial이 실제 실행 기기와 일치하는지 확인.
 - **DB:** VideoDispatcher는 insert 시 `device_id`(devices.id)를 넣고, `device_serial`은 null. RPC는 `device_serial`만 갱신하고 **device_id는 그대로** 둠.
 - **결과:** 디바이스 B(serial)가 claim하면 row는 `device_id=A`, `device_serial=B`가 될 수 있음. “어떤 기기가 완료했는지” 통계가 device_id 기준이면 잘못됨.
-- **권장:** `claim_next_assignment(p_pc_id, p_device_id, p_device_serial)` 3인자 버전을 쓰고, claim 시 **device_id도 갱신**하도록 하거나, 최소한 DeviceOrchestrator에서 serial→device_id 매핑 후 3인자 호출.
-
-### 1.3 DeviceOrchestrator ↔ TaskExecutor API
-- DeviceOrchestrator는 `this.taskExecutor.runAssignment ?? this.taskExecutor._executeJobAssignment` 호출.
-- TaskExecutor에는 **runAssignment가 없음**. 항상 `_executeJobAssignment`만 호출됨. 동작은 맞지만, 공개 API(`runAssignment`)로 의도했다면 구현이 비어 있음.
-- **권장:** TaskExecutor에 `runAssignment(assignment) { return this._executeJobAssignment(assignment); }` 추가하거나, Orchestrator에서 `_executeJobAssignment`만 직접 호출하고 `runAssignment` 분기 제거.
+- **권장:** claim 시 **device_id도 갱신**하거나, DeviceOrchestrator에서 serial→device_id 매핑 후 완료 RPC에 device_id 반영. (task_devices는 device_serial 기준이면 됨.)
 
 ---
 

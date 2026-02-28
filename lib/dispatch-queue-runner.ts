@@ -37,33 +37,29 @@ export type DispatchResult =
 
 export async function runDispatchQueue(): Promise<DispatchResult> {
   const supabase = createSupabaseServerClient();
-  const { data: items } = await tq(supabase)
-    .select("*")
-    .eq("status", "queued")
-    .limit(20);
 
-  if (!items?.length) {
+  // Atomic dequeue: FOR UPDATE SKIP LOCKED (Phase 2.1, 8.1: no global single-task skip)
+  const { data: rows, error: rpcError } = await (supabase as any).rpc(
+    "dequeue_task_queue_item"
+  );
+
+  if (rpcError) {
+    return { ok: false, error: rpcError.message ?? "dequeue_task_queue_item failed" };
+  }
+
+  const item = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  if (!item) {
     return { ok: true, dispatched: 0, message: "No queued items" };
   }
 
-  const sorted = [...items].sort((a: any, b: any) => {
-    const aM = (a.source ?? "channel_auto") === "manual" ? 0 : 1;
-    const bM = (b.source ?? "channel_auto") === "manual" ? 0 : 1;
-    if (aM !== bM) return aM - bM;
-    const pa = a.priority ?? 0;
-    const pb = b.priority ?? 0;
-    if (pa !== pb) return pb - pa;
-    return (a.created_at ?? "").localeCompare(b.created_at ?? "");
-  });
-
-  const item = sorted[0] as {
+  const itemTyped = item as {
     id: string;
     task_config?: Record<string, unknown>;
     source?: string;
     priority?: number;
     created_at?: string;
   };
-  const config = (item.task_config || {}) as Record<string, unknown>;
+  const config = (itemTyped.task_config || {}) as Record<string, unknown>;
   const inputs = (config.inputs as Record<string, unknown> | undefined) ?? {};
   const contentMode = (config.contentMode as string | undefined) ?? "single";
   const videoId =
@@ -91,7 +87,7 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
       }
     )
       .update({ status: "cancelled" })
-      .eq("id", item.id);
+      .eq("id", itemTyped.id);
     return {
       ok: true,
       dispatched: 0,
@@ -105,10 +101,10 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
     videoId,
     channelId,
     deviceCount: toNumberOr((config as any)?.deviceCount, 20),
-    source: (item.source === "manual" ? "manual" : "channel_auto") as
+    source: (itemTyped.source === "manual" ? "manual" : "channel_auto") as
       | "manual"
       | "channel_auto",
-    priority: typeof item.priority === "number" ? item.priority : 5,
+    priority: typeof itemTyped.priority === "number" ? itemTyped.priority : 5,
     variables: config?.variables as TaskVariables | undefined,
     ...(workflowId
       ? { workflowId, workflowVersion, workflowInputs: inputs }
@@ -127,12 +123,12 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
       dispatched_at: new Date().toISOString(),
       dispatched_task_id: (task as { id: string }).id,
     })
-    .eq("id", item.id);
+    .eq("id", itemTyped.id);
 
   return {
     ok: true,
     dispatched: 1,
-    queue_id: item.id,
+    queue_id: itemTyped.id,
     task_id: (task as { id: string }).id,
     video_id: videoId,
   };

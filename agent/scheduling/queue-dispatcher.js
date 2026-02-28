@@ -1,11 +1,11 @@
 /**
  * QueueDispatcher — Dispatches queued tasks to the system (Push-based)
  *
- * Primary: Supabase Realtime on task_queue INSERT → immediate dispatch.
- * Fallback: 10-second poll for any missed events.
+ * Phase 10: Polling is primary; Realtime is hint. 30s poll + Realtime-triggered _tick.
+ * On Realtime reconnect, one _tick() for recovery.
  */
 
-const DEFAULT_DISPATCH_INTERVAL = 10000;
+const DEFAULT_DISPATCH_INTERVAL = 30000;
 
 class QueueDispatcher {
   constructor(supabaseSync, config, broadcaster) {
@@ -68,6 +68,9 @@ class QueueDispatcher {
       )
       .subscribe((status) => {
         console.log(`[QueueDispatcher] task_queue Realtime: ${status}`);
+        if (status === "SUBSCRIBED" || status === "CHANNEL_CONNECTED") {
+          this._tick();
+        }
       });
   }
 

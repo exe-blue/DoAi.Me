@@ -1,7 +1,9 @@
 /**
  * DoAi.Me - Heartbeat Loop
  * Periodically syncs device status and worker health to Supabase
+ * Resolves IP:PORT connection ids to hardware serial so devices are identified by serial_number when IP changes.
  */
+const { resolveHardwareSerialsForList } = require("./device-serial-resolver");
 
 /**
  * Parse device list from Xiaowei response
@@ -68,22 +70,53 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
   const interval = config.heartbeatInterval || 30000;
   const startedAt = new Date().toISOString();
 
+  let prevSerials = new Set();
+  const errorCountMap = new Map();
+  const ERROR_THRESHOLD = 2;
+
   console.log(
     `[Heartbeat] Starting (every ${interval / 1000}s) for PC ${pcId}`
   );
 
   async function beat() {
     try {
-      // 1. Get device list from Xiaowei
+      // 1. Get device list from Xiaowei (connection ids: IP:5555 or serial)
       let devices = [];
       if (xiaowei.connected) {
         try {
           const response = await xiaowei.list();
           devices = parseDeviceList(response);
+          // Resolve IP:PORT to hardware serial so DB identity is stable when IP changes
+          devices = await resolveHardwareSerialsForList(xiaowei, devices);
         } catch (err) {
           console.error(`[Heartbeat] Failed to list devices: ${err.message}`);
         }
       }
+
+      const currentSerials = new Set(devices.filter(d => d.serial).map(d => d.serial));
+
+      // Determine error serials: previously seen, now missing, Xiaowei still connected
+      const errorSerials = [];
+      if (xiaowei.connected) {
+        for (const serial of prevSerials) {
+          if (!currentSerials.has(serial)) {
+            const count = (errorCountMap.get(serial) ?? 0) + 1;
+            errorCountMap.set(serial, count);
+            if (count < ERROR_THRESHOLD) {
+              errorSerials.push(serial);
+            }
+          }
+        }
+      }
+      for (const serial of currentSerials) {
+        errorCountMap.delete(serial);
+      }
+      for (const [serial, count] of errorCountMap) {
+        if (count >= ERROR_THRESHOLD) {
+          errorCountMap.delete(serial);
+        }
+      }
+      prevSerials = currentSerials;
 
       // 2. Update PC status
       const uptimeSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
@@ -120,8 +153,8 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
         reconnectManager.updateRegisteredDevices(devices);
       }
 
-      // 6. Mark disconnected devices as offline
-      await supabaseSync.markOfflineDevices(pcId, activeSerials);
+      // 6. Mark disconnected devices as offline (and error serials as "error")
+      await supabaseSync.markOfflineDevices(pcId, activeSerials, errorSerials);
 
       // 7. Get aggregate counts for dashboard snapshot
       if (broadcaster) {
@@ -148,13 +181,24 @@ function startHeartbeat(xiaowei, supabaseSync, config, taskExecutor, broadcaster
             proxies: proxyCounts,
             timestamp: new Date().toISOString()
           });
+
+          // room:devices broadcast for real-time dashboard device grid
+          if (supabaseSync.pcUuid) {
+            const payload = devices.map(d => ({
+              serial: d.serial,
+              status: d.status || 'online',
+              model: d.model,
+              battery: d.battery ?? null,
+            }));
+            await broadcaster.broadcastWorkerDevices(supabaseSync.pcUuid, payload);
+          }
         } catch (err) {
           console.error(`[Heartbeat] Broadcaster error: ${err.message}`);
         }
       }
 
       console.log(
-        `[Heartbeat] heartbeat OK - ${devices.length} device(s), xiaowei=${xiaowei.connected}`
+        `[Heartbeat] heartbeat OK - ${devices.length} device(s), ${errorSerials.length} error(s), xiaowei=${xiaowei.connected}`
       );
     } catch (err) {
       console.error(`[Heartbeat] Error: ${err.message}`);

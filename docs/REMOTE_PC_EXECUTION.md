@@ -181,7 +181,7 @@ node agent\agent.js
 
 - `[Supabase] Found PC: <uuid> (PC01)` 또는 `[Supabase] Created PC ...`
 - `[Agent] ✓ Xiaowei connected`
-- `[TaskDevicesRunner] Started (slots=10, leaseMin=5)`
+- `[Agent] ✓ Device orchestrator started`
 - `[Agent] Ready and listening for tasks`
 
 ---

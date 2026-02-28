@@ -6,6 +6,42 @@
 const EventEmitter = require("events");
 const WebSocket = require("ws");
 
+function parseDeviceList(response) {
+  if (!response) return [];
+  if (Array.isArray(response)) {
+    return response.map(d => ({
+      serial: d.serial || d.id || d.deviceId || "",
+      model: d.model || d.name || "",
+      status: "online",
+      battery: d.battery != null ? d.battery : null,
+      ipIntranet: d.ip || d.ipIntranet || null,
+    }));
+  }
+  const devices = response.data || response.devices || response.list;
+  if (Array.isArray(devices)) {
+    return devices.map(d => ({
+      serial: d.serial || d.id || d.deviceId || "",
+      model: d.model || d.name || "",
+      status: "online",
+      battery: d.battery != null ? d.battery : null,
+      ipIntranet: d.ip || d.ipIntranet || null,
+    }));
+  }
+  if (typeof response === "object") {
+    const entries = Object.entries(response).filter(
+      ([key]) => !["action", "status", "code", "msg"].includes(key)
+    );
+    return entries.map(([serial, info]) => ({
+      serial,
+      model: (info && info.model) || "",
+      status: "online",
+      battery: (info && info.battery) != null ? (info && info.battery) : null,
+      ipIntranet: (info && info.ip) || null,
+    }));
+  }
+  return [];
+}
+
 class XiaoweiClient extends EventEmitter {
   constructor(wsUrl) {
     super();
@@ -20,6 +56,8 @@ class XiaoweiClient extends EventEmitter {
     this._commandQueue = [];
     this._maxQueueSize = 100;
     this._disconnectedAt = null;
+    /** @type {Array<{serial: string, model?: string, status?: string, battery?: number|null, ipIntranet?: string|null}>} */
+    this.lastDevices = [];
   }
 
   get isConnected() {
@@ -200,9 +238,12 @@ class XiaoweiClient extends EventEmitter {
     this.ws.send(JSON.stringify(message));
   }
 
-  /** List connected devices */
+  /** List connected devices; also sets this.lastDevices for consumers that need the parsed list */
   list() {
-    return this.send({ action: "list" });
+    return this.send({ action: "list" }).then((resp) => {
+      this.lastDevices = parseDeviceList(resp);
+      return resp;
+    });
   }
 
   /**

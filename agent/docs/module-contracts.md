@@ -898,42 +898,9 @@ static validateCron(cronExpr: string): { valid: boolean, error?: string }
 
 ---
 
-### `VideoDispatcher`
+### VideoDispatcher (removed)
 
-**File:** `scheduling/video-dispatcher.js`
-
-```js
-/**
- * @constructor
- * @param {SupabaseSync}              supabaseSync
- * @param {object}                    config       - reads config.isPrimaryPc
- * @param {DashboardBroadcaster|null} broadcaster
- */
-new VideoDispatcher(supabaseSync, config, broadcaster)
-```
-
-**Public methods:** `start(): void`, `stop(): void` — 60-second interval with 30-second initial delay. Only active when `config.isPrimaryPc = true`.
-
-**Flow:** query `videos WHERE status='active'` → skip `completed_views >= target_views` → find or create `jobs` row → insert up to 30 `job_assignments` per video.
-
-**Key data shapes:**
-
-```js
-// jobs row (produced)
-{
-  title: string,           // 'Auto: <video.title>'
-  target_url: string,      // 'https://www.youtube.com/watch?v=<id>'
-  script_type: 'youtube_watch',
-  duration_sec: number,
-  is_active: true,
-}
-
-// job_assignments row (produced)
-{
-  job_id: string, device_id: null, device_serial: null,
-  pc_id: string, video_id: string, status: 'pending', progress_pct: 0
-}
-```
+VideoDispatcher (jobs + job_assignments) has been removed. Task execution uses **task_devices** only. Create tasks + task_devices via web dashboard or QueueDispatcher / ScheduleEvaluator.
 
 ---
 

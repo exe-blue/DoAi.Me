@@ -74,9 +74,9 @@ function createMockBroadcaster() {
 // ── Load ProxyManager ────────────────────────────────────────────
 
 function loadProxyManager() {
-  const modPath = require.resolve("../agent/proxy-manager");
+  const modPath = require.resolve("../agent/setup/proxy-manager");
   delete require.cache[modPath];
-  return require("../agent/proxy-manager");
+  return require("../agent/setup/proxy-manager");
 }
 
 // ── S-9: Failure Detection ───────────────────────────────────────

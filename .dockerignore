@@ -65,6 +65,5 @@ components.json
 ui.xml
 ecosystem.config.js
 .hintrc
-register-channels-fixed/
 codeql-custom-queries-javascript/
 app_legacy/
