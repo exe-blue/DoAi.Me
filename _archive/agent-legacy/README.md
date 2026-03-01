@@ -1,32 +1,29 @@
-# Agent Legacy / Unused Code Archive
+# DoAi.Me PC Agent
 
-이 폴더는 **현재 프로세스**(`agent/agent.js` 진입점)에서 **사용하지 않는** agent 관련 JS 파일·폴더를 보관한 곳입니다.
+Node.js agent that bridges Supabase and Xiaowei to run YouTube view tasks on connected devices.
 
-- **기준**: `agent.js`에서 직접·간접 `require()` 되는 모듈만 "사용 중"으로 간주.
-- **이동일**: 2026-02-28. 필요 시 복원 가능.
+**Run:** `node agent.js`
 
-## 보관 구조
+## Before running
 
-| 경로 | 설명 |
-|------|------|
-| `scripts/` | 단독 실행 스크립트·패치·barrel index (stress-test-loop, run-optimize, patch-agent, script-cache, ecosystem.config 등) |
-| `task-unused/` | task 레이어 미사용 (index, command-executor, command-poller, task-state-machine) |
-| `device-unused/` | device 레이어 미사용 (models, service, index) |
-| `youtube/` | YouTube 플로우 모듈 전체 (flows, verify, watch, search, action, preflight, selectors, warmup 등) — task-executor는 인라인 + AutoJS 사용 |
-| `dashboard/` | 대시보드 서비스 (agent.js에서 미참조) |
-| `proxy/` | proxy 테이블·서비스 (proxy-manager는 별도 구현) |
-| `account/` | account 테이블·서비스 (account-manager는 별도 구현) |
-| `adb/` | ADB 클라이언트·xml-parser·screen·helpers (youtube/ 및 device/service에서만 사용) |
-| `common/` | logger, errors, retry, config (위 레거시 모듈에서만 사용) |
-| `video-manager/` | 비디오·채널 모델·서비스 (agent.js에서 미참조) |
+Ensure Node, env config, and Xiaowei are set up so the agent can talk to Supabase and devices.
 
-## 현재 프로세스에서 사용 중인 agent 파일 (18개)
+- **Node.js** 18 or later.
+- **Environment:** Copy `.env.example` to `.env` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PC_NUMBER`, and optionally `XIAOWEI_WS_URL`.
+- **Xiaowei** must be running (e.g. `ws://127.0.0.1:22222/`) for device control; the agent connects to it for ADB/WebSocket commands.
 
-- `agent.js`, `config.js`
-- `core/`: xiaowei-client.js, supabase-sync.js, dashboard-broadcaster.js
-- `device/`: heartbeat.js, adb-reconnect.js, device-watchdog.js, device-orchestrator.js, device-presets.js
-- `task/`: task-executor.js, stale-task-cleaner.js
-- `scheduling/`: queue-dispatcher.js, schedule-evaluator.js
-- `setup/`: proxy-manager.js, account-manager.js, script-verifier.js, comment-generator.js
+## Key modules
 
-상세 매핑은 `docs/agent-js-modules-and-layers.md` 참고.
+- **agent.js** — Main entry; wires Xiaowei, Supabase, heartbeat, and dispatchers.
+- **device-orchestrator.js** — Tracks device state and assigns work via `claim_task_devices_for_pc` / `claim_next_task_device` RPC (task_devices SSOT).
+- **video-dispatcher.js** — Legacy: previously created jobs/job_assignments; pipeline now uses **task_devices**. Create tasks + task_devices via web dashboard or queue-dispatcher.
+- **task-executor.js** — Runs claimed **task_device** rows on devices via Xiaowei/ADB (`runTaskDevice`).
+- **supabase-sync.js** — Supabase client, device sync, and Realtime subscriptions.
+
+## E2E pipeline diagnostics
+
+If the orchestrator never claims work, run diagnostics in **Supabase SQL Editor**:
+
+- **Step 1:** Pending task_devices? `SELECT * FROM task_devices WHERE status = 'pending' AND (pc_id = '<your_pc_uuid>' OR pc_id IS NULL) LIMIT 5;`
+- **Step 2:** Claim RPC: `SELECT * FROM claim_task_devices_for_pc(runner_pc_id := '<pc_uuid>'::uuid, max_to_claim := 1);` or `claim_next_task_device(p_worker_id := '<pc_uuid>'::uuid, p_device_serial := 'test_serial');` If no row → check pc_id, devices.serial_number, and migrations.
+- **Debug logs:** Set `DEBUG_ORCHESTRATOR=1` or `DEBUG_ORCHESTRATOR_CLAIM=1`.

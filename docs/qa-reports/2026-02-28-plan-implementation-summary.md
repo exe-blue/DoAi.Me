@@ -5,7 +5,7 @@
 - `docs/plans/2026-02-13-youtube-watch-task-plan.md`
 
 **적용 범위:** 플랜에서 언급된 파일 중 **현재 코드베이스에 존재하는 파일**만 수정.  
-(플랜은 `agent/src/*.ts`, `apps/dashboard/` 기준이었고, 실제 구조는 `agent/*.js`, 루트 `app/`·`hooks/` 이므로 해당 구조에 맞춰 반영.)
+(플랜은 `agent/src/*.ts`, `apps/dashboard/` 기준이었고, 실제 구조는 `agent/*.js`, 루트 `app/`·`hooks/` 단일 앱이므로 해당 구조에 맞춰 반영. `apps/` 폴더는 제거됨.)
 
 ---
 
@@ -23,7 +23,7 @@
 
 - **hooks/use-realtime.ts**: 이미 `useDevicesBroadcast()` 및 이벤트 `"update"` 사용 중 → 변경 없음.
 - **hooks/use-workers-store.ts**: 이미 `updateDevicesFromBroadcast`, `useWorkersWithRealtime`에서 `useDevicesBroadcast` 연동 → 변경 없음.
-- **device-grid.tsx**: 플랜에는 `apps/dashboard/.../device-grid.tsx`가 있으나 현재 프로젝트에는 해당 경로 없음 → 적용 생략.
+- **device-grid.tsx**: 플랜에는 `apps/dashboard/.../device-grid.tsx`가 있으나 현재는 루트 `app/` 단일 앱만 사용하여 해당 경로 없음 → 적용 생략.
 
 ---
 
