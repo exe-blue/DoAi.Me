@@ -6,58 +6,27 @@ Dev Container에서만 개발/빌드/테스트한다.
 
 YouTube 자동 시청 파밍 시스템. 500대 물리 디바이스를 5대의 Node PC로 관제하고, Supabase Broadcast 기반 실시간 대시보드로 모니터링합니다.
 
-## 프로젝트 구조
+## 프로젝트 구조 (모노레포)
 
 ```
 doai.me/
-├── app/                     # Next.js 14 App Router
-│   ├── api/                 # API Routes (19개)
-│   │   ├── workers/         # 워커 CRUD + heartbeat
-│   │   ├── devices/         # 디바이스 CRUD
-│   │   ├── tasks/           # 태스크 CRUD
-│   │   ├── accounts/        # 계정 풀
-│   │   ├── presets/         # 명령 프리셋
-│   │   ├── channels/        # 채널 관리
-│   │   ├── youtube/         # YouTube 동기화
-│   │   ├── proxies/         # 프록시 관리
-│   │   ├── stats/           # 통계
-│   │   ├── logs/            # 로그 조회
-│   │   └── health/          # 헬스체크
-│   ├── dashboard/           # 대시보드 페이지 (8개 라우트)
-│   └── layout.tsx           # 루트 레이아웃
-├── components/
-│   ├── ui/                  # shadcn/ui + Magic UI 컴포넌트
-│   └── dashboard/           # 대시보드 공유 컴포넌트
-├── hooks/                   # Zustand 스토어 + Realtime 훅
-│   ├── use-workers-store.ts
-│   ├── use-tasks-store.ts
-│   ├── use-logs-store.ts
-│   ├── use-stats-store.ts
-│   ├── use-presets-store.ts
-│   ├── use-proxies-store.ts
-│   └── use-realtime.ts      # Supabase Broadcast 구독
-├── lib/
-│   ├── supabase/            # Supabase 클라이언트 + 타입
-│   ├── db/                  # 서버사이드 쿼리 함수
-│   ├── types.ts             # 프론트엔드 타입
-│   └── schemas.ts           # Zod 스키마
+├── apps/
+│   └── web/                 # Next.js 대시보드 (웹 앱 루트)
+│       ├── app/             # App Router (api/, (app)/ 등)
+│       ├── src/             # components, hooks, lib, types
+│       ├── public/
+│       ├── next.config.js
+│       ├── package.json     # @doai/web
+│       └── vercel.json      # Cron 등
+├── packages/                # shared, supabase, ui
 ├── agent/                   # Node PC Agent (각 PC에서 실행)
-│   ├── src/
-│   │   ├── agent.ts         # 메인 에이전트
-│   │   ├── xiaowei-client.ts # Xiaowei WebSocket 클라이언트
-│   │   ├── supabase-sync.ts # Supabase 동기화
-│   │   └── broadcaster.ts   # Broadcast 이벤트 발행
-│   ├── agent.js             # 레거시 CommonJS 에이전트
-│   └── package.json
 ├── tests/
-│   ├── e2e-local.js         # E2E 테스트 (전체 파이프라인)
-│   ├── seed-channels.js     # 채널/비디오 시드 스크립트
-│   └── run-api-tests.js     # API 라우트 테스트
 ├── supabase/
-│   ├── migrations/          # SQL 마이그레이션
-│   └── verify_schema.sql    # 스키마 검증 쿼리
-└── package.json
+├── pnpm-workspace.yaml
+└── package.json             # 루트: pnpm --filter @doai/web dev/build
 ```
+
+**Vercel 배포**: 프로젝트 설정에서 Root Directory를 `apps/web`으로 지정하세요.
 
 ## 로컬 실행
 
@@ -74,11 +43,11 @@ npm run db:verify
 ### 2. Dashboard (Next.js)
 
 ```bash
-cp .env.example .env.local
-# .env.local 에 Supabase URL, Keys, YouTube API Key 설정
+cp apps/web/.env.example apps/web/.env.local
+# apps/web/.env.local 에 Supabase URL, Keys, YouTube API Key 설정
 
-npm install
-npm run dev          # http://localhost:3000
+pnpm install
+pnpm run dev         # http://localhost:3000
 ```
 
 ### 3. Agent (Node PC)
@@ -109,7 +78,7 @@ npm run dev          # tsc --watch (개발용)
 node tests/seed-channels.js
 
 # E2E 테스트 실행
-npm run test:e2e
+pnpm run test:e2e
 
 # 클린업 없이 실행 (디버깅용)
 node tests/e2e-local.js --no-cleanup

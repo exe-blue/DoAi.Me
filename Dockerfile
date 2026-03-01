@@ -3,27 +3,28 @@ FROM node:25-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+RUN corepack enable && corepack prepare pnpm@10 --activate
+
+# Copy workspace and package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/ apps/
 COPY packages/ packages/
 
-# Install dependencies - use npm install for more lenient resolution
-RUN CI=true npm install
+# Install dependencies
+RUN pnpm install --frozen-lockfile
 
-# Copy source code
+# Copy rest of source (app code already in apps/)
 COPY . .
 
-# Build the application
-# Bypass TypeScript type checking by using next build directly
-RUN CI=true npm run build
-
-# Prune to remove dev dependencies for smaller final image
-RUN npm prune --omit=dev
+# Build the web app
+RUN pnpm run build
 
 # Stage 2: Runtime
 FROM node:25-alpine
 
 WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
@@ -32,12 +33,11 @@ RUN apk add --no-cache dumb-init
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001 -G nodejs
 
-# Copy only necessary built files from builder
-COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+# Copy workspace and built web app (minimal: root package.json + apps/web with .next)
+COPY --from=builder --chown=nextjs:nodejs /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/package*.json ./
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/next.config.js ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps ./apps
+COPY --from=builder --chown=nextjs:nodejs /app/packages ./packages
 
 # Switch to non-root user
 USER nextjs
@@ -52,5 +52,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 # Use dumb-init as entrypoint
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the Next.js server
-CMD ["node_modules/.bin/next", "start"]
+# Start the Next.js server (from workspace root)
+CMD ["pnpm", "run", "start"]
