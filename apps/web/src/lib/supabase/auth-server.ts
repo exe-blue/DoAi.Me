@@ -48,7 +48,7 @@ export async function createAuthServerClient() {
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll();
+          return Promise.resolve(cookieStore.getAll());
         },
         setAll(cookiesToSet) {
           try {
@@ -62,4 +62,4 @@ export async function createAuthServerClient() {
       },
     }
   );
-}
+}

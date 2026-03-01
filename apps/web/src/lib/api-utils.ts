@@ -11,7 +11,7 @@ export type ApiSuccess<T> = { ok: true; data: T };
 export type ApiList<T> = { ok: true; data: T[]; page: number; pageSize: number; total: number };
 export type ApiError = { ok: false; code: string; message: string; details?: unknown };
 
-export function ok<T>(data: T, status = 200): NextResponse<ApiSuccess<T>> {
+export function ok<T>(data: T, status = 200): NextResponse {
   return NextResponse.json({ ok: true as const, data }, { status });
 }
 
@@ -19,7 +19,7 @@ export function okList<T>(
   data: T[],
   opts: { page: number; pageSize: number; total: number },
   status = 200
-): NextResponse<ApiList<T>> {
+): NextResponse {
   return NextResponse.json(
     { ok: true as const, data, page: opts.page, pageSize: opts.pageSize, total: opts.total },
     { status }
@@ -31,14 +31,14 @@ export function err(
   message: string,
   status = 400,
   details?: unknown
-): NextResponse<ApiError> {
+): NextResponse {
   return NextResponse.json(
     { ok: false as const, code, message, ...(details != null && { details }) },
     { status }
   );
 }
 
-export function errFrom(e: unknown, fallbackCode = "INTERNAL_ERROR", fallbackStatus = 500): NextResponse<ApiError> {
+export function errFrom(e: unknown, fallbackCode = "INTERNAL_ERROR", fallbackStatus = 500): NextResponse {
   let message: string;
   if (e instanceof Error) {
     message = e.message;

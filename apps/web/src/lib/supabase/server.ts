@@ -24,7 +24,7 @@ export async function createServerClientWithCookies() {
   return createServerClient<Database>(url, anonKey, {
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return Promise.resolve(cookieStore.getAll());
       },
       setAll(cookiesToSet) {
         try {

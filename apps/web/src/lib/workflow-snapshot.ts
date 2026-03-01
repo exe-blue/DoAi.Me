@@ -36,6 +36,8 @@ export type ScriptRow = {
   timeout_ms: number;
 };
 
+type ScriptQueryResult = Promise<{ data: ScriptRow | null; error: unknown }>;
+
 export type TaskDeviceConfigInput = {
   workflow: { id: string; version: number; name: string; kind?: string };
   steps: WorkflowStep[];
@@ -56,11 +58,11 @@ export async function loadWorkflow(
   workflowId: string,
 ): Promise<WorkflowRow | null> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await workflowsFrom(supabase)
+  const result = await workflowsFrom(supabase)
     .select("id, version, name, steps, is_active, kind")
     .eq("id", workflowId)
-    .maybeSingle()
-    .returns<WorkflowRow | null>();
+    .maybeSingle();
+  const { data, error } = result as unknown as { data: WorkflowRow | null; error: unknown };
 
   if (error) throw error;
   return data;
@@ -74,12 +76,12 @@ export async function loadWorkflowDefinition(
   workflowVersion: number,
 ): Promise<WorkflowRow | null> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await workflowsFrom(supabase)
+  const result = await workflowsFrom(supabase)
     .select("id, version, name, steps, is_active, kind")
     .eq("id", workflowId)
     .eq("version", workflowVersion)
-    .maybeSingle()
-    .returns<WorkflowRow | null>();
+    .maybeSingle();
+  const { data, error } = result as unknown as { data: WorkflowRow | null; error: unknown };
 
   if (error) throw error;
   return data;
@@ -156,13 +158,23 @@ export async function resolveAndValidateScripts(
       if (!scriptId) {
         throw new Error("scriptRef.id or scriptRef.scriptId is required");
       }
-      const { data: script, error } = await supabase
+      // scripts table not in generated DB types yet; use type assertion for query
+      const sb = supabase as unknown as {
+        from: (t: string) => {
+          select: (s: string) => {
+            eq: (a: string, b: string) => {
+              eq: (a2: string, b2: number) => { maybeSingle: () => ScriptQueryResult };
+            };
+          };
+        };
+      };
+      const scriptResult = await sb
         .from("scripts")
         .select("id, name, version, status, timeout_ms")
         .eq("id", scriptId)
         .eq("version", ref.version)
-        .maybeSingle()
-        .returns<ScriptRow | null>();
+        .maybeSingle();
+      const { data: script, error } = scriptResult;
 
       if (error) throw error;
       if (!script) {

@@ -112,6 +112,8 @@ type BatchTaskOptions = {
   variables?: TaskVariables;
   workerId?: string;
   createdByUserId?: string;
+  source?: "manual" | "channel_auto";
+  priority?: number;
 };
 
 export async function createBatchTask(options: BatchTaskOptions) {
@@ -324,14 +326,14 @@ type TaskWithDevicesOptions = {
 export async function createTaskWithTaskDevices(options: TaskWithDevicesOptions) {
   const supabase = createServiceRoleClient();
 
-  const payloadJson: Json = {
+  const payloadJson = {
     ...(typeof options.taskPayload.payload === "object" && options.taskPayload.payload !== null
       ? (options.taskPayload.payload as Record<string, unknown>)
       : {}),
     ...(options.workflowId ? { workflow_id: options.workflowId } : {}),
     ...(options.workflowVersion ? { workflow_version: options.workflowVersion } : {}),
     ...(options.inputs ? { workflow_inputs: options.inputs } : {}),
-  };
+  } as Json;
 
   const { data: task, error } = await supabase
     .from("tasks")
