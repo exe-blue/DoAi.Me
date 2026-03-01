@@ -53,6 +53,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+!apps/desktop/build/
+!apps/desktop/build/installer.nsh
 *.egg
 venv/
 *.db

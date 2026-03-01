@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "packages/config/*"
   ],
   "scripts": {
     "dev": "pnpm --filter @doai/web dev",
@@ -26,10 +27,13 @@
     "register-channels": "node scripts/register-channels.mjs",
     "deploy": "node scripts/deploy.mjs",
     "health": "node scripts/pm2-health-check.mjs",
-    "rollback": "node scripts/rollback.mjs"
+    "rollback": "node scripts/rollback.mjs",
+    "typecheck": "turbo run typecheck",
+    "desktop:dist": "pnpm --filter @doai/desktop run dist"
   },
   "devDependencies": {
-    "supabase": "^2.76.15"
+    "supabase": "^2.76.15",
+    "turbo": "^2.8.12"
   },
   "overrides": {
     "tar": ">=7.5.8",
@@ -39,5 +43,6 @@
     "brace-expansion": ">=2.0.2",
     "diff": ">=5.2.2",
     "serialize-javascript": ">=7.0.3"
-  }
+  },
+  "packageManager": "pnpm@10.29.3"
 }

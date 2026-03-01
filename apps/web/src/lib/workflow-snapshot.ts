@@ -37,6 +37,8 @@ export type ScriptRow = {
 };
 
 type ScriptQueryResult = Promise<{ data: ScriptRow | null; error: unknown }>;
+type WorkflowQueryResult = { data: WorkflowRow | null; error: unknown };
+type WorkflowQueryPromise = Promise<WorkflowQueryResult>;
 
 export type TaskDeviceConfigInput = {
   workflow: { id: string; version: number; name: string; kind?: string };
@@ -58,11 +60,9 @@ export async function loadWorkflow(
   workflowId: string,
 ): Promise<WorkflowRow | null> {
   const supabase = createSupabaseServerClient();
-  const result = await workflowsFrom(supabase)
-    .select("id, version, name, steps, is_active, kind")
-    .eq("id", workflowId)
-    .maybeSingle();
-  const { data, error } = result as unknown as { data: WorkflowRow | null; error: unknown };
+  // Cast to avoid deep Supabase type instantiation
+  const result = await (workflowsFrom(supabase) as unknown as { select: (_s: string) => { eq: (_a: string, _b: string) => { maybeSingle: () => WorkflowQueryPromise } } }).select("id, version, name, steps, is_active, kind").eq("id", workflowId).maybeSingle();
+  const { data, error } = result;
 
   if (error) throw error;
   return data;
@@ -76,12 +76,9 @@ export async function loadWorkflowDefinition(
   workflowVersion: number,
 ): Promise<WorkflowRow | null> {
   const supabase = createSupabaseServerClient();
-  const result = await workflowsFrom(supabase)
-    .select("id, version, name, steps, is_active, kind")
-    .eq("id", workflowId)
-    .eq("version", workflowVersion)
-    .maybeSingle();
-  const { data, error } = result as unknown as { data: WorkflowRow | null; error: unknown };
+  // Cast to avoid deep Supabase type instantiation
+  const result = await (workflowsFrom(supabase) as unknown as { select: (_s: string) => { eq: (_a: string, _b: string) => { eq: (_a2: string, _b2: number) => { maybeSingle: () => WorkflowQueryPromise } } } }).select("id, version, name, steps, is_active, kind").eq("id", workflowId).eq("version", workflowVersion).maybeSingle();
+  const { data, error } = result;
 
   if (error) throw error;
   return data;
