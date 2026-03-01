@@ -2,15 +2,18 @@
   "name": "doai-me",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "turbo run dev --filter=./apps/web --filter=./apps/desktop",
+    "build": "turbo run build",
+    "build:desktop": "pnpm --filter @doai/desktop build",
+    "dist:desktop": "pnpm --filter @doai/desktop dist",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "dev:next": "next dev",
+    "build:next": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "vitest run",
+    "lint:next": "next lint",
+    "test:next": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e-local.js",
     "test:e2e:watch": "node tests/e2e-youtube-watch.js",
@@ -69,6 +72,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "turbo": "^2.3.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

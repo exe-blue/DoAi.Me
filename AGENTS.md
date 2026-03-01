@@ -37,3 +37,4 @@ See `package.json` scripts. Summary:
 - `npm workspaces` are defined (`packages/*`) for shared packages; root `npm install` covers them.
 - Vitest tests do NOT require Supabase or any external services; they mock all DB calls.
 - Production is single stack: root `app/` (web) + legacy agent `agent/agent.js` only.
+- Archived docs live in `_archive/`; use only current/active docs (see `docs/DOCS_MANAGER_UPDATES.md`) unless debugging regressions or comparing versions.

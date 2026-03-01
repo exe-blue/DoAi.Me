@@ -56,3 +56,6 @@ Details: `docs/qa-reports/agent-three-layers-verification.md`, `docs/qa-reports/
 | Device orchestration | `agent/device/device-orchestrator.js` + `docs/qa-reports/agent-flow-verification-bidirectional.md` |
 | Agent three layers | `docs/qa-reports/agent-three-layers-verification.md` |
 | DB schema (tasks, task_queue, task_devices, videos) | `supabase/migrations/` + `.cursor/rules/project-core.mdc` |
+| Auth (login/session) | Supabase Auth. `docs/ENV.md`; ADRs: `docs/adrs/ADR-006-supabase-auth-migration.md`, `docs/adr/ADR-006-auth-migration-supabase.md` |
+| PC agent deploy / rollback | Cross-platform Node: `npm run deploy`, `npm run rollback -- <version>`. Scripts: `scripts/deploy.mjs`, `scripts/rollback.mjs`. See `docs/RUNBOOK.md`. |
+| Production DB migrations | `docs/production-migrations/README.md` + SQL in that folder; apply order 01→05. |

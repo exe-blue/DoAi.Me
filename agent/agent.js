@@ -277,7 +277,7 @@ async function main() {
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
     pcUuid: supabaseSync.pcUuid,
-    maxConcurrent: config.maxConcurrentTasks || 10,
+    maxConcurrent: config.maxConcurrentTasks || 20,
     loggingDir: config.loggingDir,
   });
   console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);

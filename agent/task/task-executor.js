@@ -212,7 +212,12 @@ class TaskExecutor {
         durationSec,
         searchKeyword,
         videoTitle,
-        engagementConfig
+        engagementConfig,
+        {
+          taskDeviceId: taskDevice.id,
+          taskId: taskDevice.task_id,
+          serial,
+        }
       );
       await this._updateTaskDevice(taskDevice.id, "completed", {
         completed_at: new Date().toISOString(),
@@ -321,19 +326,35 @@ class TaskExecutor {
    * @param {string} [searchKeyword] - 검색 키워드 (없으면 제목 사용)
    * @param {string} [videoTitle] - 영상 제목 (검색어로 사용)
    * @param {{ probLike?: number, probComment?: number, probSubscribe?: number, probPlaylist?: number, channelName?: string, videoId?: string }} [engagementConfig] - null이면 engagement 비활성화
+   * @param {{ taskDeviceId: string, taskId: string, serial: string }} [logContext] - execution_logs용 (task_device_id, task_id, serial)
    * @returns {Promise<{actualDurationSec: number, watchPercentage: number, liked?: boolean, subscribed?: boolean, commented?: boolean, playlisted?: boolean}>}
    */
-  async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig) {
+  async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig, logContext) {
     const startTime = Date.now();
     const eng = engagementConfig || {};
     const waitMinMs = () => (eng.waitMinSec != null ? eng.waitMinSec * 1000 : 1000);
     const waitMaxMs = () => (eng.waitMaxSec != null ? eng.waitMaxSec * 1000 : 5000);
     const stepWait = () => _sleep(_randInt(waitMinMs(), waitMaxMs()));
 
+    const _logStep = (stepName, message, data = {}) => {
+      if (logContext && this.supabaseSync.insertExecutionLog) {
+        this.supabaseSync.insertExecutionLog(
+          logContext.taskDeviceId,
+          logContext.serial,
+          stepName,
+          { task_id: logContext.taskId, task_device_id: logContext.taskDeviceId, ...data },
+          null,
+          "info",
+          message
+        );
+      }
+    };
+
     if (eng.warmupSec && eng.warmupSec > 0) {
       await this._doWarmup(serial, eng.warmupSec);
     }
     await stepWait();
+    _logStep("step_0_wait", "Random wait between steps (min_wait_sec~max_wait_sec)");
 
     const personality = this._getPersonality(serial);
 
@@ -381,23 +402,28 @@ class TaskExecutor {
     await this._adbShellWithRetry(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
     await _sleep(_randInt(3000, 5000));
     await stepWait();
+    _logStep("step_1_1_launch", "YouTube app launched");
 
     const query = this._buildSearchQuery(searchKeyword, videoTitle, videoUrl);
     console.log(`[TaskExecutor] 🔍 ${serial} searching: "${query}"`);
 
     const searchSuccess = await this._searchAndSelectVideo(serial, query);
     await stepWait();
+    _logStep("step_1_2_1_3_search_enter", searchSuccess ? "Search + select video done" : "Search failed, will try direct URL", { search_success: searchSuccess });
 
     if (!searchSuccess) {
       console.log(`[TaskExecutor] ⚠ ${serial} search failed, falling back to direct URL`);
       await this._adbShellWithRetry(serial, `am start -a android.intent.action.VIEW -d '${videoUrl}'`);
       await _sleep(_randInt(4000, 7000));
+      _logStep("step_1_3_fallback_url", "Direct URL fallback opened");
     }
 
     // Layer 3: 6초 딜레이 후 광고 스킵
     await _sleep(6000);
     await this._trySkipAd(serial);
+    _logStep("step_2_2_ad_skip", "6s delay + ad skip attempted");
     await this._ensurePlaying(serial);
+    _logStep("step_2_1_2_3_play_watch", "Playing; watch duration from config");
 
     const targetMs = durationSec * 1000;
     const TICK_MS = 5000;
@@ -477,10 +503,11 @@ class TaskExecutor {
    * @param {number} [retries=2]
    * @returns {Promise<boolean>}
    */
+  /** Layer 3: UI dump with 3-retry for critical Xiaowei/adb path. */
   async _getUiDumpXml(serial) {
-    await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
+    await this._adbShellWithRetry(serial, "uiautomator dump /sdcard/window_dump.xml");
     await _sleep(500);
-    const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
+    const dumpRes = await this._adbShellWithRetry(serial, "cat /sdcard/window_dump.xml");
     return _extractShellOutput(dumpRes);
   }
 
@@ -542,13 +569,14 @@ class TaskExecutor {
     };
   }
 
+  /** Layer 3: tap with 3-retry for critical Xiaowei/adb path. */
   async _tapSelectorInXml(serial, xml, selector) {
     const bounds = this._findBoundsInXml(xml, selector);
     if (!bounds) return false;
 
     const cx = Math.round((bounds.x1 + bounds.x2) / 2);
     const cy = Math.round((bounds.y1 + bounds.y2) / 2);
-    await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+    await this._adbShellWithRetry(serial, `input tap ${cx} ${cy}`);
     return true;
   }
 
@@ -628,7 +656,7 @@ class TaskExecutor {
       await this._inputText(serial, query);
       await _sleep(1000);
 
-      await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_ENTER");
+      await this._adbShellWithRetry(serial, "input keyevent KEYCODE_ENTER");
       await _sleep(_randInt(3000, 5000));
 
       found = await this._findAndTap(serial, YT.VIDEO_TITLE);
@@ -636,7 +664,7 @@ class TaskExecutor {
         const screenInfo = await this._getScreenSize(serial);
         const tapX = Math.round(screenInfo.width / 2);
         const tapY = Math.round(screenInfo.height * 0.4);
-        await this.xiaowei.adbShell(serial, `input tap ${tapX} ${tapY}`);
+        await this._adbShellWithRetry(serial, `input tap ${tapX} ${tapY}`);
       }
       await _sleep(_randInt(3000, 5000));
 
@@ -740,7 +768,7 @@ class TaskExecutor {
       await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
     } catch (err) {
       try {
-        const res = await this.xiaowei.adbShell(serial, "dumpsys media_session | grep -E 'state='");
+        const res = await this._adbShellWithRetry(serial, "dumpsys media_session | grep -E 'state='");
         const output = _extractShellOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
@@ -982,6 +1010,16 @@ class TaskExecutor {
 
       let tapped = await this._findAndTap(serial, YT.SAVE_ADD, 1);
       if (!tapped) tapped = await this._findAndTap(serial, YT.SAVE_ADD_ALT, 1);
+      if (!tapped && eng?.actionTouchCoords) {
+        const coords = eng.actionTouchCoords.save_add ?? eng.actionTouchCoords["담기"];
+        if (coords) {
+          const abs = await this._toAbsCoords(serial, coords);
+          if (abs) {
+            await this._adbShellWithRetry(serial, `input tap ${abs.x} ${abs.y}`);
+            tapped = true;
+          }
+        }
+      }
       if (tapped) {
         await _sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} 담기 (스와이프 2회 후 탭)`);

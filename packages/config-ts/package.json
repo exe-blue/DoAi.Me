@@ -1,0 +1,12 @@
+{
+  "name": "@doai/config-ts",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "exports": {
+    "./base.json": "./base.json",
+    "./next.json": "./next.json",
+    "./node.json": "./node.json"
+  },
+  "files": ["base.json", "next.json", "node.json"]
+}

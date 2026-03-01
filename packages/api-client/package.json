@@ -1,5 +1,5 @@
 {
-  "name": "@doai/shared",
+  "name": "@doai/api-client",
   "version": "0.1.0",
   "private": true,
   "main": "./dist/index.js",
@@ -11,7 +11,11 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@doai/shared": "workspace:*"
   },
   "devDependencies": {
     "@doai/config-ts": "workspace:*",

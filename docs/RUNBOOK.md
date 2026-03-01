@@ -313,7 +313,7 @@ git tag -a vX.Y.Z -m 'YouTube selector hotfix'
 git push origin main --tags
 
 # PC01 먼저
-# SplashTop 접속 → .\scripts\deploy.ps1 → pm2 restart agent
+# SplashTop 접속 → npm run deploy → pm2 restart agent
 # 5분 정상 확인
 
 # PC02~04 순차
@@ -345,7 +345,7 @@ pm2 restart agent
 # 30분 안정 확인
 
 # PC01에 배포
-# SplashTop → .\scripts\deploy.ps1
+# SplashTop → npm run deploy
 # 1시간 안정 확인
 
 # PC02~04 순차 (전체 동시 배포 절대 금지)
@@ -354,7 +354,7 @@ pm2 restart agent
 ### 긴급 롤백
 
 ```powershell
-.\scripts\rollback.ps1 v0.2.0
+npm run rollback -- v0.2.0
 pm2 restart agent
 ```
 

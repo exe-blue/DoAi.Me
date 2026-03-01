@@ -20,7 +20,7 @@ const STATUS = {
 
 const SAME_JOB_MAX_DEVICES = 5;
 const ORCHESTRATE_INTERVAL_MS = 3000;
-const WATCH_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const WATCH_TIMEOUT_MS = 20 * 60 * 1000; // 20 min (plan: PC당 20대, 20분 타임아웃)
 
 class DeviceOrchestrator {
   /**
@@ -35,7 +35,7 @@ class DeviceOrchestrator {
     this.taskExecutor = taskExecutor;
     this.pcId = config.pcId;
     this.pcUuid = config.pcUuid || null;
-    this.maxConcurrent = config.maxConcurrent ?? 10;
+    this.maxConcurrent = config.maxConcurrent ?? 20;
     this.loggingDir = config.loggingDir || null;
 
     /** @type {Map<string, DeviceState>} serial -> state */
@@ -101,8 +101,25 @@ class DeviceOrchestrator {
       if (state.status === STATUS.watching && state.startedAt) {
         const elapsed = Date.now() - state.startedAt;
         if (elapsed > WATCH_TIMEOUT_MS) {
+          const taskDeviceId = state.assignmentId;
           console.warn(`[DeviceOrchestrator] ${serial.substring(0, 6)} watch timeout (${Math.round(elapsed / 60000)}m)`);
-          this._setState(serial, STATUS.error, { errorCount: (state.errorCount || 0) + 1 });
+          if (taskDeviceId) {
+            this.supabase.rpc("fail_or_retry_task_device", {
+              p_task_device_id: taskDeviceId,
+              p_error: "Watch timeout: exceeded 20 minutes",
+            }).then(({ data }) => {
+              if (data == null) {
+                console.log("[DeviceOrchestrator] fail_or_retry_task_device 0 rows (already terminated)");
+              }
+            }).catch((err) => console.warn("[DeviceOrchestrator] fail_or_retry_task_device timeout:", err.message));
+            this._runningAssignments.delete(taskDeviceId);
+          }
+          this._setState(serial, STATUS.error, {
+            errorCount: (state.errorCount || 0) + 1,
+            assignmentId: null,
+            startedAt: null,
+            videoTitle: null,
+          });
         }
         continue;
       }

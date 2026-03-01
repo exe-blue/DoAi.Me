@@ -1,0 +1,22 @@
+{
+  "name": "@doai/config-eslint",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./index.js",
+    "./next": "./next.js"
+  },
+  "files": ["index.js", "next.js"],
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.5.12"
+  },
+  "peerDependencies": {
+    "eslint": ">=9",
+    "eslint-config-next": ">=15"
+  },
+  "peerDependenciesMeta": {
+    "eslint-config-next": { "optional": true }
+  }
+}

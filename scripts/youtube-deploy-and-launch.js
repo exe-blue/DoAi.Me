@@ -10,7 +10,7 @@
  *    node scripts/youtube-deploy-and-launch.js [BASE_URL]
  *    node scripts/youtube-deploy-and-launch.js --test [BASE_URL]   # 배포 후 get_state 로 검증
  *
- * 옵션: 환경변수 PC_ID=uuid 로 특정 PC만 대상 가능 (--test 시 command에도 전달)
+ * 옵션: 이 스크립트 실행 시에만 PC_ID=uuid 로 특정 PC 대상 (전역 .env 에 넣지 말 것 — pc_id는 DB/에이전트에서 결정)
  *
  * 배포→실행 테스트 순서 (수동): docs/youtube-deploy-flow.md 참고
  * - POST /api/youtube/deploy { deploy_all, devices, pc_id }

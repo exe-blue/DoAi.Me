@@ -4,6 +4,7 @@
  */
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createBatchTask } from "@/lib/pipeline";
+import { generateAndFillCommentsForTask } from "@/lib/comment-pregenerate";
 import type { TaskVariables } from "@/lib/types";
 
 function toNumberOr(value: unknown, fallback: number): number {
@@ -124,6 +125,15 @@ export async function runDispatchQueue(): Promise<DispatchResult> {
       dispatched_task_id: (task as { id: string }).id,
     })
     .eq("id", itemTyped.id);
+
+  // Fire-and-forget: pre-generate comment pool for task_devices (agent fallback if this fails)
+  generateAndFillCommentsForTask((task as { id: string }).id)
+    .then((r) => {
+      if (r.ok && r.filled > 0) {
+        console.log(`[Dispatch] Comment pool filled ${r.filled} task_devices for task ${(task as { id: string }).id}`);
+      }
+    })
+    .catch((e) => console.warn("[Dispatch] Comment pregenerate failed:", e instanceof Error ? e.message : e));
 
   return {
     ok: true,

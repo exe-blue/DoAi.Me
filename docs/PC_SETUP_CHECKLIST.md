@@ -138,7 +138,7 @@ node agent\agent.js
 
 ```powershell
 # 롤백 (이전 안정 버전으로)
-scripts\rollback.ps1 v0.1.0
+npm run rollback -- v0.1.0
 
 # 수동 롤백
 git fetch origin

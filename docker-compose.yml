@@ -15,14 +15,13 @@ services:
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
     env_file: .env.local
     volumes:
-      # Source code volume for hot reload
+      # Source code volume for hot reload (App Router only; no ./pages)
       - ./src:/app/src
       - ./app:/app/app
       - ./components:/app/components
       - ./lib:/app/lib
       - ./types:/app/types
       - ./hooks:/app/hooks
-      - ./pages:/app/pages
       - ./node_modules:/app/node_modules
     develop:
       watch:
@@ -46,7 +45,7 @@ services:
           target: /app/hooks
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => { r.resume(); r.on('end', () => process.exit(r.statusCode === 200 ? 0 : 1)); }).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 3s
       retries: 3

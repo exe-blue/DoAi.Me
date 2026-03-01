@@ -37,3 +37,4 @@ Migrations in `supabase/migrations` listed by filename; apply in this order.
 - `20260301000003_task_devices_trigger_pc_filter.sql` — fn_create_task_devices_on_task_insert PC별 1개 (exclude busy PCs)
 - `20260301000004_device_insert_pending_only.sql` — fn_add_task_device_for_new_device pending only (late-join policy A)
 - `20260301000005_sync_lock_rpc.sql` — try_sync_lock / release_sync_lock
+- `20260301000006_task_devices_trigger_action_touch_coords.sql` — fn_create_task_devices_on_task_insert: config includes action_touch_coords from payload

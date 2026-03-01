@@ -56,6 +56,10 @@ export interface TaskVariables {
   /** Layer 3: min/max wait seconds per step (random delay). */
   waitMinSec?: number;
   waitMaxSec?: number;
+  /** Layer 3: optional pre-generated comment text (passed to task_devices.config). */
+  comment_content?: string;
+  /** Layer 3: optional touch coords for actions (passed to task_devices.config). */
+  action_touch_coords?: Record<string, { x_ratio?: number; y_ratio?: number; x?: number; y?: number }>;
 }
 
 /** Layer 3: task_devices.config shape for agent execution. */

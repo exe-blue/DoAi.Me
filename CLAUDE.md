@@ -44,6 +44,8 @@ scripts/          # Xiaowei AutoJS scripts
 
 ## Critical Patterns
 
+- **Archive**: Docs in `_archive/` are not for current development; use only active docs (Critical/High/Reference per `docs/DOCS_MANAGER_UPDATES.md`) unless debugging or comparing versions.
+
 ### Supabase Queries
 - **Always use `.returns<T>()`** on ALL Supabase queries — generic type inference fails without it
 - Every table in the `Database` interface MUST have `Relationships: []` (even empty) or client types break
