@@ -67,3 +67,48 @@ ORDER BY ordinal_position;
 다음과 같이 서브에이전트에 넘기면 됩니다.
 
 - “`docs/deployment-database-manager-handoff.md`를 읽고, 현재 Supabase 스키마가 문서의 전제(devices.serial_number, pc_id, last_heartbeat; task_devices 테이블 및 RPC)와 맞는지 확인해 주세요. 불일치하면 필요한 마이그레이션을 제안하거나 적용해 주세요.”
+
+---
+
+## 6. Schema verification report (2026-02-28)
+
+**1. `npx supabase db diff`**  
+Not runnable in this environment (Docker required for shadow DB). Drift cannot be assessed locally; run in a linked environment with Docker or verify against the remote project via Dashboard SQL / MCP.
+
+**2. What exists in migrations (source of truth for “intended” schema)**
+
+| Item | Migration | Status |
+| ------ | ------------ | -------- |
+| **devices.serial_number** | `20260229100000_align_devices_handoff.sql` | Added + unique index `uq_devices_serial_number` (partial, WHERE serial_number IS NOT NULL). |
+| **devices.connection_id** | `20260226210000_devices_connection_id.sql` | Added. |
+| **devices.pc_id** | `20260223110000_create_pcs_table.sql` | Added, FK → pcs(id). |
+| **devices.worker_id** | `00001_initial_schema.sql` | Exists (FK → workers). So DB has **both** pc_id and worker_id. |
+| **devices.last_heartbeat** | `20260229100000_align_devices_handoff.sql` | Added, backfilled from last_seen. |
+| **execution_logs** | `20260228110000_execution_logs.sql` | Table with id, execution_id, device_id (TEXT), status, data, details, level, message, created_at. |
+| **mark_device_offline** | `20260301000002_mark_device_offline.sql` | RPC(p_device_serial TEXT). |
+| **claim_task_devices_for_pc** | `20260228100000_fix_rpc_param_names.sql` | RPC(runner_pc_name TEXT, max_to_claim INT, lease_minutes INT). Uses task_devices.pc_id. |
+| **claim_next_task_device** | `20260227000000_claim_next_task_device.sql` | RPC(p_worker_id UUID, p_device_serial TEXT). |
+| **complete_task_device** | `20260228100000_fix_rpc_param_names.sql` | RPC(p_task_device_id UUID, p_result JSONB optional). |
+| **fail_or_retry_task_device** | `20260228100000_fix_rpc_param_names.sql` | RPC(p_task_device_id UUID, p_error TEXT). |
+
+**3. App vs agent (worker_id vs pc_id)**  
+- **Migrations:** `devices` has both **worker_id** (00001) and **pc_id** (20260223110000).  
+- **Agent** (`agent/core/supabase-sync.js`): upserts only **pc_id** (and serial_number, connection_id, last_heartbeat, etc.); does **not** set worker_id.  
+- **App** (`app/api/devices/route.ts`): POST accepts optional **worker_id**; GET filters by **worker_id** only (`eq("worker_id", pc_id)` even when query param is `pc_id`).  
+- **Inconsistency:** Devices registered by the agent have **pc_id** set and **worker_id** often null. GET /api/devices?pc_id=&lt;uuid&gt; filters by worker_id, so those devices do not show when filtering by PC.
+
+**Concrete fix (app alignment):**  
+- In **GET /api/devices**, when filtering by PC, filter by **pc_id** (or by both pc_id and worker_id with OR) so agent-registered devices appear. Example: if `pc_id` query param is present, use `query = query.eq("pc_id", pc_id)` or `.or(\`pc_id.eq.${pc_id},worker_id.eq.${pc_id}\`)`.
+
+**4. TypeScript types**  
+- `lib/supabase/database.types.ts` for **devices** currently exposes **worker_id** and **last_seen**; it does **not** list serial_number, connection_id, pc_id, or last_heartbeat in the devices Row (types may be from an older schema).  
+- **Fix:** Regenerate types from the linked Supabase project (`npx supabase gen types typescript --linked > lib/supabase/database.types.ts`) or ensure devices Row/Insert/Update include serial_number, connection_id, pc_id, last_heartbeat.  
+- Comment in `lib/supabase/types.ts` already states: “Production devices table uses serial_number, pc_id, last_heartbeat; regenerate from linked project if types differ.”
+
+**5. Summary**
+
+- **OK in migrations:** devices (serial_number, connection_id, pc_id, worker_id, last_heartbeat), execution_logs table, RPCs mark_device_offline, claim_task_devices_for_pc, claim_next_task_device, complete_task_device, fail_or_retry_task_device.  
+- **Missing / inconsistent (concrete fixes):**  
+  1. **App GET /api/devices:** Filter by **pc_id** (or pc_id OR worker_id) when filtering by PC so agent-registered devices are returned.  
+  2. **Types:** Regenerate **lib/supabase/database.types.ts** from linked project so **devices** includes serial_number, connection_id, pc_id, last_heartbeat.  
+  3. **Live DB:** Run **docs/verify_schema_handoff.sql** or **supabase/schema_check_handoff.sql** against the real project to confirm the above columns and RPCs exist; if any migration was skipped, apply the listed migrations in MIGRATION_ORDER.md.

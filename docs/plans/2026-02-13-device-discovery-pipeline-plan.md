@@ -192,7 +192,7 @@ git commit -m "feat(agent): detect device error state in heartbeat loop"
 ### Task 3: Dashboard — Fix event name in device-grid.tsx
 
 **Files:**
-- Modify: `apps/dashboard/src/app/dashboard/components/device-grid.tsx:128`
+- Modify: (루트) `app/` 내 대시보드 device-grid — 현재 프로젝트는 단일 앱만 사용, 해당 파일 경로는 `app/(app)/...` 등으로 확인
 
 **Step 1: Change event name from `"device_batch"` to `"update"`**
 
@@ -207,7 +207,7 @@ channel.on("broadcast", { event: "update" }, handleBroadcast);
 **Step 2: Commit**
 
 ```bash
-git add apps/dashboard/src/app/dashboard/components/device-grid.tsx
+git add app/.../device-grid.tsx  # 루트 app/ 기준 경로
 git commit -m "fix(dashboard): align device-grid broadcast event name to 'update'"
 ```
 
@@ -483,10 +483,10 @@ Verify all broadcast producers and consumers use the same event name for `room:d
 | Component | File | Event |
 |---|---|---|
 | Agent producer | `agent/src/broadcaster.ts:35` | `"update"` |
-| Dashboard consumer 1 | `apps/dashboard/.../device-grid.tsx:128` | `"update"` (fixed) |
+| Dashboard consumer 1 | (루트) `app/` 내 device-grid | `"update"` (fixed) |
 | Dashboard consumer 2 | `hooks/use-realtime.ts` (new hook) | `"update"` (new) |
 
-Run: `grep -n '"device_batch"\|"update"' agent/src/broadcaster.ts apps/dashboard/src/app/dashboard/components/device-grid.tsx hooks/use-realtime.ts`
+Run: `grep -n '"device_batch"\|"update"' agent/src/broadcaster.ts app/**/device-grid.tsx hooks/use-realtime.ts`
 Expected: Only `"update"` appears, no `"device_batch"`
 
 **Step 4: Commit all verification notes (if any fixes were needed)**
@@ -503,7 +503,7 @@ git add -A && git commit -m "fix: address build/lint issues from device pipeline
 |---|---|---|---|
 | 1 | `agent/src/supabase-sync.ts` | ~40 | `syncDevices()` + error serials |
 | 2 | `agent/src/agent.ts` | ~30 | heartbeat error detection |
-| 3 | `apps/dashboard/.../device-grid.tsx` | 1 | event name fix |
+| 3 | (루트) app/ 내 device-grid | 1 | event name fix |
 | 4 | `hooks/use-realtime.ts` | ~40 | new `useDevicesBroadcast()` |
 | 5 | `hooks/use-workers-store.ts` | ~60 | incremental update + wiring |
 

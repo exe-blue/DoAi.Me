@@ -10,7 +10,7 @@
 **Supabase 통신**: **PC / 디바이스 / 하트비트 서버 전송**
 
 | agent.js 단계 | 담당 모듈 | Supabase 동작 |
-|---------------|----------|----------------|
+| --------------- | ---------- | ---------------- |
 | 3. Register PC | supabaseSync.getPcId() | **pcs** 조회/삽입, pc_id·pcUuid 설정 |
 | 8. Start heartbeat | device/heartbeat.js startHeartbeat() | 매 주기: **pcs** update (status, last_heartbeat), **devices** batchUpsert (serial_number, pc_id, status, model, battery_level, last_heartbeat), markOfflineDevices, syncDeviceTaskStates |
 | (7) ADB reconnect | adb-reconnect.js | devices 상태·재연결 반영 |
@@ -26,7 +26,7 @@
 **Supabase 통신**: **이벤트 수신 / 이벤트 송신 / 작업 현황**
 
 | agent.js 단계 | 담당 모듈 | Supabase 동작 |
-|---------------|----------|----------------|
+| --------------- | ---------- | ---------------- |
 | 15. Queue dispatcher | scheduling/queue-dispatcher.js | **이벤트 수신**: task_queue Realtime 구독, **이벤트 송신**: task_queue → tasks + task_devices 생성 (PC별·디바이스별) |
 | 15. Schedule evaluator | scheduling/schedule-evaluator.js | task_schedules 평가 → **task_queue** 삽입 (이벤트 송신) |
 | 15b. Device orchestrator | device/device-orchestrator.js | **이벤트 수신**: claim_task_devices_for_pc / claim_next_task_device RPC로 해당 PC에 할당된 task_devices 가져옴. **작업 현황**: heartbeat에서 syncDeviceTaskStates(task_status, watch_progress 등), broadcaster로 대시보드 스냅샷 |
@@ -42,7 +42,7 @@
 **Supabase 통신**: **디바이스 실행 / 디바이스 에러**
 
 | agent.js 단계 | 담당 모듈 | Supabase 동작 |
-|---------------|----------|----------------|
+| --------------- | ---------- | ---------------- |
 | 15b. Device orchestrator | device-orchestrator.js | claim한 task_device → taskExecutor.runTaskDevice(row) 호출. 성공 시 **complete_task_device** RPC, 실패 시 **fail_or_retry_task_device** RPC |
 | 5. Task executor | task/task-executor.js | runTaskDevice() → _watchVideoOnDevice() (시청·댓글·좋아요·담기 등). **task_devices** update(status, completed_at, duration_ms, result 또는 error) |
 
@@ -84,7 +84,7 @@
 ## 4. agent.js 단계 → 레이어 매핑 요약
 
 | 레이어 | agent.js 단계 | Supabase 항목 |
-|--------|----------------|---------------|
+| -------- | ---------------- | --------------- |
 | **1. 디바이스 관리** | 3 (PC 등록), 8 (heartbeat), 7 (adb reconnect), 14a (watchdog) | PC, 디바이스, 하트비트 서버 전송 |
 | **2. 이벤트·작업 관리** | 15 (queue dispatcher, schedule evaluator), 15b (device orchestrator claim) | 이벤트 수신/송신, 작업 현황 |
 | **3. 디바이스 명령 제어** | 15b (orchestrator 실행), 5 (task executor) | 디바이스 실행, 디바이스 에러 |

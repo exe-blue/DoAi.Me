@@ -52,7 +52,7 @@ Error serials get `status: "error"` instead of `"offline"`.
 
 ### 2. Broadcast Event Name Alignment
 
-**File:** `apps/dashboard/src/app/dashboard/components/device-grid.tsx`
+**File:** (루트) `app/` 내 device-grid 컴포넌트 (단일 앱 구조)
 
 Change line 128:
 ```ts
@@ -103,6 +103,6 @@ Store changes:
 |---|---|
 | `agent/src/agent.ts` | `prevSerials` tracking in heartbeat, error detection logic |
 | `agent/src/supabase-sync.ts` | `syncDevices()` error serials parameter |
-| `apps/dashboard/.../device-grid.tsx` | Event name `"device_batch"` → `"update"` |
+| (루트) app/ 내 device-grid | Event name `"device_batch"` → `"update"` |
 | `hooks/use-realtime.ts` | New `useDevicesBroadcast()` hook |
 | `hooks/use-workers-store.ts` | `updateDevicesFromBroadcast()` action, wiring |

@@ -2,11 +2,22 @@
 node_modules/
 .pnp
 .pnp.js
+.pnpm-store/
 
 # Next.js
 .next/
 out/
 tsconfig.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Test / coverage
+coverage/
+
+# Electron (agent-electron build outputs)
+dist-electron/
+release/
 
 # Windows metadata
 *.Zone.Identifier
@@ -20,8 +31,19 @@ tsconfig.tsbuildinfo
 .env.sentry
 .env.staging
 .env.prod
+apps/web/.env
+apps/web/.env*
 agent/.env
 agent/.env*
+agent/data/
+agent/.pc-id
+
+# Temp (legacy / review; do not import in code)
+temp/
+
+# Archived / removed (do not re-add)
+app_legacy/
+codeql-custom-queries-javascript/
 
 # Python (legacy, if any)
 __pycache__/
@@ -38,13 +60,19 @@ venv/
 .coverage
 htmlcov/
 
-# IDE / Editor
+# IDE / Editor (do not push to GitHub)
 .idea/
 .vscode/
 .omc/
 .claude/
 .cursor/
 .cursorrules
+.codex/
+.devcontainer/
+.gemini/
+.hintrc
+.sonarlint/
+.zed/
 *.swp
 *.swo
 
@@ -70,6 +98,9 @@ yarn-error.log*
 # Sentry Config File
 .env.sentry-build-plugin
 _archive/migration-scripts/update_agent_v3.sh
+apps/web/.next/
+apps/desktop/release/
+apps/desktop/dist-electron/
 agent/logs/
 agent/farm_logs/
 agent/.script-cache/
