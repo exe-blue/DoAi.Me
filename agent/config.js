@@ -33,6 +33,7 @@ const SETTING_KEY_MAP = {
   max_retry_count: "maxRetryCount",
   log_retention_days: "logRetentionDays",
   command_log_retention_days: "commandLogRetentionDays",
+  primary_pc_id: "primaryPcId",
 };
 
 class AgentConfig extends EventEmitter {
@@ -81,6 +82,8 @@ class AgentConfig extends EventEmitter {
     this.logRetentionDays = 7;
     this.commandLogRetentionDays = 30;
 
+    /** Primary PC: DB (settings.primary_pc_id) takes precedence; env IS_PRIMARY_PC is fallback (Rule F). */
+    this.primaryPcId = null;
     this.isPrimaryPc =
       process.env.IS_PRIMARY_PC === "true" ||
       process.env.IS_PRIMARY_PC === "1" ||
@@ -161,6 +164,17 @@ class AgentConfig extends EventEmitter {
     const propName = SETTING_KEY_MAP[key];
     if (propName) {
       this[propName] = value;
+    }
+  }
+
+  /**
+   * Set isPrimaryPc from DB: true if settings.primary_pc_id equals this PC's UUID (Rule F).
+   * Call after pcUuid is known (e.g. in agent.js after getPcId).
+   * @param {string} pcUuid - This agent's PC UUID
+   */
+  setPrimaryFromDb(pcUuid) {
+    if (this.primaryPcId != null && pcUuid != null) {
+      this.isPrimaryPc = this.primaryPcId === pcUuid;
     }
   }
 

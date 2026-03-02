@@ -81,6 +81,17 @@ declare global {
       filePath: string;
       error?: string;
     }>;
+    getAgentState: () => Promise<AgentState>;
+    restartAgent: () => Promise<AgentState>;
+    onAgentState: (callback: (state: AgentState) => void) => () => void;
+    getAppPath: () => Promise<string>;
+  }
+
+  interface AgentState {
+    status: "RUNNING" | "STOPPED" | "RESTARTING" | "ERROR";
+    lastExitCode: number | null;
+    lastErrorLine: string;
+    restartCount: number;
   }
 
   interface Window {

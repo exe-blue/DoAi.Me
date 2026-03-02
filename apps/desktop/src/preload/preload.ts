@@ -28,4 +28,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   exportDiagnostics: () => ipcRenderer.invoke("diagnostic:export"),
   saveScreenshot: (payload: { serial: string; savePath?: string }) =>
     ipcRenderer.invoke("screenshot:capture", payload),
+  getAgentState: () => ipcRenderer.invoke("agent:getState"),
+  restartAgent: () => ipcRenderer.invoke("agent:restart"),
+  onAgentState: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("agent:state", listener);
+    return () => ipcRenderer.removeListener("agent:state", listener);
+  },
+  getAppPath: () => ipcRenderer.invoke("getAppPath"),
 });

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
-    "dist": "pnpm run build && electron-builder --win",
+    "dist": "pnpm run build && (cd ../../agent && npm ci) && node scripts/download-node-win.js && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint src/renderer --ext .ts,.tsx"
   },
@@ -24,6 +24,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "adm-zip": "^0.5.16",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -37,7 +38,7 @@
   },
   "build": {
     "appId": "me.doai.desktop",
-    "productName": "doai.me",
+    "productName": "xiaowei",
     "directories": {
       "output": "release"
     },
@@ -45,13 +46,25 @@
       "dist/**",
       "dist-electron/**"
     ],
+    "extraResources": [
+      {
+        "from": "../../agent",
+        "to": "agent",
+        "filter": ["**/*", "!.env", "!.env.*", "!.env.prod", "!.env.example"]
+      },
+      {
+        "from": "node-bundle",
+        "to": "node"
+      }
+    ],
     "win": {
       "target": "nsis",
-      "executableName": "doai-me"
+      "executableName": "xiaowei"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "installDir": "$PROGRAMFILES32\\xiaowei",
       "include": "build/installer.nsh"
     },
     "npmRebuild": false

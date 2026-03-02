@@ -7,9 +7,12 @@
  * 3. Inserts into task_queue
  * 4. Updates schedule's last_run_at, next_run_at, run_count
  * 5. Publishes system events
+ *
+ * task_queue and tasks access go through orchestrator/models.js (no direct .from() for those tables).
  */
 
 const { CronExpressionParser } = require("cron-parser");
+const { createTaskQueueModels } = require("../orchestrator/models");
 
 const DEFAULT_EVAL_INTERVAL = 30000; // 30 seconds
 
@@ -22,6 +25,7 @@ class ScheduleEvaluator {
     this.supabaseSync = supabaseSync;
     this.broadcaster = broadcaster;
     this.supabase = supabaseSync.supabase;
+    this.models = createTaskQueueModels(this.supabase);
 
     this._evalInterval = null;
     this._running = false;
@@ -106,21 +110,15 @@ class ScheduleEvaluator {
       return;
     }
 
-    // Insert into task_queue
-    const { data: queueEntry, error: insertErr } = await this.supabase
-      .from("task_queue")
-      .insert({
-        task_config: {
-          ...schedule.task_config,
-          _schedule_id: schedule.id, // Tag for overlap detection
-        },
-        priority: 0, // Scheduled tasks get default priority
-        status: "queued",
-      })
-      .select("id")
-      .single();
-
-    if (insertErr) throw insertErr;
+    // Insert into task_queue via models
+    const queueEntry = await this.models.insertQueued({
+      task_config: {
+        ...schedule.task_config,
+        _schedule_id: schedule.id, // Tag for overlap detection
+      },
+      priority: 0, // Scheduled tasks get default priority
+      status: "queued",
+    });
 
     console.log(`[ScheduleEval] Schedule "${schedule.name}" → queue=${queueEntry.id}`);
 
@@ -166,33 +164,15 @@ class ScheduleEvaluator {
    * @returns {boolean} true if overlap exists
    */
   async _checkOverlap(scheduleId) {
-    // Check for queued items from this schedule
-    const { count: queuedCount } = await this.supabase
-      .from("task_queue")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "queued")
-      .contains("task_config", { _schedule_id: scheduleId });
+    const queuedCount = await this.models.countQueuedWithScheduleTag(scheduleId);
+    if (queuedCount > 0) return true;
 
-    if (queuedCount && queuedCount > 0) return true;
-
-    // Check for dispatched items whose tasks are still running
-    const { data: dispatched } = await this.supabase
-      .from("task_queue")
-      .select("dispatched_task_id")
-      .eq("status", "dispatched")
-      .contains("task_config", { _schedule_id: scheduleId })
-      .not("dispatched_task_id", "is", null);
-
+    const dispatched = await this.models.fetchDispatchedWithScheduleTag(scheduleId);
     if (dispatched && dispatched.length > 0) {
       const taskIds = dispatched.map((d) => d.dispatched_task_id).filter(Boolean);
       if (taskIds.length > 0) {
-        const { count: runningCount } = await this.supabase
-          .from("tasks")
-          .select("id", { count: "exact", head: true })
-          .in("id", taskIds)
-          .in("status", ["pending", "running"]);
-
-        if (runningCount && runningCount > 0) return true;
+        const runningCount = await this.models.countRunningTasksByIds(taskIds);
+        if (runningCount > 0) return true;
       }
     }
 

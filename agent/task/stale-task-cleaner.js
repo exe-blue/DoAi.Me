@@ -100,12 +100,15 @@ class StaleTaskCleaner {
   }
 
   /**
-   * Start periodic check for tasks running longer than expected.
-   * Marks them as 'timeout' (distinct from 'failed' for reporting).
+   * Start periodic check for tasks and task_devices timeout (Rule I).
+   * task_devices: status='running' AND lease_expires_at < now() → failed, error='timeout', attempt += 1.
+   * Final failure (attempt >= max_attempts): update devices.status='error', total_errors += 1.
    */
   startPeriodicCheck() {
-    this.checkInterval = setInterval(() => this._periodicCheck(), this.CHECK_INTERVAL_MS);
-    // Allow process to exit even if timer is running
+    this.checkInterval = setInterval(() => {
+      this._periodicCheck();
+      this._periodicTaskDevicesTimeout();
+    }, this.CHECK_INTERVAL_MS);
     if (this.checkInterval.unref) {
       this.checkInterval.unref();
     }
@@ -175,6 +178,67 @@ class StaleTaskCleaner {
       });
     } catch (err) {
       console.error(`[StaleTaskCleaner] Periodic check error: ${err.message}`);
+    }
+  }
+
+  /**
+   * Rule I: Timeout task_devices (running + lease_expires_at < now). No schema change.
+   * Set status='failed', error='timeout', attempt += 1. On attempt >= max_attempts, mark device error.
+   */
+  async _periodicTaskDevicesTimeout() {
+    try {
+      const now = new Date().toISOString();
+      const { data: rows, error: selectErr } = await this.supabaseSync.supabase
+        .from('task_devices')
+        .select('id, device_id, attempt, max_attempts')
+        .eq('status', 'running')
+        .lt('lease_expires_at', now)
+        .is('completed_at', null);
+
+      if (selectErr || !rows || rows.length === 0) return;
+
+      for (const row of rows) {
+        const nextAttempt = (row.attempt ?? 0) + 1;
+        const { error: updateErr } = await this.supabaseSync.supabase
+          .from('task_devices')
+          .update({
+            status: 'failed',
+            error: 'timeout',
+            attempt: nextAttempt,
+            completed_at: now,
+            lease_expires_at: null,
+            updated_at: now,
+          })
+          .eq('id', row.id)
+          .eq('status', 'running');
+
+        if (updateErr) {
+          console.error(`[StaleTaskCleaner] task_device timeout update failed: ${updateErr.message}`);
+          continue;
+        }
+
+        if (row.device_id && nextAttempt >= (row.max_attempts ?? 3)) {
+          const { data: devRow } = await this.supabaseSync.supabase
+            .from('devices')
+            .select('total_errors')
+            .eq('id', row.device_id)
+            .single();
+          const nextTotalErrors = (devRow?.total_errors ?? 0) + 1;
+          const { error: devErr } = await this.supabaseSync.supabase
+            .from('devices')
+            .update({
+              status: 'error',
+              total_errors: nextTotalErrors,
+              updated_at: now,
+            })
+            .eq('id', row.device_id);
+          if (devErr) {
+            console.warn(`[StaleTaskCleaner] devices status update (final failure) failed: ${devErr.message}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[StaleTaskCleaner] _periodicTaskDevicesTimeout error: ${err.message}`);
     }
   }
 

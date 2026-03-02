@@ -19,6 +19,8 @@ const ProxyManager = require("./setup/proxy-manager");
 const AccountManager = require("./setup/account-manager");
 const ScriptVerifier = require("./setup/script-verifier");
 const presets = require("./device/device-presets");
+const sleep = require("./lib/sleep");
+const logger = require("./lib/logger");
 
 let xiaowei = null;
 let supabaseSync = null;
@@ -35,10 +37,6 @@ let staleTaskCleaner = null;
 let deviceWatchdog = null;
 let deviceOrchestrator = null;
 let shuttingDown = false;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Wait for Xiaowei WebSocket to connect with timeout
@@ -71,6 +69,7 @@ async function main() {
   console.log(`[Agent] Starting PC: ${config.pcNumber}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
+  // ---------- Phase 1: Environment / DB / settings ----------
   // 1. Validate required config
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     console.error("[Agent] ✗ SUPABASE_URL and SUPABASE_ANON_KEY are required");
@@ -105,12 +104,16 @@ async function main() {
   try {
     const pcId = await supabaseSync.getPcId(config.pcNumber);
     console.log(`[Agent] PC ID: ${pcId}`);
+    config.setPrimaryFromDb(supabaseSync.pcUuid);
   } catch (err) {
     console.error(`[Agent] ✗ PC registration failed: ${err.message}`);
     process.exit(1);
   }
 
-  // 4. Initialize Xiaowei WebSocket client and wait for connection
+  logger.info("Agent", `Phase 1 complete: env/DB/settings`, { pc_id: supabaseSync.pcId });
+
+  // ---------- Phase 2: Xiaowei / device preparation ----------
+  // 4. Initialize Xiaowei WebSocket client (Rule D: do not exit process on connection failure)
   xiaowei = new XiaoweiClient(config.xiaoweiWsUrl);
 
   xiaowei.on("disconnected", () => {
@@ -118,13 +121,29 @@ async function main() {
   });
 
   xiaowei.on("error", (err) => {
-    // Only log non-ECONNREFUSED errors (reconnect handles refused)
     if (!err.message.includes("ECONNREFUSED")) {
       console.error(`[Agent] Xiaowei error: ${err.message}`);
     }
   });
 
-  // Wait for Xiaowei connection with timeout
+  /** Rule D: On connected/reconnected, run init routine (orchestrator state, device list, proxy re-apply, subscription check). */
+  async function onXiaoweiConnected() {
+    try {
+      const listRes = await xiaowei.list();
+      const devices = listRes?.data || listRes || [];
+      const serials = Array.isArray(devices) ? devices.map((d) => d.onlySerial || d.serial || d.serialNumber || d.id).filter(Boolean) : [];
+      if (proxyManager && serials.length > 0) {
+        await proxyManager.loadAssignments(supabaseSync.pcUuid);
+        await proxyManager.applyAll();
+      }
+      logger.info("Agent", "Xiaowei connected/reconnected — init routine done (device list, proxy re-apply)", { pc_id: supabaseSync.pcId });
+    } catch (err) {
+      logger.warn("Agent", `Xiaowei init routine failed: ${err.message}`, { pc_id: supabaseSync.pcId });
+    }
+  }
+
+  xiaowei.on("connected", onXiaoweiConnected);
+
   try {
     await waitForXiaowei(xiaowei, 10000);
     console.log(`[Agent] ✓ Xiaowei connected (${config.xiaoweiWsUrl})`);
@@ -250,7 +269,10 @@ async function main() {
     console.log("[Agent] - Script check: SCRIPTS_DIR not configured (skipped)");
   }
 
-  // 12. Task execution: DeviceOrchestrator only (task_devices claim → runTaskDevice). No tasks-table subscription/poll.
+  logger.info("Agent", "Phase 2 complete: Xiaowei/devices/proxy/accounts/scripts", { pc_id: supabaseSync.pcId });
+
+  // ---------- Phase 3: Orchestrator / dispatcher / heartbeat ----------
+  // 12. Task execution: SSOT is task_devices only — claim_task_devices_for_pc / claim_next_task_device → runTaskDevice (Rule 1). No job_assignments path.
   // 13. Start ADB reconnect monitoring (manager already initialized above)
   if (xiaowei.connected) {
     reconnectManager.start();
@@ -264,10 +286,15 @@ async function main() {
   deviceWatchdog.start();
   console.log('[Agent] ✓ Device watchdog started');
 
-  // 15. Start queue dispatcher and schedule evaluator
+  // 15. Queue dispatcher: primary PC only (Rule F)
   queueDispatcher = new QueueDispatcher(supabaseSync, config, broadcaster);
-  queueDispatcher.start();
-  console.log("[Agent] ✓ Queue dispatcher started");
+  if (config.isPrimaryPc) {
+    queueDispatcher.start();
+    console.log("[Agent] ✓ Queue dispatcher started (primary PC)");
+    logger.info("Agent", "QueueDispatcher running on primary PC", { pc_id: supabaseSync.pcId });
+  } else {
+    console.log("[Agent] QueueDispatcher not started (non-primary PC)");
+  }
 
   scheduleEvaluator = new ScheduleEvaluator(supabaseSync, broadcaster);
   scheduleEvaluator.start();
@@ -283,6 +310,8 @@ async function main() {
   console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);
   deviceOrchestrator.start();
   console.log("[Agent] ✓ Device orchestrator started");
+
+  logger.info("Agent", "Phase 3 complete: orchestrator/dispatcher/heartbeat running", { pc_id: supabaseSync.pcId });
 
   // 16. Wire up config-updated listeners for dynamic interval changes
   config.on("config-updated", ({ key, oldValue, newValue }) => {

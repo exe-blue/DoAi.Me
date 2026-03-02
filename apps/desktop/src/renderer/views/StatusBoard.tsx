@@ -1,6 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Grid from "@mui/material/Grid";
+import Typography from "@mui/material/Typography";
 import { KpiCards } from "../components/KpiCards";
 import { WorkPanel } from "../components/WorkPanel";
 import { LogPanel } from "../components/LogPanel";
@@ -17,6 +20,7 @@ export function StatusBoard() {
   const setExpectedDeviceCount = usePresetStore((s) => s.setExpectedDeviceCount);
   const setImeId = usePresetStore((s) => s.setImeId);
   const setScreenshotPath = usePresetStore((s) => s.setScreenshotPath);
+  const [agentState, setAgentState] = useState<AgentState | null>(null);
 
   // Subscribe to real-time push events from main process
   useEffect(() => {
@@ -41,15 +45,20 @@ export function StatusBoard() {
       }
     });
 
+    const unsubAgent = window.electronAPI?.onAgentState((state) => setAgentState(state));
+
     return () => {
       unsubDevice?.();
       unsubLog?.();
+      unsubAgent?.();
     };
   }, [setDevices, addLog, addAlert]);
 
   // Load initial state from main process on mount
   useEffect(() => {
     window.electronAPI?.deviceList().then(setDevices).catch(() => {});
+
+    window.electronAPI?.getAgentState().then(setAgentState).catch(() => {});
 
     window.electronAPI
       ?.getSettings()
@@ -68,8 +77,36 @@ export function StatusBoard() {
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const agentColor = agentState?.status === "RUNNING" ? "success" : agentState?.status === "ERROR" ? "error" : "default";
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      {window.electronAPI && agentState != null && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            Agent
+          </Typography>
+          <Chip label={agentState.status} color={agentColor} size="small" />
+          {agentState.lastExitCode != null && (
+            <Typography variant="caption" color="text.secondary">
+              Last exit: {agentState.lastExitCode}
+            </Typography>
+          )}
+          {agentState.lastErrorLine && (
+            <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 320 }} noWrap title={agentState.lastErrorLine}>
+              {agentState.lastErrorLine}
+            </Typography>
+          )}
+          <Button size="small" variant="outlined" onClick={() => window.electronAPI?.restartAgent().then(setAgentState)}>
+            Restart agent
+          </Button>
+          {agentState.status === "ERROR" && (
+            <Typography variant="caption" color="error">
+              Export diagnostics and check agent logs.
+            </Typography>
+          )}
+        </Box>
+      )}
       <KpiCards />
 
       <Grid container spacing={3}>

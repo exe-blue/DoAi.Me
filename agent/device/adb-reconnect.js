@@ -3,6 +3,7 @@
  * Monitors and automatically reconnects disconnected ADB TCP devices
  * Tracks failure counts and flags persistently dead devices
  */
+const sleepLib = require('../lib/sleep');
 
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
@@ -439,12 +440,12 @@ class AdbReconnectManager {
   }
 
   /**
-   * Sleep utility
+   * Sleep utility (Rule H: shared lib)
    * @param {number} ms
    * @returns {Promise<void>}
    */
   sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return sleepLib(ms);
   }
 
   /**

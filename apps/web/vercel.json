@@ -1,4 +1,5 @@
 {
+  "installCommand": "npm install",
   "crons": [
     { "path": "/api/cron/sync-channels", "schedule": "* * * * *" },
     { "path": "/api/cron/dispatch-queue", "schedule": "* * * * *" }

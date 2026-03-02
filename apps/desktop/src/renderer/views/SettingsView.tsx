@@ -7,6 +7,7 @@ import Switch from "@mui/material/Switch";
 export function SettingsView() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [ready, setReady] = useState(false);
+  const [appPath, setAppPath] = useState<string>("");
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -14,6 +15,7 @@ export function SettingsView() {
         setLaunchAtLogin(v);
         setReady(true);
       });
+      window.electronAPI.getAppPath().then(setAppPath).catch(() => {});
     } else setReady(true);
   }, []);
 
@@ -33,6 +35,16 @@ export function SettingsView() {
           control={<Switch checked={launchAtLogin} onChange={handleToggle} />}
           label="Launch at startup (ON/OFF)"
         />
+      )}
+      {appPath && (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            About — Executable path
+          </Typography>
+          <Typography variant="body2" sx={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+            {appPath}
+          </Typography>
+        </Box>
       )}
       {!window.electronAPI && (
         <Typography color="text.secondary">Electron API not available (e.g. browser).</Typography>

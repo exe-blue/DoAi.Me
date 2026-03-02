@@ -5,6 +5,7 @@
  *   const gen = new CommentGenerator(process.env.OPENAI_API_KEY);
  *   const comment = await gen.generate("영상 제목", "채널명", "videoId");
  */
+const sleep = require("../lib/sleep");
 
 const COMMENT_SYSTEM_PROMPT = `당신은 YouTube 영상을 보고 댓글을 다는 일반 한국인 시청자입니다.
 
@@ -70,7 +71,7 @@ class CommentGenerator {
       } catch (err) {
         console.error(`[CommentGen] API error (attempt ${attempt + 1}): ${err.message}`);
         if (attempt === 2) return null;
-        await new Promise((r) => setTimeout(r, 1000));
+        await sleep(1000);
       }
     }
     return null;

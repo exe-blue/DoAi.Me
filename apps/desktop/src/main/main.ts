@@ -6,6 +6,7 @@ import { autoUpdater } from "electron-updater";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
+import * as agentRunner from "./agentRunner";
 
 const execFileAsync = promisify(execFile);
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
@@ -946,11 +947,30 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
       osRelease: process.getSystemVersion(),
       electronVersion: process.versions.electron,
       appVersion: app.getVersion(),
+      appPath: app.getPath("exe"),
       adbPath: resolveAdbPath(),
       deviceControlProvider: DEVICE_CONTROL_PROVIDER,
       xiaoweiApiUrl: XIAOWEI_API_URL,
     };
     archive.append(JSON.stringify(systemInfo, null, 2), { name: "system_info.json" });
+
+    const agentLogPaths = agentRunner.getAgentLogPaths();
+    const maskSensitive = (text: string) =>
+      text
+        .replace(/(Bearer\s+)[^\s]+/gi, "$1***")
+        .replace(/(Authorization:\s*)[^\s]+/gi, "$1***")
+        .replace(/(token|api[_-]?key|secret|password)=[^\s&"']+/gi, "$1=***")
+        .replace(/(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g, "***JWT***");
+    for (const [key, filePath] of Object.entries(agentLogPaths)) {
+      try {
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, "utf8");
+          archive.append(maskSensitive(content), { name: `logs/agent_${key}.txt` });
+        }
+      } catch {
+        archive.append("(unable to read)", { name: `logs/agent_${key}.txt` });
+      }
+    }
 
     archive.on("error", (error?: Error) => {
       resolve({ zipPath: "", error: error?.message ?? "archive error" });
@@ -987,6 +1007,13 @@ function registerIpcHandlers(): void {
     app.setLoginItemSettings({ openAtLogin: open });
     setStoredLaunchAtLogin(open);
   });
+
+  ipcMain.handle("agent:getState", () => agentRunner.getAgentState());
+  ipcMain.handle("agent:restart", () => {
+    agentRunner.restartAgent();
+    return agentRunner.getAgentState();
+  });
+  ipcMain.handle("getAppPath", () => app.getPath("exe"));
 }
 
 process.on("uncaughtException", (error) => {
@@ -1039,9 +1066,16 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   createWindow();
   startDevicePolling();
+  if (process.platform === "win32") {
+    const started = agentRunner.startAgent();
+    if (!started) {
+      log.error("[Main] Embedded agent failed to start; check agent path and Node.");
+    }
+  }
 });
 
 app.on("before-quit", async () => {
+  agentRunner.stopAgent();
   stopDevicePolling();
   if (DEVICE_CONTROL_PROVIDER !== "xiaowei_api") {
     await adb(["kill-server"]);

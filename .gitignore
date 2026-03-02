@@ -103,6 +103,7 @@ _archive/migration-scripts/update_agent_v3.sh
 apps/web/.next/
 apps/desktop/release/
 apps/desktop/dist-electron/
+apps/desktop/node-bundle/
 agent/logs/
 agent/farm_logs/
 agent/.script-cache/

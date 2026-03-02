@@ -1,12 +1,11 @@
 /**
  * DoAi.Me - Device Orchestrator
- * 디바이스별 상태 추적 및 작업 자동 배정.
- * claim_next_task_device RPC로 작업 선점 후 TaskExecutor로 실행.
+ * SSOT: public.task_devices. Execution path only: claim_task_devices_for_pc / claim_next_task_device → runTaskDevice (Rule 1).
  */
 const presets = require("./device-presets");
 const { takeScreenshotOnComplete } = require("./screenshot-on-complete");
-
-const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = require("../lib/sleep");
+const logger = require("../lib/logger");
 
 const STATUS = {
   idle: "idle",
@@ -150,8 +149,27 @@ class DeviceOrchestrator {
       console.log(`[DeviceOrchestrator] claim result: ${taskDevice ? taskDevice.id.substring(0, 8) : "null"}`);
     }
     if (taskDevice) {
-      // Use pre-assigned device serial if available, otherwise fall back to current serial
       const targetSerial = taskDevice.device_serial || serial;
+      // Rule A: actual execution device must match task_devices.device_id / device_serial
+      const expectedSerialForDeviceId = taskDevice.device_id ? this._deviceIdToSerial.get(taskDevice.device_id) : null;
+      if (expectedSerialForDeviceId != null && expectedSerialForDeviceId !== targetSerial) {
+        logger.warn("DeviceOrchestrator", `device_id/serial mismatch: task_device expects ${expectedSerialForDeviceId}, got ${targetSerial} — releasing`, {
+          pc_id: this.pcId,
+          device_serial: targetSerial,
+          task_device_id: taskDevice.id,
+          task_id: taskDevice.task_id,
+        });
+        await this._releaseTaskDevice(taskDevice.id);
+        return;
+      }
+      if (taskDevice.device_serial != null && taskDevice.device_serial !== targetSerial) {
+        logger.warn("DeviceOrchestrator", `device_serial mismatch: task_device.device_serial=${taskDevice.device_serial}, execution serial=${targetSerial} — releasing`, {
+          pc_id: this.pcId,
+          task_device_id: taskDevice.id,
+        });
+        await this._releaseTaskDevice(taskDevice.id);
+        return;
+      }
       console.log(`[DeviceOrchestrator] ${targetSerial.substring(0, 6)} → taskDevice ${taskDevice.id.substring(0, 8)}`);
       const sameTaskCount = await this._countDevicesOnTask(taskDevice.task_id);
       if (sameTaskCount > SAME_JOB_MAX_DEVICES) {
@@ -253,7 +271,7 @@ class DeviceOrchestrator {
 
       return null;
     } catch (err) {
-      console.warn("[DeviceOrchestrator] _claimNextTaskDevice:", err.message);
+      logger.warn("DeviceOrchestrator", `_claimNextTaskDevice: ${err.message}`, { pc_id: this.pcId });
       return null;
     }
   }
@@ -278,15 +296,23 @@ class DeviceOrchestrator {
         .select("id", { count: "exact", head: true })
         .eq("pc_id", this.pcUuid)
         .eq("status", "pending");
-      if (!error && (count || 0) > 0) return true;
-      // also check unassigned
-      const { count: c2 } = await this.supabase
+      if (error) {
+        logger.warn("DeviceOrchestrator", `_hasPendingAssignment query error: ${error.message}`, { pc_id: this.pcId });
+        return false;
+      }
+      if ((count || 0) > 0) return true;
+      const { count: c2, error: e2 } = await this.supabase
         .from("task_devices")
         .select("id", { count: "exact", head: true })
         .is("pc_id", null)
         .eq("status", "pending");
+      if (e2) {
+        logger.warn("DeviceOrchestrator", `_hasPendingAssignment unassigned query error: ${e2.message}`, { pc_id: this.pcId });
+        return false;
+      }
       return (c2 || 0) > 0;
-    } catch {
+    } catch (err) {
+      logger.warn("DeviceOrchestrator", `_hasPendingAssignment exception: ${err.message}`, { pc_id: this.pcId });
       return false;
     }
   }
@@ -298,9 +324,13 @@ class DeviceOrchestrator {
         .select("id", { count: "exact", head: true })
         .eq("task_id", taskId)
         .in("status", ["pending", "running"]);
-      if (error) return 0;
+      if (error) {
+        logger.warn("DeviceOrchestrator", `_countDevicesOnTask error: ${error.message}`, { pc_id: this.pcId, task_id: taskId });
+        return 0;
+      }
       return count || 0;
-    } catch {
+    } catch (err) {
+      logger.warn("DeviceOrchestrator", `_countDevicesOnTask exception: ${err.message}`, { pc_id: this.pcId, task_id: taskId });
       return 0;
     }
   }
@@ -396,7 +426,7 @@ class DeviceOrchestrator {
     if (state.status !== STATUS.error) return;
     try {
       await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
-      await _sleep(1000);
+      await sleep(1000);
       this._setState(serial, STATUS.idle, { errorCount: 0 });
       console.log(`[DeviceOrchestrator] ${serial.substring(0, 6)} recovered from error → idle`);
     } catch (err) {

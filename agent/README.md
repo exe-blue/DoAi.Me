@@ -4,6 +4,10 @@ Node.js agent that bridges Supabase and Xiaowei to run YouTube view tasks on con
 
 **Run:** `node agent.js`
 
+**Execution path (enforced):** SSOT is `task_devices`. Only `claim_task_devices_for_pc` / `claim_next_task_device` → `runTaskDevice`. No `job_assignments` path for new execution.
+
+**Sleep / build:** Single sleep utility: `lib/sleep.js`. Entrypoint: `agent.js` (Node only; no TypeScript build).
+
 ## Before running
 
 Ensure Node, env config, and Xiaowei are set up so the agent can talk to Supabase and devices.

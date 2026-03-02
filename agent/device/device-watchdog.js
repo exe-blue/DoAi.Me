@@ -6,6 +6,7 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const sleep = require('../lib/sleep');
 
 class DeviceWatchdog {
   constructor(xiaowei, supabaseSync, config, broadcaster) {
@@ -162,7 +163,7 @@ class DeviceWatchdog {
     // Try: host-level adb disconnect + reconnect (adbShell runs on device, not host)
     try {
       await execAsync(`adb disconnect ${serial}`);
-      await new Promise(r => setTimeout(r, 2000));
+      await sleep(2000);
       await execAsync(`adb connect ${serial}`);
       console.log(`[DeviceWatchdog] ${serial} reconnect attempt ${attempts + 1}/${this.RECOVERY_MAX_ATTEMPTS}`);
     } catch (err) {
@@ -261,7 +262,7 @@ class DeviceWatchdog {
         }
         // Wait between batches
         if (i + this.BATCH_SIZE < offlineDevices.length) {
-          await new Promise(r => setTimeout(r, this.BATCH_DELAY_MS));
+          await sleep(this.BATCH_DELAY_MS);
         }
       }
     } catch (err) {

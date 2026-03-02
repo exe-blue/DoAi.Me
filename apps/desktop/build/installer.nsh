@@ -1,8 +1,8 @@
-; Install path: c:\client (사용자 요구 사양)
-; Executable: doai-me.exe
+; Install path: C:\Program Files (x86)\xiaowei (nsis.installDir)
+; Executable: xiaowei.exe
 ; Auto-run: Electron app.setLoginItemSettings(openAtLogin)
 
 !macro preInit
-  SetRegView 64
-  StrCpy $INSTDIR "c:\client"
+  SetRegView 32
+  StrCpy $INSTDIR "$PROGRAMFILES32\xiaowei"
 !macroend

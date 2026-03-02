@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@doai/typescript-config": "workspace:*",
+    "@doai/typescript-config": "file:../config/typescript",
     "typescript": "^5.6.3",
     "@types/node": "^22.9.0"
   }

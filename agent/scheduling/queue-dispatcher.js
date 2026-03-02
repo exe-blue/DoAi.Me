@@ -3,7 +3,10 @@
  *
  * Phase 10: Polling is primary; Realtime is hint. 30s poll + Realtime-triggered _tick.
  * On Realtime reconnect, one _tick() for recovery.
+ * Uses orchestrator/models.js for all task_queue and tasks access (no direct .from()).
  */
+
+const { createTaskQueueModels } = require("../orchestrator/models");
 
 const DEFAULT_DISPATCH_INTERVAL = 30000;
 
@@ -13,6 +16,7 @@ class QueueDispatcher {
     this.config = config;
     this.broadcaster = broadcaster;
     this.supabase = supabaseSync.supabase;
+    this.models = createTaskQueueModels(this.supabase);
 
     this._dispatchInterval = null;
     this._running = false;
@@ -82,29 +86,22 @@ class QueueDispatcher {
     this._running = true;
 
     try {
-      // 1. Count currently running tasks
-      const { count: runningCount, error: countErr } = await this.supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "running");
-
-      if (countErr) {
+      // 1. Count currently running tasks (via models)
+      let runningCount = 0;
+      try {
+        runningCount = await this.models.countRunningTasks();
+      } catch (error_) {
         console.error(
-          `[QueueDispatcher] Failed to count running tasks: ${countErr.message}`,
+          `[QueueDispatcher] Failed to count running tasks: ${error_.message}`,
         );
         return;
       }
 
       const maxConcurrent = this.config.maxConcurrentTasks ?? 10;
-      const available = Math.max(0, maxConcurrent - (runningCount || 0));
+      const available = Math.max(0, maxConcurrent - runningCount);
 
-      // 2. Check queue size for state-transition logging
-      const { count: queueSize } = await this.supabase
-        .from("task_queue")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "queued");
-
-      const currentQueueSize = queueSize || 0;
+      // 2. Check queue size for state-transition logging (via models)
+      const currentQueueSize = await this.models.countQueued();
 
       // Only log on state transitions (not every tick)
       if (currentQueueSize === 0 && this._lastQueueSize > 0) {
@@ -116,19 +113,13 @@ class QueueDispatcher {
 
       if (available === 0 || currentQueueSize === 0) return;
 
-      // 3. Dequeue items (target_worker NULL만 — 지정 PC 항목은 해당 Agent가 Realtime으로 수신)
-      const { data: queueItems, error: dequeueErr } = await this.supabase
-        .from("task_queue")
-        .select("*")
-        .eq("status", "queued")
-        .is("target_worker", null)
-        .order("priority", { ascending: false })
-        .order("created_at", { ascending: true })
-        .limit(available);
-
-      if (dequeueErr) {
+      // 3. Dequeue items via models (target_worker NULL only)
+      let queueItems = [];
+      try {
+        queueItems = await this.models.fetchQueuedItems(available);
+      } catch (error_) {
         console.error(
-          `[QueueDispatcher] Failed to dequeue: ${dequeueErr.message}`,
+          `[QueueDispatcher] Failed to dequeue: ${error_.message}`,
         );
         return;
       }
@@ -192,27 +183,13 @@ class QueueDispatcher {
         : {}),
     };
 
-    const { data: task, error: taskErr } = await this.supabase
-      .from("tasks")
-      .insert(insertData)
-      .select("id")
-      .single();
+    const task = await this.models.insertTask(insertData);
 
-    if (taskErr) throw taskErr;
-
-    // Update queue entry
-    const { error: updateErr } = await this.supabase
-      .from("task_queue")
-      .update({
-        status: "dispatched",
-        dispatched_task_id: task.id,
-        dispatched_at: new Date().toISOString(),
-      })
-      .eq("id", item.id);
-
-    if (updateErr) {
+    try {
+      await this.models.updateDispatched(item.id, task.id);
+    } catch (error_) {
       console.error(
-        `[QueueDispatcher] Failed to update queue entry: ${updateErr.message}`,
+        `[QueueDispatcher] Failed to update queue entry: ${error_.message}`,
       );
     }
 

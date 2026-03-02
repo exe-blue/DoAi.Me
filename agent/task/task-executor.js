@@ -4,10 +4,7 @@
  */
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
-
-function _sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const sleep = require("../lib/sleep");
 
 function _escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -37,7 +34,7 @@ async function _withRetry(fn, maxAttempts = 3) {
     } catch (err) {
       lastErr = err;
       if (attempt < maxAttempts) {
-        await _sleep(500 * attempt);
+        await sleep(500 * attempt);
       }
     }
   }
@@ -328,7 +325,7 @@ class TaskExecutor {
     const eng = engagementConfig || {};
     const waitMinMs = () => (eng.waitMinSec != null ? eng.waitMinSec * 1000 : 1000);
     const waitMaxMs = () => (eng.waitMaxSec != null ? eng.waitMaxSec * 1000 : 5000);
-    const stepWait = () => _sleep(_randInt(waitMinMs(), waitMaxMs()));
+    const stepWait = () => sleep(_randInt(waitMinMs(), waitMaxMs()));
 
     if (eng.warmupSec && eng.warmupSec > 0) {
       await this._doWarmup(serial, eng.warmupSec);
@@ -369,7 +366,7 @@ class TaskExecutor {
     }
 
     await this._adbShellWithRetry(serial, "input keyevent KEYCODE_WAKEUP");
-    await _sleep(500);
+    await sleep(500);
     await stepWait();
 
     // 세로 모드 강제 (유튜브 명령 전 필수) — accelerometer off, user_rotation 0, content://settings 반영, YouTube 재시작
@@ -377,9 +374,9 @@ class TaskExecutor {
     await this._adbShellWithRetry(serial, "settings put system user_rotation 0");
     await this._adbShellWithRetry(serial, "content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:0");
     await this._adbShellWithRetry(serial, "am force-stop com.google.android.youtube");
-    await _sleep(500);
+    await sleep(500);
     await this._adbShellWithRetry(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
-    await _sleep(_randInt(3000, 5000));
+    await sleep(_randInt(3000, 5000));
     await stepWait();
 
     const query = this._buildSearchQuery(searchKeyword, videoTitle, videoUrl);
@@ -391,11 +388,11 @@ class TaskExecutor {
     if (!searchSuccess) {
       console.log(`[TaskExecutor] ⚠ ${serial} search failed, falling back to direct URL`);
       await this._adbShellWithRetry(serial, `am start -a android.intent.action.VIEW -d '${videoUrl}'`);
-      await _sleep(_randInt(4000, 7000));
+      await sleep(_randInt(4000, 7000));
     }
 
     // Layer 3: 6초 딜레이 후 광고 스킵
-    await _sleep(6000);
+    await sleep(6000);
     await this._trySkipAd(serial);
     await this._ensurePlaying(serial);
 
@@ -406,7 +403,7 @@ class TaskExecutor {
 
     while (elapsed < targetMs) {
       const waitMs = Math.min(TICK_MS, targetMs - elapsed);
-      await _sleep(waitMs);
+      await sleep(waitMs);
       elapsed += waitMs;
       const elapsedSec = elapsed / 1000;
 
@@ -431,7 +428,7 @@ class TaskExecutor {
     }
 
     await this.xiaowei.goHome(serial);
-    await _sleep(500);
+    await sleep(500);
 
     const actualDurationSec = Math.round((Date.now() - startTime) / 1000);
     const watchPercentage = durationSec > 0 ? Math.min(100, Math.round((actualDurationSec / durationSec) * 100)) : 0;
@@ -471,17 +468,52 @@ class TaskExecutor {
   }
 
   /**
-   * UI 요소를 찾아서 터치. uiautomator dump → resource-id/content-desc로 요소 찾기 → bounds 중심 좌표 계산 → 터치. 화면 방향 무관.
+   * UI dump with polling (Rule B): do not use fixed 2s sleep only. Poll for file existence/freshness 0.5s, max 8s.
+   * On failure: log step name, reason, and XML sample (500–1000 chars, no sensitive data).
    * @param {string} serial
-   * @param {object} selector - { resourceId, contentDesc, textContains } 중 하나 이상
-   * @param {number} [retries=2]
-   * @returns {Promise<boolean>}
+   * @param {string} [stepName] - e.g. SEARCH_ICON, SEARCH_BAR, FIRST_RESULT for observability
+   * @returns {Promise<string>} XML string or empty on failure
    */
-  async _getUiDumpXml(serial) {
-    await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
-    await _sleep(500);
-    const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
-    return _extractShellOutput(dumpRes);
+  async _getUiDumpXml(serial, stepName = "UI_DUMP") {
+    const DUMP_PATH = "/sdcard/window_dump.xml";
+    const POLL_MS = 500;
+    const MAX_WAIT_MS = 8000;
+    const FRESHNESS_MS = 12000;
+
+    await this.xiaowei.adbShell(serial, `uiautomator dump ${DUMP_PATH}`);
+    const deadline = Date.now() + MAX_WAIT_MS;
+    let lastXml = "";
+    while (Date.now() < deadline) {
+      await sleep(POLL_MS);
+      try {
+        const statRes = await this.xiaowei.adbShell(serial, `stat -c %Y ${DUMP_PATH} 2>/dev/null || echo 0`);
+        const mtimeSec = parseInt(_extractShellOutput(statRes), 10) || 0;
+        const mtimeMs = mtimeSec * 1000;
+        if (mtimeMs > 0 && Date.now() - mtimeMs < FRESHNESS_MS) {
+          const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
+          const xml = _extractShellOutput(dumpRes);
+          if (xml && xml.length > 100) return xml;
+          lastXml = xml || "";
+        }
+      } catch (e) {
+        lastXml = (e && e.message) || "";
+      }
+    }
+    try {
+      const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
+      lastXml = _extractShellOutput(dumpRes) || lastXml;
+    } catch {
+      // keep lastXml
+    }
+    const reason = lastXml.length < 50 ? "file missing or too old" : "pattern/file freshness timeout";
+    const sample = String(lastXml).replace(/password|token|cookie/gi, "***").substring(0, 800);
+    console.warn(
+      `[TaskExecutor] ${serial} dump failed step=${stepName} reason=${reason} xml_sample_length=${sample.length}`
+    );
+    if (sample.length > 0) {
+      console.warn(`[TaskExecutor] ${serial} xml_sample: ${sample.substring(0, 500)}...`);
+    }
+    return "";
   }
 
   _findBoundsInXml(xml, selector) {
@@ -552,26 +584,34 @@ class TaskExecutor {
     return true;
   }
 
-  async _findAndTap(serial, selector, retries = 2) {
+  async _findAndTap(serial, selector, retries = 2, stepName = "FIND_AND_TAP") {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const xml = await this._getUiDumpXml(serial);
-        if (!xml) continue;
+        const xml = await this._getUiDumpXml(serial, stepName);
+        if (!xml) {
+          if (attempt < retries) {
+            await sleep(1000);
+            continue;
+          }
+          console.warn(`[TaskExecutor] ${serial} ${stepName} failed: no XML (pattern/file)`);
+          return false;
+        }
         const tapped = await this._tapSelectorInXml(serial, xml, selector);
         if (!tapped) {
           if (attempt < retries) {
-            await _sleep(1000);
+            await sleep(1000);
             continue;
           }
+          console.warn(`[TaskExecutor] ${serial} ${stepName} failed: selector not found in XML`);
           return false;
         }
         return true;
       } catch (err) {
         if (attempt < retries) {
-          await _sleep(1000);
+          await sleep(1000);
           continue;
         }
-        console.warn(`[TaskExecutor] _findAndTap error: ${err.message}`);
+        console.warn(`[TaskExecutor] ${serial} ${stepName} error: ${err.message}`);
         return false;
       }
     }
@@ -583,10 +623,7 @@ class TaskExecutor {
    */
   async _hasElement(serial, selector) {
     try {
-      await this.xiaowei.adbShell(serial, "uiautomator dump /sdcard/window_dump.xml");
-      await _sleep(500);
-      const dumpRes = await this.xiaowei.adbShell(serial, "cat /sdcard/window_dump.xml");
-      const xml = _extractShellOutput(dumpRes);
+      const xml = await this._getUiDumpXml(serial, "HAS_ELEMENT");
       if (!xml) return false;
       if (selector.resourceId) return xml.includes(selector.resourceId);
       if (selector.contentDesc) return xml.includes(selector.contentDesc);
@@ -613,32 +650,34 @@ class TaskExecutor {
   }
 
   /**
-   * YouTube 검색 후 첫 번째 결과 선택. 오브젝트 기반 (resource-id/content-desc).
+   * Search and select first result (Rule B: list container then first item).
    */
   async _searchAndSelectVideo(serial, query) {
     try {
-      let found = await this._findAndTap(serial, YT.SEARCH_BUTTON);
-      if (!found) found = await this._findAndTap(serial, YT.SEARCH_BUTTON_ALT);
+      let found = await this._findAndTap(serial, YT.SEARCH_BUTTON, 2, "SEARCH_ICON");
+      if (!found) found = await this._findAndTap(serial, YT.SEARCH_BUTTON_ALT, 2, "SEARCH_ICON");
       if (!found) {
-        console.warn(`[TaskExecutor] ⚠ ${serial} search button not found`);
+        console.warn(`[TaskExecutor] ⚠ ${serial} SEARCH_ICON not found`);
         return false;
       }
-      await _sleep(1500);
+      await sleep(1500);
 
       await this._inputText(serial, query);
-      await _sleep(1000);
+      await sleep(1000);
 
       await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_ENTER");
-      await _sleep(_randInt(3000, 5000));
+      await sleep(_randInt(3000, 5000));
 
-      found = await this._findAndTap(serial, YT.VIDEO_TITLE);
+      // First result: try list container first item (RELATED_VIDEO / thumbnail), then VIDEO_TITLE, then fallback tap
+      found = await this._findAndTap(serial, YT.RELATED_VIDEO, 2, "FIRST_RESULT");
+      if (!found) found = await this._findAndTap(serial, YT.VIDEO_TITLE, 2, "FIRST_RESULT");
       if (!found) {
         const screenInfo = await this._getScreenSize(serial);
         const tapX = Math.round(screenInfo.width / 2);
         const tapY = Math.round(screenInfo.height * 0.4);
         await this.xiaowei.adbShell(serial, `input tap ${tapX} ${tapY}`);
       }
-      await _sleep(_randInt(3000, 5000));
+      await sleep(_randInt(3000, 5000));
 
       console.log(`[TaskExecutor] ✓ ${serial} search + select done`);
       return true;
@@ -670,7 +709,7 @@ class TaskExecutor {
     try {
       const safe = str.replace(/'/g, "");
       await this.xiaowei.adbShell(serial, `am broadcast -a clipper.set -e text '${safe}' 2>/dev/null`);
-      await _sleep(300);
+      await sleep(300);
       await this.xiaowei.adbShell(serial, "input keyevent 279");
       return;
     } catch {
@@ -695,21 +734,21 @@ class TaskExecutor {
       let skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (resource-id)`);
-        await _sleep(1500);
+        await sleep(1500);
         return;
       }
 
       skipped = await this._tapSelectorInXml(serial, xml, YT.SKIP_AD_ALT);
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (content-desc)`);
-        await _sleep(1500);
+        await sleep(1500);
         return;
       }
 
       skipped = await this._tapSelectorInXml(serial, xml, { contentDesc: "Skip" });
       if (skipped) {
         console.log(`[TaskExecutor] ⏭ ${serial} ad skipped (Skip)`);
-        await _sleep(1500);
+        await sleep(1500);
       }
     } catch (err) {
       // 광고 없으면 무시
@@ -723,12 +762,12 @@ class TaskExecutor {
   async _ensurePlaying(serial) {
     try {
       await this._findAndTap(serial, YT.PLAYER, 0);
-      await _sleep(1500);
+      await sleep(1500);
 
       const playFound = await this._findAndTap(serial, YT.PLAY_PAUSE_ALT, 0);
       if (playFound) {
         console.log(`[TaskExecutor] ▶ ${serial} play button tapped`);
-        await _sleep(1000);
+        await sleep(1000);
         return;
       }
 
@@ -736,7 +775,7 @@ class TaskExecutor {
       if (isPaused) return;
 
       await this._findAndTap(serial, YT.PLAYER, 0);
-      await _sleep(500);
+      await sleep(500);
       await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
     } catch (err) {
       try {
@@ -744,7 +783,7 @@ class TaskExecutor {
         const output = _extractShellOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
-          await _sleep(500);
+          await sleep(500);
           await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
         }
       } catch {}
@@ -799,7 +838,7 @@ class TaskExecutor {
       const fromY = Math.round(screen.height * 0.6);
       const toY = Math.round(screen.height * 0.4);
       await this.xiaowei.adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
-      await _sleep(_randInt(800, 1500));
+      await sleep(_randInt(800, 1500));
 
       let tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
       if (!tapped && eng?.actionTouchCoords?.like_button) {
@@ -813,11 +852,11 @@ class TaskExecutor {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} like button not found`);
         return false;
       }
-      await _sleep(_randInt(500, 1000));
+      await sleep(_randInt(500, 1000));
       console.log(`[Engagement] 👍 ${serial.substring(0, 6)} liked`);
 
       await this.xiaowei.adbShell(serial, `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`);
-      await _sleep(_randInt(500, 1000));
+      await sleep(_randInt(500, 1000));
       return true;
     } catch (err) {
       console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} like failed: ${err.message}`);
@@ -852,7 +891,7 @@ class TaskExecutor {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} subscribe button not found`);
         return false;
       }
-      await _sleep(_randInt(1000, 2000));
+      await sleep(_randInt(1000, 2000));
       const subscribed = await this._hasElement(serial, YT.SUBSCRIBE_TEXT);
       if (subscribed) {
         console.log(`[Engagement] 🔔 ${serial.substring(0, 6)} subscribed!`);
@@ -884,9 +923,9 @@ class TaskExecutor {
           serial,
           `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
         );
-        await _sleep(_randInt(600, 1000));
+        await sleep(_randInt(600, 1000));
       }
-      await _sleep(_randInt(1000, 1500));
+      await sleep(_randInt(1000, 1500));
 
       let found = await this._findAndTap(serial, YT.COMMENT_INPUT, 2);
       if (!found) found = await this._findAndTap(serial, YT.COMMENT_INPUT_ALT, 1);
@@ -902,22 +941,22 @@ class TaskExecutor {
         await this._scrollBackToVideo(serial, screen);
         return false;
       }
-      await _sleep(_randInt(1000, 2000));
+      await sleep(_randInt(1000, 2000));
 
       await this._inputText(serial, commentText);
-      await _sleep(_randInt(1000, 2500));
+      await sleep(_randInt(1000, 2500));
 
       let posted = await this._findAndTap(serial, YT.COMMENT_POST, 2);
       if (!posted) posted = await this._findAndTap(serial, YT.COMMENT_POST_ALT, 1);
       if (!posted) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment post button not found`);
         await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
-        await _sleep(500);
+        await sleep(500);
         await this._scrollBackToVideo(serial, screen);
         return false;
       }
 
-      await _sleep(_randInt(2000, 3000));
+      await sleep(_randInt(2000, 3000));
       console.log(`[Engagement] 💬 ${serial.substring(0, 6)} commented: "${commentText.substring(0, 30)}..."`);
 
       await this._scrollBackToVideo(serial, screen);
@@ -941,9 +980,9 @@ class TaskExecutor {
         serial,
         `input swipe ${midX} ${Math.round(screen.height * 0.3)} ${midX} ${Math.round(screen.height * 0.7)} ${_randInt(400, 700)}`
       );
-      await _sleep(_randInt(400, 700));
+      await sleep(_randInt(400, 700));
     }
-    await _sleep(_randInt(500, 1000));
+    await sleep(_randInt(500, 1000));
   }
 
   /**
@@ -968,7 +1007,7 @@ class TaskExecutor {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} playlist save button not found`);
         return false;
       }
-      await _sleep(_randInt(1500, 2500));
+      await sleep(_randInt(1500, 2500));
 
       const screen = await this._getScreenSize(serial);
       const midY = Math.round(screen.height * 0.5);
@@ -976,28 +1015,28 @@ class TaskExecutor {
       const toX = Math.round(screen.width * 0.2);
       const duration = _randInt(300, 500);
       await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
-      await _sleep(400);
+      await sleep(400);
       await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
-      await _sleep(_randInt(800, 1200));
+      await sleep(_randInt(800, 1200));
 
       let tapped = await this._findAndTap(serial, YT.SAVE_ADD, 1);
       if (!tapped) tapped = await this._findAndTap(serial, YT.SAVE_ADD_ALT, 1);
       if (tapped) {
-        await _sleep(_randInt(1000, 1500));
+        await sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} 담기 (스와이프 2회 후 탭)`);
         return true;
       }
 
       const selected = await this._findAndTap(serial, YT.WATCH_LATER, 1);
       if (selected) {
-        await _sleep(_randInt(1000, 1500));
+        await sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`);
       } else {
         await this.xiaowei.adbShell(
           serial,
           `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`
         );
-        await _sleep(_randInt(1000, 1500));
+        await sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to playlist (first option)`);
       }
       return true;
@@ -1022,12 +1061,12 @@ class TaskExecutor {
       const midX = Math.round(screen.width / 2);
 
       await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
-      await _sleep(1000);
+      await sleep(1000);
       await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
-      await _sleep(_randInt(3000, 5000));
+      await sleep(_randInt(3000, 5000));
 
       await this._findAndTap(serial, YT.BOTTOM_NAV_HOME, 0);
-      await _sleep(_randInt(1500, 2500));
+      await sleep(_randInt(1500, 2500));
 
       const scrollCount = _randInt(2, 4);
       for (let i = 0; i < scrollCount; i++) {
@@ -1035,7 +1074,7 @@ class TaskExecutor {
           serial,
           `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
         );
-        await _sleep(_randInt(1500, 3000));
+        await sleep(_randInt(1500, 3000));
       }
 
       const startTime = Date.now();
@@ -1045,10 +1084,10 @@ class TaskExecutor {
       while (Date.now() - startTime < targetMs && videosWatched < 3) {
         const tapY = Math.round(screen.height * (_randInt(35, 65) / 100));
         await this.xiaowei.adbShell(serial, `input tap ${midX} ${tapY}`);
-        await _sleep(_randInt(3000, 5000));
+        await sleep(_randInt(3000, 5000));
 
         await this._trySkipAd(serial);
-        await _sleep(1000);
+        await sleep(1000);
         await this._ensurePlaying(serial);
 
         const watchTime = _randInt(30, 90) * 1000;
@@ -1059,7 +1098,7 @@ class TaskExecutor {
 
         let watched = 0;
         while (watched < actualWatch) {
-          await _sleep(5000);
+          await sleep(5000);
           watched += 5000;
           if (watched % 15000 < 5000) await this._trySkipAd(serial);
           if (watched % 30000 < 5000) await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
@@ -1075,22 +1114,22 @@ class TaskExecutor {
             serial,
             `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
           );
-          await _sleep(_randInt(1000, 2000));
+          await sleep(_randInt(1000, 2000));
           await this._findAndTap(serial, YT.RELATED_VIDEO, 0);
-          await _sleep(_randInt(3000, 5000));
+          await sleep(_randInt(3000, 5000));
         } else {
           await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
-          await _sleep(_randInt(1500, 2500));
+          await sleep(_randInt(1500, 2500));
           await this.xiaowei.adbShell(
             serial,
             `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
           );
-          await _sleep(_randInt(1500, 2500));
+          await sleep(_randInt(1500, 2500));
         }
       }
 
       await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
-      await _sleep(500);
+      await sleep(500);
       console.log(
         `[Warmup] ✓ ${serial.substring(0, 6)} warmup done (${videosWatched} videos, ${Math.round((Date.now() - startTime) / 1000)}s)`
       );
