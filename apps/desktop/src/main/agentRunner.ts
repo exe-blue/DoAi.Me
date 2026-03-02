@@ -38,6 +38,12 @@ let state: AgentState = {
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 let stdoutStream: fs.WriteStream | null = null;
 let stderrStream: fs.WriteStream | null = null;
+let xiaoweiReadyCheck: (() => boolean) | null = null;
+
+/** Register a callback that returns true when Xiaowei is reachable. */
+export function setXiaoweiReadyCheck(fn: () => boolean): void {
+  xiaoweiReadyCheck = fn;
+}
 
 function getLogDir(): string {
   return path.join(app.getPath("userData"), AGENT_LOG_DIR);
@@ -201,7 +207,19 @@ export function startAgent(): boolean {
     log.info("[AgentRunner] Restarting in", delay, "ms (attempt", state.restartCount, ")");
     restartTimer = setTimeout(() => {
       restartTimer = null;
-      startAgent();
+      // Gate restart on Xiaowei connectivity — poll every 3s until ready
+      if (xiaoweiReadyCheck && !xiaoweiReadyCheck()) {
+        log.info("[AgentRunner] Waiting for Xiaowei before restart...");
+        const waitForXiaowei = setInterval(() => {
+          if (!xiaoweiReadyCheck || xiaoweiReadyCheck()) {
+            clearInterval(waitForXiaowei);
+            log.info("[AgentRunner] Xiaowei ready — spawning agent");
+            startAgent();
+          }
+        }, 3000);
+      } else {
+        startAgent();
+      }
     }, delay);
   });
 

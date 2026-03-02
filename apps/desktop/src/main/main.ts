@@ -1089,6 +1089,7 @@ app.whenReady().then(async () => {
   }
 
   registerIpcHandlers();
+  agentRunner.setXiaoweiReadyCheck(() => state.adbHealthy);
   createWindow();
   startDevicePolling();
   if (process.platform === "win32") {
