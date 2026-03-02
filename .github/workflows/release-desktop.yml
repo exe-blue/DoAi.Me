@@ -60,17 +60,6 @@ jobs:
             "version: $version`npath: $($exe.Name)`nsha512: $hash`nreleaseDate: $date" | Out-File -FilePath apps/desktop/release/latest.yml -Encoding utf8
           }
 
-      - name: Copy to versioned dist folder
-        run: |
-          $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
-          $distVersion = "apps/desktop/dist/$version"
-          New-Item -ItemType Directory -Force -Path $distVersion | Out-Null
-          Copy-Item -Path apps/desktop/release/*.exe -Destination $distVersion -Force
-          if (Test-Path apps/desktop/release/latest.yml) {
-            Copy-Item -Path apps/desktop/release/latest.yml -Destination $distVersion -Force
-          }
-          Get-ChildItem $distVersion | ForEach-Object { Write-Host "dist/$version/$($_.Name)" }
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -81,7 +70,7 @@ jobs:
             Download the `.exe` and run to install.
           prerelease: false
           files: |
-            apps/desktop/dist/*/*.exe
-            apps/desktop/dist/*/latest.yml
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
