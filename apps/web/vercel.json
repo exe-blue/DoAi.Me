@@ -1,5 +1,6 @@
 {
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile",
+  "buildCommand": "next build",
   "crons": [
     { "path": "/api/cron/sync-channels", "schedule": "* * * * *" },
     { "path": "/api/cron/dispatch-queue", "schedule": "* * * * *" }
