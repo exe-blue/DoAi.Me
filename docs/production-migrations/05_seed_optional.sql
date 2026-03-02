@@ -17,10 +17,9 @@ insert into public.scripts (
   ('a1000001-0000-4000-8000-000000000004'::uuid, 'yt_actions', 1, 'active', 'javascript',
    'export default async function(ctx, params) { if (ctx && ctx.log) ctx.log("yt_actions"); }',
    120000, '{}'::jsonb, '{}'::jsonb)
-on conflict (id, version) do nothing;
+on conflict (id) do nothing;
 
--- 2) workflows에 WATCH_MAIN 한 건 (기존 workflows 테이블 구조에 맞게; PK가 (id,version)이고 id가 text면 아래 그대로)
--- id가 uuid면 cast 필요. 컬럼 없으면 ALTER TABLE workflows ADD COLUMN ... 후 실행
+-- 2) workflows에 WATCH_MAIN 한 건 (workflows.id는 text 타입)
 insert into public.workflows (id, version, kind, name, is_active, steps)
 values (
   'WATCH_MAIN',
