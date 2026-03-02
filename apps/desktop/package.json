@@ -7,10 +7,11 @@
   "main": "dist-electron/main/main.js",
   "scripts": {
     "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "tsc -p tsconfig.electron.json && vite build",
-    "test": "node src/agent/scripts/smoke-require-agent.js",
-    "dist": "pnpm run test && pnpm run build && node scripts/download-node-win.js && npm --prefix src/agent install --omit=dev && electron-builder --win",
-    "dist:wsl": "pnpm run test && pnpm run build && node scripts/download-node-win.js && npm --prefix src/agent install --omit=dev && WINEPREFIX=$HOME/.wine-eb WINEARCH=win32 electron-builder --win",
+    "build": "pnpm exec tsc -p tsconfig.electron.json && pnpm exec vite build",
+    "test": "node ../../packages/agent/scripts/smoke-require-agent.js",
+    "dist": "pnpm install && node scripts/bump-version.js && pnpm run test && pnpm run build && node scripts/download-node-win.js && pnpm --filter @doai/agent install --prod && pnpm install --filter @doai/desktop && node scripts/copy-env-to-agent.js && pnpm exec electron-builder --win",
+    "dist:publish": "pnpm install && node scripts/bump-version.js && pnpm run test && pnpm run build && node scripts/download-node-win.js && pnpm --filter @doai/agent install --prod && pnpm install --filter @doai/desktop && node scripts/copy-env-to-agent.js && pnpm exec electron-builder --win --publish always",
+    "dist:wsl": "pnpm run test && pnpm run build && node scripts/download-node-win.js && pnpm --filter @doai/agent install --prod && WINEPREFIX=$HOME/.wine-eb WINEARCH=win32 pnpm exec electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint src/renderer --ext .ts,.tsx"
   },
@@ -21,7 +22,7 @@
     "@mui/material": "^6.3.0",
     "@supabase/supabase-js": "^2.47.10",
     "archiver": "^7.0.1",
-    "cron-parser": "^4.9.0",
+    "cron-parser": "^5.5.0",
     "dotenv": "^16.4.5",
     "electron-log": "^5.2.0",
     "electron-store": "^8.2.0",
@@ -33,6 +34,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@doai/typescript-config": "workspace:*",
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
@@ -56,6 +58,11 @@
   "build": {
     "appId": "me.doai.desktop",
     "productName": "doaime",
+    "publish": {
+      "provider": "github",
+      "owner": "doai-me",
+      "repo": "doai.me"
+    },
     "mac": null,
     "linux": null,
     "directories": {
@@ -67,24 +74,27 @@
     ],
     "extraResources": [
       {
-        "from": "src/agent",
+        "from": "../../packages/agent",
         "to": "agent",
         "filter": [
           "**/*",
-          "!.env",
           "!.env.*",
-          "!.env.prod",
           "!.env.example"
         ]
       },
       {
         "from": "node-bundle",
         "to": "node"
+      },
+      {
+        "from": ".env.prod",
+        "to": ".env"
       }
     ],
     "win": {
       "target": "nsis",
-      "executableName": "doaime"
+      "executableName": "doaime",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

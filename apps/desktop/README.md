@@ -1,11 +1,11 @@
 # Desktop app (Xiaowei)
 
-Electron app for Windows that runs the embedded Node.js agent (`src/agent`). **Windows only.** **Internal use only** — no public distribution or auto-update.
+Electron app for Windows that runs the embedded Node.js agent (`src/agent`). **Windows only.** **Internal use only** — auto-update works when a GitHub Release exists (see Packaging / GitHub Release).
 
 ## Goals
 
 1. **Windows only** — Runs and is built for Windows. Installer creation is supported on Windows (or Wine on Linux for unpacked output).
-2. **Internal use only** — For in-house deployment. No auto-update; code signing is optional.
+2. **Internal use only** — For in-house deployment. Auto-update works when a GitHub Release exists (see below).
 3. **Tests before packaging** — Before creating the installer, tests run automatically; if they fail, `dist` stops so only passing code is packaged.
 4. **Simple UI for self-control** — Use the UI to restart the agent, view logs, export diagnostics, and change settings.
 
@@ -18,6 +18,9 @@ pnpm dev
 Uses `src/agent/agent.js` and system `node` from the app path.
 
 ## Packaging
+
+- **Version:** Each run of `pnpm dist` bumps the **patch** version in `package.json` (e.g. 1.0.1 → 1.0.2) so every build has a unique version.
+- For **GitHub Release** builds (CI), the version is set from the git tag (e.g. tag `v1.0.2` → app version `1.0.2`).
 
 Run **on Windows** (or use Wine for unpacked-only output):
 
@@ -46,10 +49,16 @@ To build the Windows installer in CI and publish it as a GitHub Release:
    git tag v1.0.0
    git push origin v1.0.0
    ```
-3. The workflow [.github/workflows/release-desktop.yml](../../.github/workflows/release-desktop.yml) runs on `windows-latest`, runs `pnpm --filter @doai/desktop dist`, then creates a GitHub Release and uploads the `.exe` and `latest.yml` from `apps/desktop/release/`.
+3. The workflow [.github/workflows/release-desktop.yml](../../.github/workflows/release-desktop.yml) runs on `windows-latest`, sets the app version from the tag, builds the desktop app, runs `electron-builder --win`, then creates a GitHub Release and uploads the `.exe` and `latest.yml` from `apps/desktop/release/`.
 4. On the repo’s **Releases** page you’ll see the new release and can download the installable exe.
 
-Any tag matching `v*` (e.g. `v1.0.0`, `v1.0.1`) triggers the release workflow.
+Any tag matching `v*` (e.g. `v1.0.0`, `v1.0.1`) triggers the release workflow. The workflow sets `apps/desktop` version from the tag so the built installer and `latest.yml` match the release.
+
+### Why “Check for updates” might say no update
+
+- There must be a **GitHub Release** with a **tag** like `v1.0.2` and **version inside the app** lower than that (e.g. installed app `1.0.1`).
+- The release must include **`latest.yml`** and the **`.exe`** installer (the workflow uploads these).
+- If the repo is **private**, the installed app cannot see releases unless it has a token (not implemented); use a public repo or manual installs.
 
 ## UI self-control
 

@@ -29,8 +29,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set version from tag (for electron-updater)
+        run: node -e "const p=require('path');const fs=require('fs');const j=p.join(process.cwd(),'apps/desktop/package.json');const o=JSON.parse(fs.readFileSync(j,'utf8'));o.version=process.env.TAG_NAME.replace(/^v/,'');fs.writeFileSync(j,JSON.stringify(o,null,2));"
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+
       - name: Desktop smoke test
         run: pnpm --filter @doai/desktop run test
+
+      - name: Type check (full repo)
+        run: pnpm run typecheck
 
       - name: Build desktop (tsc + vite)
         run: pnpm --filter @doai/desktop run build
@@ -39,7 +47,7 @@ jobs:
         run: node apps/desktop/scripts/download-node-win.js
 
       - name: Install agent dependencies
-        run: npm --prefix apps/desktop/src/agent install --omit=dev
+        run: pnpm --filter @doai/agent install --prod
 
       - name: Package desktop (electron-builder)
         run: pnpm --filter @doai/desktop exec electron-builder --win
