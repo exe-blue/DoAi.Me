@@ -3,6 +3,7 @@
  * Supabase Realtime <-> Xiaowei WebSocket bridge
  * Runs 24/7 on Windows Node PCs
  */
+const os = require("os");
 const config = require("./config");
 const XiaoweiClient = require("./core/xiaowei-client");
 const SupabaseSync = require("./core/supabase-sync");
@@ -66,7 +67,7 @@ function waitForXiaowei(client, timeoutMs = 10000) {
 }
 
 async function main() {
-  console.log(`[Agent] Starting PC: ${config.pcNumber}`);
+  console.log(`[Agent] Starting (hostname: ${os.hostname()})`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
   // ---------- Phase 1: Environment / DB / settings ----------
@@ -100,10 +101,12 @@ async function main() {
     console.warn(`[Agent] ✗ Settings load failed: ${err.message}`);
   }
 
-  // 3. Register PC
+  // 3. Register PC — hostname-based DB assignment (no PC_NUMBER env required)
   try {
-    const pcId = await supabaseSync.getPcId(config.pcNumber);
-    console.log(`[Agent] PC ID: ${pcId}`);
+    const hostname = os.hostname();
+    const pcNumber = await supabaseSync.getPcByHostname(hostname);
+    config.pcNumber = pcNumber;
+    console.log(`[Agent] ✓ PC registered: ${pcNumber} (hostname: ${hostname})`);
     config.setPrimaryFromDb(supabaseSync.pcUuid);
   } catch (err) {
     console.error(`[Agent] ✗ PC registration failed: ${err.message}`);

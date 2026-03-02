@@ -389,7 +389,20 @@ async function fetchDeviceDetails(device: Device): Promise<Device> {
 
 let previousUnauthorizedCount = 0;
 
+/**
+ * Classify a Xiaowei/ADB error from stderr into a short type tag.
+ * Tags: XIAOWEI_OFFLINE | XIAOWEI_TIMEOUT | XIAOWEI_ADB_ERROR | XIAOWEI_HTTP_ERROR | ADB_COMMAND_FAILED
+ */
+function classifyAdbError(stderr: string): string {
+  if (stderr.includes("fetch failed") || stderr.includes("ECONNREFUSED")) return "XIAOWEI_OFFLINE";
+  if (stderr.includes("Xiaowei API timeout")) return "XIAOWEI_TIMEOUT";
+  if (stderr.includes("Xiaowei code=")) return "XIAOWEI_ADB_ERROR";
+  if (stderr.startsWith("Xiaowei API")) return "XIAOWEI_HTTP_ERROR";
+  return "ADB_COMMAND_FAILED";
+}
+
 async function pollDevicesOnce(): Promise<void> {
+  // 1. Check Xiaowei/ADB connectivity first
   const adbHealth = DEVICE_CONTROL_PROVIDER === "xiaowei_api"
     ? await xiaoweiRequest("list", undefined, undefined, COMMAND_TIMEOUT_WARN_MS)
     : await adb(["version"], COMMAND_TIMEOUT_WARN_MS);
@@ -403,35 +416,19 @@ async function pollDevicesOnce(): Promise<void> {
   }
   state.adbHealthy = healthy;
 
+  // 2. Only proceed to device list once connection is confirmed
+  if (!healthy) return;
+
   const devicesRes = await adb(["devices", "-l"]);
   if (!devicesRes.success) {
-    if (DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-      const listRes = await xiaoweiRequest("list");
-      if (listRes.success) {
-        try {
-          const data = JSON.parse(listRes.stdout) as Array<{
-            serial?: string;
-            onlySerial?: string;
-            model?: string;
-            status?: string;
-          }>;
-          state.devices = data.map((d) => ({
-            serial: d.serial || d.onlySerial || "",
-            model: d.model,
-            state: (d.status === "offline" ? "offline" : "device") as DeviceState,
-          }));
-          sendToRenderer("device:update", state.devices);
-          return;
-        } catch {
-          // continue to generic error path
-        }
-      }
-    }
+    const errType = DEVICE_CONTROL_PROVIDER === "xiaowei_api"
+      ? classifyAdbError(devicesRes.stderr)
+      : "ADB_COMMAND_FAILED";
     pushLog({
       level: "ERROR",
       presetName: "SYSTEM",
       step: "PRE_CHECK",
-      message: `adb devices failed: ${devicesRes.stderr}`,
+      message: `adb devices [${errType}]: ${devicesRes.stderr}`,
     });
     return;
   }
@@ -454,6 +451,9 @@ async function pollDevicesOnce(): Promise<void> {
         }));
         state.devices = mapped;
         sendToRenderer("device:update", state.devices);
+        if (mapped.length === 0) {
+          pushLog({ level: "INFO", presetName: "SYSTEM", step: "PRE_CHECK", message: "adb devices [NO_DEVICES]: 연결된 기기 없음" });
+        }
         return;
       } catch {
         // ignore parse fallback
@@ -913,70 +913,95 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
   if (save.canceled || !save.filePath) return { zipPath: "", canceled: true };
 
   const archiverModule = (await import("archiver")).default;
-  return new Promise(async (resolve) => {
-    const output = fs.createWriteStream(save.filePath);
+
+  // Ensure parent directory exists
+  const zipDir = path.dirname(save.filePath);
+  try {
+    fs.mkdirSync(zipDir, { recursive: true });
+  } catch {
+    return { zipPath: "", error: `Cannot create directory: ${zipDir}` };
+  }
+
+  return new Promise((resolve) => {
+    const zipPath = save.filePath as string;
+    const output = fs.createWriteStream(zipPath);
     const archive = archiverModule("zip", { zlib: { level: 9 } });
-    archive.pipe(output);
 
-    const adbVersion = await adb(["version"]);
-    archive.append(adbVersion.stdout || adbVersion.stderr, { name: "adb_version.txt" });
-
-    const adbDevices = await adb(["devices", "-l"]);
-    archive.append(adbDevices.stdout || adbDevices.stderr, { name: "adb_devices.txt" });
-
-    const selectedSerials = serials && serials.length > 0 ? serials : state.devices.map((d) => d.serial);
-    for (const serial of selectedSerials) {
-      const getprop = await adbShell(serial, "getprop");
-      archive.append(getprop.stdout || getprop.stderr, { name: `device_${serial}/getprop.txt` });
-
-      const logcat = await adb(["-s", serial, "logcat", "-d", "-t", "500"]);
-      archive.append(logcat.stdout || logcat.stderr, { name: `device_${serial}/logcat_last500.txt` });
-    }
-
-    const appLogText = state.logBuffer
-      .map((entry) => {
-        const ts = new Date(entry.timestamp).toISOString();
-        return `[${ts}] [${entry.presetName}] [${entry.step}] ${entry.message}`;
-      })
-      .join("\n");
-    archive.append(appLogText, { name: "app_log.txt" });
-    archive.append(JSON.stringify(state.presetHistory, null, 2), { name: "preset_history.json" });
-
-    const systemInfo = {
-      os: process.platform,
-      osRelease: process.getSystemVersion(),
-      electronVersion: process.versions.electron,
-      appVersion: app.getVersion(),
-      appPath: app.getPath("exe"),
-      adbPath: resolveAdbPath(),
-      deviceControlProvider: DEVICE_CONTROL_PROVIDER,
-      xiaoweiApiUrl: XIAOWEI_API_URL,
-    };
-    archive.append(JSON.stringify(systemInfo, null, 2), { name: "system_info.json" });
-
-    const agentLogPaths = agentRunner.getAgentLogPaths();
-    const maskSensitive = (text: string) =>
-      text
-        .replace(/(Bearer\s+)[^\s]+/gi, "$1***")
-        .replace(/(Authorization:\s*)[^\s]+/gi, "$1***")
-        .replace(/(token|api[_-]?key|secret|password)=[^\s&"']+/gi, "$1=***")
-        .replace(/(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g, "***JWT***");
-    for (const [key, filePath] of Object.entries(agentLogPaths)) {
-      try {
-        if (fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, "utf8");
-          archive.append(maskSensitive(content), { name: `logs/agent_${key}.txt` });
-        }
-      } catch {
-        archive.append("(unable to read)", { name: `logs/agent_${key}.txt` });
+    let settled = false;
+    function finish(result: { zipPath: string; error?: string }) {
+      if (!settled) {
+        settled = true;
+        resolve(result);
       }
     }
 
-    archive.on("error", (error?: Error) => {
-      resolve({ zipPath: "", error: error?.message ?? "archive error" });
-    });
-    output.on("close", () => resolve({ zipPath: save.filePath ?? "" }));
-    await archive.finalize();
+    archive.on("error", (err?: Error) => finish({ zipPath: "", error: `Archive error: ${err?.message ?? "unknown"}` }));
+    output.on("error", (err: NodeJS.ErrnoException) => finish({ zipPath: "", error: `Write error (${err.code}): ${err.message}` }));
+    output.on("close", () => finish({ zipPath }));
+
+    archive.pipe(output);
+
+    void (async () => {
+      try {
+        const adbVersion = await adb(["version"]);
+        archive.append(adbVersion.stdout || adbVersion.stderr, { name: "adb_version.txt" });
+
+        const adbDevices = await adb(["devices", "-l"]);
+        archive.append(adbDevices.stdout || adbDevices.stderr, { name: "adb_devices.txt" });
+
+        const selectedSerials = serials && serials.length > 0 ? serials : state.devices.map((d) => d.serial);
+        for (const serial of selectedSerials) {
+          const getprop = await adbShell(serial, "getprop");
+          archive.append(getprop.stdout || getprop.stderr, { name: `device_${serial}/getprop.txt` });
+
+          const logcat = await adb(["-s", serial, "logcat", "-d", "-t", "500"]);
+          archive.append(logcat.stdout || logcat.stderr, { name: `device_${serial}/logcat_last500.txt` });
+        }
+
+        const appLogText = state.logBuffer
+          .map((entry) => {
+            const ts = new Date(entry.timestamp).toISOString();
+            return `[${ts}] [${entry.presetName}] [${entry.step}] ${entry.message}`;
+          })
+          .join("\n");
+        archive.append(appLogText, { name: "app_log.txt" });
+        archive.append(JSON.stringify(state.presetHistory, null, 2), { name: "preset_history.json" });
+
+        const systemInfo = {
+          os: process.platform,
+          osRelease: process.getSystemVersion(),
+          electronVersion: process.versions.electron,
+          appVersion: app.getVersion(),
+          appPath: app.getPath("exe"),
+          adbPath: resolveAdbPath(),
+          deviceControlProvider: DEVICE_CONTROL_PROVIDER,
+          xiaoweiApiUrl: XIAOWEI_API_URL,
+        };
+        archive.append(JSON.stringify(systemInfo, null, 2), { name: "system_info.json" });
+
+        const agentLogPaths = agentRunner.getAgentLogPaths();
+        const maskSensitive = (text: string) =>
+          text
+            .replace(/(Bearer\s+)[^\s]+/gi, "$1***")
+            .replace(/(Authorization:\s*)[^\s]+/gi, "$1***")
+            .replace(/(token|api[_-]?key|secret|password)=[^\s&"']+/gi, "$1=***")
+            .replace(/(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g, "***JWT***");
+        for (const [key, filePath] of Object.entries(agentLogPaths)) {
+          try {
+            if (fs.existsSync(filePath)) {
+              const content = fs.readFileSync(filePath, "utf8");
+              archive.append(maskSensitive(content), { name: `logs/agent_${key}.txt` });
+            }
+          } catch {
+            archive.append("(unable to read)", { name: `logs/agent_${key}.txt` });
+          }
+        }
+
+        await archive.finalize();
+      } catch (err) {
+        finish({ zipPath: "", error: `Finalize error: ${(err as Error).message}` });
+      }
+    })();
   });
 }
 

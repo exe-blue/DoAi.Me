@@ -98,6 +98,56 @@ class SupabaseSync {
   }
 
   /**
+   * Register or look up this PC by hostname (DB-assigned pc_number).
+   * - If a pcs row with this hostname exists → reuse its pc_number.
+   * - Otherwise → count existing rows, auto-assign next PC-XX, create row.
+   * @param {string} hostname - os.hostname()
+   * @returns {Promise<string>} assigned pc_number (e.g. "PC-01")
+   */
+  async getPcByHostname(hostname) {
+    // 1. Look up by hostname
+    const { data: existing, error: findErr } = await this.supabase
+      .from("pcs")
+      .select("id, pc_number")
+      .eq("hostname", hostname)
+      .single();
+
+    if (existing) {
+      this.pcId = existing.pc_number;
+      this.pcUuid = existing.id;
+      console.log(`[Supabase] Found PC by hostname "${hostname}": ${existing.pc_number} (${existing.id})`);
+      return existing.pc_number;
+    }
+
+    if (findErr && findErr.code !== "PGRST116") {
+      throw new Error(`Failed to lookup PC by hostname: ${findErr.message}`);
+    }
+
+    // 2. Auto-assign next PC-XX number
+    const { count } = await this.supabase
+      .from("pcs")
+      .select("*", { count: "exact", head: true });
+    const nextNum = String((count ?? 0) + 1).padStart(2, "0");
+    const pcNumber = `PC-${nextNum}`;
+
+    // 3. Create new row with hostname
+    const { data: created, error: createErr } = await this.supabase
+      .from("pcs")
+      .insert({ pc_number: pcNumber, hostname, status: "online" })
+      .select("id")
+      .single();
+
+    if (createErr) {
+      throw new Error(`Failed to register PC: ${createErr.message}`);
+    }
+
+    this.pcId = pcNumber;
+    this.pcUuid = created.id;
+    console.log(`[Supabase] Registered new PC "${hostname}" as ${pcNumber} (${created.id})`);
+    return pcNumber;
+  }
+
+  /**
    * Update PC heartbeat status
    * @param {string} pcId
    * @param {string} status - 'online' | 'offline' | 'error'

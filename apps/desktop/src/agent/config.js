@@ -11,7 +11,7 @@ require("dotenv").config({ path: require("path").resolve(__dirname, ".env"), ove
 const requiredEnv = [
   ["SUPABASE_URL", process.env.SUPABASE_URL],
   ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
-  ["PC_NUMBER", process.env.PC_NUMBER],
+  // PC_NUMBER removed — PC identity is assigned from DB via hostname
 ];
 for (const [name, val] of requiredEnv) {
   if (val === undefined || val === "") {
@@ -41,7 +41,8 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.pcNumber = process.env.PC_NUMBER || "PC-00";
+    // pcNumber is null on startup — populated from DB after hostname-based registration
+    this.pcNumber = process.env.PC_NUMBER || null;
     this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
