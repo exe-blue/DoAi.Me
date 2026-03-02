@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const endOfDay = `${date}T23:59:59.999Z`;
 
     // job_assignments not in generated DB types
-    const sb = supabase as { from: (t: string) => ReturnType<typeof supabase.from> };
+    const sb = supabase as any;
     let query = sb
       .from("job_assignments")
       .select(`

@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
@@ -21,6 +22,9 @@
     "next-env.d.ts",
     "sentry.edge.config.ts",
     "sentry.server.config.ts",
+    "tailwind.config.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
     "supabase-ssr.d.ts",

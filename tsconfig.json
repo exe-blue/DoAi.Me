@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
-  "files": [],
+  "include": ["*.ts", "*.mts", "*.cts"],
   "references": [
     { "path": "./apps/web/tsconfig.json" },
     { "path": "./apps/desktop/tsconfig.json" },

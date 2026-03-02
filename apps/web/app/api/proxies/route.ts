@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase.from("proxies").select("*", { count: "exact" });
 
-    if (status) query = query.eq("status", status);
+    if (status) query = query.eq("status", status as "banned" | "active" | "inactive" | "testing");
     if (assigned === true) query = query.not("device_id", "is", null);
     if (assigned === false) query = query.is("device_id", null);
     if (q) query = query.ilike("address", `%${q}%`);

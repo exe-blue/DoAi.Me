@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         status: "pending",
       },
       workflowId: DEFAULT_WATCH_WORKFLOW_ID,
-      workflowVersion: DEFAULT_WATCH_WORKFLOW_VERSION,
+      workflowVersion: String(DEFAULT_WATCH_WORKFLOW_VERSION),
       inputs: { command: trimmedCommand },
       deviceIds:
         deviceRows.length > 0

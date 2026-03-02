@@ -10,11 +10,13 @@
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "dist-electron/**", "release/**"],
       "env": [
         "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
         "SUPABASE_PUBLISHABLE_KEY",
         "SUPABASE_URL",
         "YOUTUBE_API_KEY",
         "SENTRY_ORG",
         "SENTRY_PROJECT",
+        "SENTRY_AUTH_TOKEN",
         "NEXT_PUBLIC_*"
       ]
     },
@@ -23,6 +25,7 @@
       "outputs": [],
       "env": [
         "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
         "SUPABASE_PUBLISHABLE_KEY",
         "SUPABASE_URL",
         "YOUTUBE_API_KEY",

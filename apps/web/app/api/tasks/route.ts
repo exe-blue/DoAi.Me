@@ -1,13 +1,9 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getTasksWithDetails, updateTask, deleteTask } from "@/lib/db/tasks";
 import {
   createManualTask,
   createBatchTask,
 } from "@/lib/pipeline";
-import {
-  DEFAULT_WATCH_WORKFLOW_ID,
-  DEFAULT_WATCH_WORKFLOW_VERSION,
-} from "@/lib/workflow-snapshot";
 import { mapTaskRow } from "@/lib/mappers";
 import {
   taskCreateSchema,
@@ -93,10 +89,6 @@ export async function POST(request: NextRequest) {
         workerId,
         deviceCount,
         variables,
-        source,
-        priority,
-        workflowRef,
-        inputs: bodyInputs,
       } = result.data;
 
       const fullVariables = variables
@@ -119,13 +111,6 @@ export async function POST(request: NextRequest) {
         variables: fullVariables,
         workerId,
         createdByUserId,
-        source:
-          source ?? (priority != null && priority >= 6 ? "manual" : undefined),
-        priority: priority ?? (source === "manual" ? 8 : undefined),
-        workflowId: workflowRef?.id ?? DEFAULT_WATCH_WORKFLOW_ID,
-        workflowVersion:
-          workflowRef?.version ?? DEFAULT_WATCH_WORKFLOW_VERSION,
-        workflowInputs: bodyInputs,
       });
 
       return NextResponse.json(task, { status: 201 });
@@ -146,10 +131,6 @@ export async function POST(request: NextRequest) {
       workerId,
       deviceCount,
       variables,
-      source,
-      priority,
-      workflowRef,
-      inputs: bodyInputs,
     } = result.data;
 
     const fullVariables = variables
@@ -167,12 +148,6 @@ export async function POST(request: NextRequest) {
       variables: fullVariables,
       workerId,
       createdByUserId,
-      source:
-        source ?? (priority != null && priority >= 6 ? "manual" : undefined),
-      priority: priority ?? (source === "manual" ? 8 : undefined),
-      workflowId: workflowRef?.id ?? DEFAULT_WATCH_WORKFLOW_ID,
-      workflowVersion: workflowRef?.version ?? DEFAULT_WATCH_WORKFLOW_VERSION,
-      workflowInputs: bodyInputs,
     });
 
     return NextResponse.json(task, { status: 201 });

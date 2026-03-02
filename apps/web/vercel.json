@@ -1,5 +1,5 @@
 {
-  "installCommand": "npm install",
+  "installCommand": "pnpm install --frozen-lockfile",
   "crons": [
     { "path": "/api/cron/sync-channels", "schedule": "* * * * *" },
     { "path": "/api/cron/dispatch-queue", "schedule": "* * * * *" }

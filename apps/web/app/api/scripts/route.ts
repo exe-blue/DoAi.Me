@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type");
     const name = searchParams.get("name");
 
-    let query = supabase
+    let query = (supabase as any)
       .from("scripts")
       .select(
         "id, name, version, status, type, content, timeout_ms, params_schema, default_params, created_at, updated_at",
@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
     if (type) query = query.eq("type", type);
     if (name && name.trim()) query = query.ilike("name", `%${name.trim()}%`);
 
-    const { data: rows, error } = await query.returns<ScriptRow[]>();
+    const { data: rawRows, error } = await query;
+    const rows = rawRows as ScriptRow[] | null;
 
     if (error) throw error;
 
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
     const nameValidation = validateScriptName(name);
     if (!nameValidation.ok) {
       return NextResponse.json(
-        { error: nameValidation.error },
+        { error: (nameValidation as { ok: false; error: string }).error },
         { status: 400 },
       );
     }
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("scripts")
       .insert({
         name: name.trim(),

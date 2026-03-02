@@ -15,7 +15,8 @@ export async function POST(
     const { id } = await params;
     const supabase = createSupabaseServerClient();
 
-    const { data: latest, error: fetchErr } = await supabase
+    const db = supabase as any;
+    const { data: latest, error: fetchErr } = await db
       .from("workflows")
       .select("id, version, kind, name, is_active, steps")
       .eq("id", id)
@@ -33,7 +34,7 @@ export async function POST(
 
     const newVersion = (latest.version as number) + 1;
 
-    const { data: created, error: insertErr } = await supabase
+    const { data: created, error: insertErr } = await db
       .from("workflows")
       .insert({
         id: latest.id,

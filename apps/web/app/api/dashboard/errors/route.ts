@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       .limit(500);
 
     if (level) {
-      query = query.eq("level", level);
+      query = query.eq("level", level as "debug" | "error" | "info" | "warn" | "fatal");
     }
 
     const { data } = await query;

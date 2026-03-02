@@ -26,7 +26,7 @@ export async function POST(
 
     const supabase = createSupabaseServerClient();
 
-    const { data: row, error: fetchErr } = await supabase
+    const { data: row, error: fetchErr } = await (supabase as any)
       .from("scripts")
       .select("id, version, status")
       .eq("id", id)
@@ -41,13 +41,13 @@ export async function POST(
       );
     }
 
-    await supabase
+    await (supabase as any)
       .from("scripts")
       .update({ status: "archived", updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("status", "active");
 
-    const { data: updated, error: updateErr } = await supabase
+    const { data: updated, error: updateErr } = await (supabase as any)
       .from("scripts")
       .update({ status: "active", updated_at: new Date().toISOString() })
       .eq("id", id)

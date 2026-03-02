@@ -90,7 +90,7 @@ export function WorkPanel() {
             message: `Preset ${r.presetId} failed on ${r.serial}`,
           });
         });
-    } catch (err) {
+    } catch {
       setPresetStates((s) => ({ ...s, [presetId]: "fail" }));
     } finally {
       setTimeout(
@@ -150,14 +150,18 @@ export function WorkPanel() {
           </li>
         )}
         renderTags={(value, getTagProps) =>
-          value.map((d, i) => (
-            <Chip
-              label={d.serial}
-              size="small"
-              sx={{ bgcolor: STATE_COLOR[d.state], color: "#fff" }}
-              {...getTagProps({ index: i })}
-            />
-          ))
+          value.map((d, i) => {
+            const { key, ...tagProps } = getTagProps({ index: i });
+            return (
+              <Chip
+                key={key}
+                label={d.serial}
+                size="small"
+                sx={{ bgcolor: STATE_COLOR[d.state], color: "#fff" }}
+                {...tagProps}
+              />
+            );
+          })
         }
         renderInput={(params) => (
           <TextField {...params} size="small" placeholder="Select devices…" label="Devices" />

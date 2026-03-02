@@ -36,7 +36,7 @@ export async function GET(
     const stale = lastHeartbeatAgeSec !== null && lastHeartbeatAgeSec > 90;
     const ok = !stale && pc.status === "online";
 
-    const { count } = await supabase
+    const { count } = await (supabase as any)
       .from("devices")
       .select("id", { count: "exact", head: true })
       .eq("pc_id", pc.id);

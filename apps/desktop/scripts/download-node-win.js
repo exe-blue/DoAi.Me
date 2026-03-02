@@ -11,16 +11,29 @@ const NODE_VERSION = "20.18.0";
 const BASE = "https://nodejs.org/dist";
 const OUT_DIR = path.join(__dirname, "..", "node-bundle");
 
-function get(url) {
+function get(url, followRedirect = true) {
   return new Promise((resolve, reject) => {
-    https
-      .get(url, { redirect: "follow" }, (res) => {
-        const chunks = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-        res.on("error", reject);
-      })
-      .on("error", reject);
+    const req = https.get(url, (res) => {
+      if (followRedirect && res.statusCode >= 301 && res.statusCode <= 308 && res.headers.location) {
+        const next = res.headers.location.startsWith("http") ? res.headers.location : new URL(res.headers.location, url).href;
+        res.destroy();
+        get(next, false).then(resolve).catch(reject);
+        return;
+      }
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks);
+        if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+          const snippet = body.length > 0 ? body.slice(0, 500).toString("utf8").replace(/\s+/g, " ") : "(empty)";
+          reject(new Error(`HTTP ${res.statusCode} ${url} body: ${snippet}`));
+          return;
+        }
+        resolve(body);
+      });
+      res.on("error", reject);
+    });
+    req.on("error", reject);
   });
 }
 
@@ -29,8 +42,15 @@ async function main() {
   const zipName = `node-v${NODE_VERSION}-win-x64.zip`;
   const zipUrl = `${BASE}/v${NODE_VERSION}/${zipName}`;
   console.log("Downloading", zipUrl);
-  const zipBuf = await get(zipUrl);
+  let zipBuf;
+  try {
+    zipBuf = await get(zipUrl);
+  } catch (e) {
+    console.error("[download-node-win] GET failed:", zipUrl, e.message);
+    throw e;
+  }
   if (zipBuf.length < 1000) {
+    console.error("[download-node-win] Response too small:", zipUrl, "bytes:", zipBuf.length);
     throw new Error(`Download failed or empty: ${zipBuf.length} bytes`);
   }
   const zipPath = path.join(OUT_DIR, zipName);
@@ -58,6 +78,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error("[download-node-win] Error:", err.message);
+  if (err.stack) console.error(err.stack);
   process.exit(1);
 });

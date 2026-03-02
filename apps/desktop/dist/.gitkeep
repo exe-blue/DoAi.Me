@@ -1,3 +1,0 @@
-# Built exe files are stored here by version (e.g. 1.0.0/).
-# CI copies from release/ to dist/<version>/ and uploads to GitHub Releases.
-# Do not commit .exe files; they are published as release assets.

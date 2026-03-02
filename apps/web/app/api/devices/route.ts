@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     };
     if (worker_id) insert.worker_id = worker_id;
 
-    const { data, error } = await supabase.from("devices").insert(insert).select().single().returns<DeviceRow>();
+    const { data, error } = await supabase.from("devices").insert(insert as any).select().single().returns<DeviceRow>();
 
     if (error) throw error;
     return Response.json(data, { status: 201 });
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase.from("devices").select("*", { count: "exact" });
 
-    if (status) query = query.eq("status", status);
+    if (status) query = query.eq("status", status as "error" | "online" | "offline" | "busy");
     if (pc_id) query = query.eq("worker_id", pc_id);
     if (q) {
       query = query.or(`serial.ilike.%${q}%,connection_id.ilike.%${q}%,nickname.ilike.%${q}%`);

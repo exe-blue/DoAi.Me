@@ -22,12 +22,12 @@ type WorkflowRow = {
 export async function GET() {
   try {
     const supabase = createSupabaseServerClient();
-    const { data: rows, error } = await supabase
+    const { data: rawRows, error } = await (supabase as any)
       .from("workflows")
       .select("id, version, kind, name, is_active, steps, created_at, updated_at")
       .order("id")
-      .order("version", { ascending: false })
-      .returns<WorkflowRow[]>();
+      .order("version", { ascending: false });
+    const rows = rawRows as WorkflowRow[] | null;
 
     if (error) throw error;
 
@@ -78,13 +78,11 @@ export async function POST(request: NextRequest) {
 
     const validation = validateWorkflowSteps(steps);
     if (!validation.ok) {
-      return NextResponse.json(
-        { error: validation.error, path: validation.path },
-        { status: 400 }
-      );
+      const ve = validation as { ok: false; error: string; path?: string };
+      return NextResponse.json({ error: ve.error, path: ve.path }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("workflows")
       .insert({
         id: id.trim(),

@@ -5,9 +5,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function verifyCronAuth(request: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    const env = process.env.NODE_ENV;
+    if (env === "development" || env === "test") return true;
+    return false;
+  }
   const authHeader = request.headers.get("authorization");
-  if (!process.env.CRON_SECRET) return true;
-  return authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  return authHeader === `Bearer ${secret}`;
 }
 
 /**
@@ -21,7 +26,8 @@ export async function GET(request: Request) {
 
   const result = await runSyncChannels();
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    const err = "error" in result ? result.error : "Sync failed";
+    return NextResponse.json({ error: err }, { status: 500 });
   }
   return NextResponse.json(result);
 }
