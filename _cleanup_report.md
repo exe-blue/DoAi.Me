@@ -161,3 +161,48 @@ agent.js에서 require 안 됨. 테스트 스크립트에서만 사용.
 
 **총 삭제 후보: ~19개 파일** (코드에 영향 없음)
 **통합 예정: 3개 모듈** (`task-executor.js` 리팩토링 시)
+
+---
+
+## 9. 실행 결과 (2026-02-25 적용)
+
+브랜치: `chore/cleanup-2026-02-25`. 분석이 아닌 **실제 삭제/추가**만 수행.
+
+### 삭제한 파일
+
+| 파일 | 비고 |
+|------|------|
+| `agent/docs/youtube-ui-objects.md` | `docs/youtube-ui-objects.md`와 동일(diff 확인). 중복 제거. |
+
+### 스킵(대상 없음)
+
+- **docs/docs/** — 리포 내 존재하지 않음. 스킵.
+- **DEAD FILES** — `tests/test_tasks.py`, `agent/src/*.bak`, `update_agent_v3.sh`, `fix_agent_v3.sh` 모두 현재 브랜치/워킹트리에서 해당 경로에 없음(이미 삭제되었거나 `_archive`에 있음). 스킵.
+- **agent/.env.template** — 없음. `agent/.env.example`만 존재. 스킵.
+- **1회성 지시서 5개** — `VIDEO_DISPATCHER_INSTRUCTIONS.md`, `WEBAPP_SCHEMA_FIX.md`, `CURSOR_MIGRATION_INSTRUCTIONS.md`, `cursor-prompt-fix-watch-video.md`, `cursor-prompt-object-based-ui.md` 루트에 없음. 이동 스킵.
+
+### 추가·생성
+
+| 파일 | 비고 |
+|------|------|
+| `docs/AGENT_SRC_STATUS.md` | 프로덕션 엔트리 `agent/agent.js`, `agent/src/`는 TS 잔재 보존 명시. |
+| `docs/archive/README.md` | 1회성 지시서 보관용 `docs/archive/` 생성. |
+
+### 중복 병합 결과
+
+- `agent/docs/youtube-ui-objects.md` ↔ `docs/youtube-ui-objects.md`: 동일. `agent/docs` 쪽만 삭제.
+
+### 커밋
+
+1. `chore(cleanup): remove duplicate agent/docs/youtube-ui-objects.md (identical to docs/)`
+2. `chore(cleanup): add AGENT_SRC_STATUS.md and docs/archive for one-off guides`
+
+### 검증 결과
+
+| 명령 | 결과 |
+|------|------|
+| `pnpm -w lint` | ✅ 성공 (No ESLint warnings or errors) |
+| `pnpm -w build` | ✅ 성공 (Next.js 빌드 완료) |
+| `pnpm -w test` | ⚠️ No test files found (Vitest가 `../../tests/**/*.test.ts` 참조, 이 브랜치에서 `tests/` 폴더 없음 — 이번 정리와 무관, 기존 상태) |
+
+**정리 범위 준수:** agent/agent.js·비즈니스 로직·DB 스키마/API 미수정. agent/src/*.ts 삭제 없음.
