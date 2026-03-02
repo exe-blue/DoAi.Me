@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["CI", "HUSKY"],
   "tasks": {
     "dev": {
       "cache": false,
@@ -12,7 +13,6 @@
         "SUPABASE_SERVICE_ROLE_KEY",
         "SUPABASE_SECRET_KEY",
         "SUPABASE_PUBLISHABLE_KEY",
-        "SUPABASE_URL",
         "YOUTUBE_API_KEY",
         "SENTRY_ORG",
         "SENTRY_PROJECT",
@@ -27,7 +27,6 @@
         "SUPABASE_SERVICE_ROLE_KEY",
         "SUPABASE_SECRET_KEY",
         "SUPABASE_PUBLISHABLE_KEY",
-        "SUPABASE_URL",
         "YOUTUBE_API_KEY",
         "SENTRY_ORG",
         "SENTRY_PROJECT"
