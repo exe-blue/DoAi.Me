@@ -8,7 +8,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "dist": "pnpm --filter @doai/desktop dist"
+    "dist": "pnpm --filter @doai/desktop dist",
+    "db:verify": "npx supabase db lint --linked"
   },
   "devDependencies": {
     "turbo": "^2.3.0"

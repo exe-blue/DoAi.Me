@@ -6,6 +6,24 @@ Dev Container에서만 개발/빌드/테스트한다.
 
 YouTube 자동 시청 파밍 시스템. 500대 물리 디바이스를 5대의 Node PC로 관제하고, Supabase Broadcast 기반 실시간 대시보드로 모니터링합니다.
 
+## 사전 요구사항 (pnpm 설치)
+
+이 레포는 **pnpm**으로 의존성을 관리합니다. `pnpm`이 설치되어 있지 않으면 다음 중 하나를 실행하세요.
+
+1. **Node.js 설치 후 Corepack 사용 (권장)**  
+   [Node.js LTS](https://nodejs.org/) 설치 후 터미널에서:
+   ```bash
+   corepack enable
+   corepack prepare pnpm@10.29.3 --activate
+   ```
+2. **npm으로 pnpm 전역 설치**  
+   Node.js가 이미 있다면:
+   ```bash
+   npm install -g pnpm
+   ```
+
+설치 후 `pnpm install`, `pnpm run build` 등이 동작해야 합니다. `pnpm: The term 'pnpm' is not recognized` 오류가 나면 위 단계를 진행한 **새 터미널**을 열어 다시 시도하세요.
+
 ## 프로젝트 구조 (모노레포)
 
 ```
@@ -18,15 +36,21 @@ doai.me/
 │       ├── next.config.js
 │       ├── package.json     # @doai/web
 │       └── vercel.json      # Cron 등
-├── packages/                # shared, supabase, ui
-├── agent/                   # Node PC Agent (각 PC에서 실행)
-├── tests/
+├── packages/                # shared, supabase, typescript-config, agent
+│   └── agent/               # Node PC Agent (@doai/agent, 각 PC에서 실행)
 ├── supabase/
 ├── pnpm-workspace.yaml
 └── package.json             # 루트: pnpm --filter @doai/web dev/build
 ```
 
 **Vercel 배포**: 프로젝트 설정에서 Root Directory를 `apps/web`으로 지정하세요.
+
+## 환경 변수 (Environment variables)
+
+- **웹**, **데스크톱**, **에이전트** 모두 **레포 루트**의 `.env`, `.env.local`, `.env.prod` 등을 참조합니다.
+- 루트에 `.env.example`을 복사해 `.env` 또는 `.env.local`로 저장한 뒤 값을 채우세요. `.env`, `.env.local`, `.env.prod`는 커밋하지 마세요 (`.gitignore`에 포함됨).
+- Supabase 키: [Supabase 대시보드 > Project Settings > API](https://supabase.com/dashboard/project/_/settings/api)
+- Sentry: [Sentry 설정](https://sentry.io/settings/)에서 DSN 및 auth token 발급
 
 ## 로컬 실행
 
@@ -36,15 +60,15 @@ doai.me/
 # Supabase 프로젝트 생성 후 마이그레이션 실행
 npx supabase db push
 
-# 스키마 검증
-npm run db:verify
+# 스키마 검증 (원격 연결. 로컬 DB 없이 실행 가능. 먼저 `npx supabase link` 필요)
+pnpm run db:verify
 ```
 
 ### 2. Dashboard (Next.js)
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local
-# apps/web/.env.local 에 Supabase URL, Keys, YouTube API Key 설정
+cp .env.example .env.local
+# 루트 .env.local 에 Supabase URL, Keys, YouTube API Key 설정
 
 pnpm install
 pnpm run dev         # http://localhost:3000
@@ -53,35 +77,12 @@ pnpm run dev         # http://localhost:3000
 ### 3. Agent (Node PC)
 
 ```bash
-cd agent
-cp .env.example .env
+cd packages/agent
+cp ../../.env.example .env
 # .env 에 WORKER_NAME, Supabase, Xiaowei 설정
 
-npm install
-npm run build        # TypeScript 빌드
-npm start            # dist/agent.js 실행
-# 또는
-npm run dev          # tsc --watch (개발용)
-```
-
-## E2E 테스트
-
-전체 파이프라인을 검증합니다: 채널 조회 → 비디오 선택 → 태스크 생성 → Agent 실행 → 로그 추적 → 상태 검증
-
-```bash
-# 사전 조건:
-# 1. Agent 실행 중 (cd agent && npm start)
-# 2. Xiaowei 실행 중 (localhost:22222)
-# 3. DB에 채널+비디오 데이터 존재
-
-# 채널 시드 (최초 1회)
-node tests/seed-channels.js
-
-# E2E 테스트 실행
-pnpm run test:e2e
-
-# 클린업 없이 실행 (디버깅용)
-node tests/e2e-local.js --no-cleanup
+pnpm install         # 루트에서 pnpm install 시 워크스페이스로 설치됨
+node agent.js        # 또는 pnpm start
 ```
 
 ## npm scripts
@@ -92,10 +93,8 @@ node tests/e2e-local.js --no-cleanup
 | `build`       | 프로덕션 빌드               |
 | `lint`        | ESLint                      |
 | `test`        | Vitest 유닛 테스트          |
-| `test:e2e`    | E2E 전체 파이프라인 테스트  |
-| `test:api`    | API 라우트 테스트           |
-| `agent:dev`   | Agent TypeScript watch 모드 |
-| `agent:start` | Agent 프로덕션 실행         |
+| `agent:dev`   | Agent watch 모드 (packages/agent) |
+| `agent:start` | Agent 프로덕션 실행 (packages/agent) |
 | `db:verify`   | Supabase 스키마 검증        |
 | `clean`       | .next 폴더 삭제             |
 
