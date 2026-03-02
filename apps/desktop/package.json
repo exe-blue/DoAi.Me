@@ -1,6 +1,6 @@
 {
   "name": "@doai/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DoAi.Me desktop agent controller",
   "author": "doaime",
   "private": true,
