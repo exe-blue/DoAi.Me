@@ -34,6 +34,9 @@ jobs:
       - name: Download Node win x64 for bundle
         run: node apps/desktop/scripts/download-node-win.js
 
+      - name: Install agent dependencies
+        run: npm --prefix apps/desktop/src/agent install --omit=dev
+
       - name: Package desktop (electron-builder)
         run: pnpm --filter @doai/desktop exec electron-builder --win
 
@@ -74,7 +77,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Desktop ${{ github.ref_name }}
           body: |
-            Windows installer (Xiaowei). Internal use only.
+            Windows installer (doaime). Internal use only.
             Download the `.exe` and run to install.
           prerelease: false
           files: |
