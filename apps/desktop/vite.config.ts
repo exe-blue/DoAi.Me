@@ -9,6 +9,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      input: path.resolve(__dirname, "index.html"),
+    },
   },
   resolve: {
     alias: {
@@ -17,5 +20,6 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    fs: { deny: ["**/archive/**", "**/node_modules/**/archive/**"] },
   },
 });

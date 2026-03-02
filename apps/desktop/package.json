@@ -4,9 +4,10 @@
   "private": true,
   "main": "dist-electron/main/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
-    "dist": "pnpm run build && (cd ../../agent && npm ci) && node scripts/download-node-win.js && electron-builder --win",
+    "test": "node src/agent/scripts/smoke-require-agent.js",
+    "dist": "pnpm run test && pnpm run build && node scripts/download-node-win.js && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint src/renderer --ext .ts,.tsx"
   },
@@ -16,11 +17,16 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.3.0",
     "@mui/material": "^6.3.0",
+    "@supabase/supabase-js": "^2.47.10",
+    "cron-parser": "^4.9.0",
+    "dotenv": "^16.4.5",
     "electron-log": "^5.2.0",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.3.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
@@ -39,6 +45,8 @@
   "build": {
     "appId": "me.doai.desktop",
     "productName": "xiaowei",
+    "mac": null,
+    "linux": null,
     "directories": {
       "output": "release"
     },
@@ -48,7 +56,7 @@
     ],
     "extraResources": [
       {
-        "from": "../../agent",
+        "from": "src/agent",
         "to": "agent",
         "filter": ["**/*", "!.env", "!.env.*", "!.env.prod", "!.env.example"]
       },
@@ -64,7 +72,6 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installDir": "$PROGRAMFILES32\\xiaowei",
       "include": "build/installer.nsh"
     },
     "npmRebuild": false

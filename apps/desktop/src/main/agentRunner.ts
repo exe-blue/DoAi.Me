@@ -46,10 +46,9 @@ function getLogDir(): string {
 function getAgentPaths(): { node: string; script: string; cwd: string } | null {
   try {
     if (isDev) {
-      const appPath = app.getAppPath();
-      const repoRoot = path.resolve(appPath, "..", "..");
-      const script = path.join(repoRoot, "agent", "agent.js");
-      const cwd = path.join(repoRoot, "agent");
+      const repoRoot = app.getAppPath();
+      const script = path.join(repoRoot, "src", "agent", "agent.js");
+      const cwd = path.join(repoRoot, "src", "agent");
       if (!fs.existsSync(script)) {
         log.error("[AgentRunner] Dev: agent.js not found at", script);
         return null;

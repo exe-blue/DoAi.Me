@@ -1,45 +1,17 @@
 {
   "name": "doai-me",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "cd apps/web && pnpm run dev",
-    "build": "cd apps/web && pnpm run build",
-    "start": "cd apps/web && pnpm run start",
-    "lint": "cd apps/web && pnpm run lint",
-    "test": "cd apps/web && pnpm run test",
-    "test:watch": "cd apps/web && pnpm run test:watch",
-    "test:e2e": "cd apps/web && pnpm run test:e2e",
-    "test:e2e:watch": "cd apps/web && pnpm run test:e2e:watch",
-    "test:api": "cd apps/web && pnpm run test:api",
-    "agent:dev": "cd agent && npm run dev",
-    "agent:start": "cd agent && npm start",
-    "agent:smoke": "cd agent && node scripts/smoke-require-agent.js",
-    "db:link": "npx supabase link --project-ref vyfxrplzhskncigyfkaz",
-    "db:push": "npx supabase db push",
-    "db:verify": "npx supabase db execute --file supabase/verify_schema.sql",
-    "clean": "cd apps/web && pnpm run clean",
-    "clean:cache": "cd apps/web && pnpm run clean:cache",
-    "register-channels": "node scripts/register-channels.mjs",
-    "deploy": "node scripts/deploy.mjs",
-    "vercel:deploy": "vercel deploy --root-directory apps/web",
-    "health": "node scripts/pm2-health-check.mjs",
-    "rollback": "node scripts/rollback.mjs",
-    "typecheck": "cd apps/web && pnpm run typecheck",
-    "desktop:dist": "cd apps/desktop && pnpm run dist"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "dist": "pnpm --filter @doai/desktop dist"
   },
   "devDependencies": {
-    "supabase": "^2.76.15",
-    "turbo": "^2.8.12"
-  },
-  "overrides": {
-    "tar": ">=7.5.8",
-    "glob": ">=11.1.0",
-    "minimatch": ">=10.2.1",
-    "cross-spawn": ">=7.0.5",
-    "brace-expansion": ">=2.0.2",
-    "diff": ">=5.2.2",
-    "serialize-javascript": ">=7.0.3"
+    "turbo": "^2.3.0"
   },
   "packageManager": "pnpm@10.29.3"
 }
