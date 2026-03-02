@@ -1,6 +1,14 @@
 {
   "crons": [
-    { "path": "/api/cron/sync-channels", "schedule": "* * * * *" },
-    { "path": "/api/cron/dispatch-queue", "schedule": "* * * * *" }
+    {
+      "path": "/api/cron/sync-channels",
+      "schedule": "0 * * * *",
+      "_comment": "Hourly sync (every-minute requires Vercel Pro/Enterprise)"
+    },
+    {
+      "path": "/api/cron/dispatch-queue",
+      "schedule": "*/5 * * * *",
+      "_comment": "Every 5 minutes (every-minute requires Vercel Pro/Enterprise)"
+    }
   ]
 }

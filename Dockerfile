@@ -5,16 +5,18 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10 --activate
 
-# Copy workspace and package files
+# Copy only workspace manifests first for better layer caching
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/ apps/
-COPY packages/ packages/
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
 
-# Install dependencies
+# Install dependencies (this layer is cached unless manifests change)
 RUN pnpm install --frozen-lockfile
 
-# Copy rest of source (app code already in apps/)
-COPY . .
+# Now copy all source code
+COPY apps/ apps/
+COPY packages/ packages/
+COPY tsconfig.base.json tsconfig.json ./
 
 # Build the web app
 RUN pnpm run build
