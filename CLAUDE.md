@@ -18,6 +18,11 @@ pnpm workspaces + Turborepo. Three deployable apps and two shared packages:
 | `@doai/supabase` | `packages/supabase/` | Shared Supabase DB types |
 | `@doai/typescript-config` | `packages/config/typescript/` | Shared TS compiler configs |
 
+## pnpm Rules
+
+- **lockfile 재생성은 항상 `--no-frozen-lockfile`**: `package.json`의 `pnpm.overrides` 또는 `pnpm.onlyBuiltDependencies`를 변경한 뒤에는 반드시 `ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --no-frozen-lockfile`로 lockfile을 재생성할 것. 수동 편집 금지.
+- **Vercel 배포는 `--frozen-lockfile`**: `vercel.json`의 `installCommand`는 `--frozen-lockfile`을 유지. `package.json`과 lockfile이 항상 일치해야 `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`가 발생하지 않음.
+
 ## Commands
 
 All commands from the repo root unless noted.
