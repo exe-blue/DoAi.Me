@@ -23,10 +23,19 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Build desktop
-        run: pnpm --filter @doai/desktop run dist
+      - name: Desktop smoke test
+        run: pnpm --filter @doai/desktop run test
+
+      - name: Build desktop (tsc + vite)
+        run: pnpm --filter @doai/desktop run build
+
+      - name: Download Node win x64 for bundle
+        run: node apps/desktop/scripts/download-node-win.js
+
+      - name: Package desktop (electron-builder)
+        run: pnpm --filter @doai/desktop exec electron-builder --win
 
       - name: Verify installer artifact
         run: |
