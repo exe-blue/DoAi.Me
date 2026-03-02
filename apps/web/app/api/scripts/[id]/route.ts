@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "../../../../lib/supabase/server";
-import { validateScriptName } from "../../../../lib/validate-script-name";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { validateScriptName } from "@/lib/validate-script-name";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function GET(
           { status: 400 },
         );
       }
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("scripts")
         .select("*")
         .eq("id", id)
@@ -44,7 +44,7 @@ export async function GET(
       return NextResponse.json(data);
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("scripts")
       .select("*")
       .eq("id", id)
@@ -95,7 +95,7 @@ export async function PATCH(
       const nameValidation = validateScriptName(body.name);
       if (!nameValidation.ok) {
         return NextResponse.json(
-          { error: nameValidation.error },
+          { error: (nameValidation as { ok: false; error: string }).error },
           { status: 400 },
         );
       }
@@ -119,7 +119,7 @@ export async function PATCH(
     }
 
     const supabase = createSupabaseServerClient();
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("scripts")
       .update(updates)
       .eq("id", id)

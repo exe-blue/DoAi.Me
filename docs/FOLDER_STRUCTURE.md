@@ -4,35 +4,26 @@ DoAi.Me v2.1 프로젝트의 폴더 구조 및 규칙입니다.
 
 ---
 
-## 0. 모노레포 구성
-
-루트에는 **앱 루트**와 **패키지 루트** 두 가지가 있습니다.
-
-| 루트 | 용도 | 내용 |
-| ------ | ------ | ------ |
-| **app/** | Next.js 웹앱 (App Router) | 페이지·API·레이아웃. `npm run dev` / `next build`의 진입점. |
-| **packages/** | 워크스페이스 패키지 | `package.json`의 `workspaces: ["packages/*"]`로 링크. 예: `packages/agent-electron` (Electron 앱). |
-
-그 외 **agent/**(Node PC Agent), **components/**, **lib/**, **hooks/**, **scripts/**, **supabase/**, **docs/** 등은 루트에 두고, Next 빌드·실행은 **app/** 및 이 루트 디렉터리들을 함께 사용합니다.
-
----
-
 ## 1. 프로젝트 루트
 
 ```
 doai.me/
-├── app/                      # (앱 루트) Next.js App Router
-├── packages/                 # (패키지 루트) workspaces (예: agent-electron)
-├── components/               # 웹 공용 컴포넌트
-├── lib/                      # 웹 공용 라이브러리
-├── hooks/
+├── README.md
+├── ARCHITECTURE.md           # Single Source of Truth
+├── docs/                     # 문서
+│   ├── ENV.md
+│   └── FOLDER_STRUCTURE.md
+├── app/                      # Next.js App Router
+├── components/
+├── lib/
 ├── agent/                    # Node PC Agent (별도 배포)
-├── scripts/
+├── scripts/                  # Xiaowei AutoJS 스크립트
 ├── supabase/
-│   └── migrations/
-├── docs/
+│   └── migrations/          # DB 스키마
+├── .env.example              # 웹 환경변수 템플릿
 ├── .cursor/
-├── package.json              # workspaces: ["packages/*"]
+│   └── rules/               # Cursor AI 규칙
+├── package.json
 ├── next.config.js
 └── tailwind.config.ts
 ```

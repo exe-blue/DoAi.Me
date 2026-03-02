@@ -18,6 +18,7 @@ coverage/
 # Electron (agent-electron build outputs)
 dist-electron/
 release/
+apps/desktop/node-bundle/
 
 # Windows metadata
 *.Zone.Identifier
@@ -52,7 +53,14 @@ __pycache__/
 *.so
 *.egg-info/
 dist/
+!apps/desktop/dist/
+!apps/desktop/dist/.gitkeep
+# Ignore versioned build artifacts (exe, etc.); managed via GitHub Releases
+apps/desktop/dist/*
+!apps/desktop/dist/.gitkeep
 build/
+!build/
+!build/installer.nsh
 *.egg
 venv/
 *.db
@@ -99,10 +107,12 @@ yarn-error.log*
 .env.sentry-build-plugin
 _archive/migration-scripts/update_agent_v3.sh
 apps/web/.next/
-apps/desktop/release/
-apps/desktop/dist-electron/
+release/
 agent/logs/
+src/agent/logs/
 agent/farm_logs/
 agent/.script-cache/
 agent/cache/
 .env*.local
+supabase/.temp/
+**/supabase/.temp/

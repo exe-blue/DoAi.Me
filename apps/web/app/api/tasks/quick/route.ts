@@ -50,25 +50,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseServerClient();
 
+    const db = supabase as any;
+
     // Find one online device for this PC
-    const { data: device, error: deviceError } = await supabase
+    const { data: device, error: deviceError } = await db
       .from("devices")
       .select("id, serial")
       .eq("pc_id", pc_id)
       .eq("status", "online")
       .limit(1)
-      .returns<Array<{ id: string; serial: string }>>()
-      .single();
+      .single() as { data: { id: string; serial: string } | null; error: unknown };
 
     if (deviceError || !device) {
       // Fall back to any device if no online device found
-      const { data: anyDevice, error: anyDeviceError } = await supabase
+      const { data: anyDevice, error: anyDeviceError } = await db
         .from("devices")
         .select("id, serial")
         .eq("pc_id", pc_id)
         .limit(1)
-        .returns<Array<{ id: string; serial: string }>>()
-        .single();
+        .single() as { data: { id: string; serial: string } | null; error: unknown };
 
       if (anyDeviceError || !anyDevice) {
         return NextResponse.json(

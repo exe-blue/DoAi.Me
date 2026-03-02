@@ -1,125 +1,137 @@
-# DoAi.Me — CLAUDE.md
+# CLAUDE.md
 
-YouTube device farm management platform. Controls 500 Galaxy S9 phones across 5 Windows Node PCs via Xiaowei WebSocket API, orchestrated through a Next.js + Supabase serverless backend.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Tech Stack
+## Monorepo Structure
 
-- **Frontend**: Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS, shadcn/ui
-- **State**: Zustand 5, Supabase Realtime (Broadcast)
-- **Backend**: Vercel serverless API Routes, Supabase PostgreSQL
-- **Agent**: Node.js CommonJS (runs on Windows PCs), connects to Xiaowei WebSocket `ws://127.0.0.1:22222/`
-- **Validation**: Zod
-- **Tests**: Vitest (unit), `tests/e2e-local.js` (E2E)
+pnpm workspaces + Turborepo. Three deployable apps and two shared packages:
+
+| App | Path | Purpose |
+|-----|------|---------|
+| `@doai/web` | `apps/web/` | Next.js 15 dashboard (Vercel) |
+| `@doai/desktop` | `apps/desktop/` | Electron agent controller (Windows .exe) |
+| Legacy agent | `agent/` | Root-level Node.js CommonJS agent (Windows PCs) |
+
+| Package | Path | Purpose |
+|---------|------|---------|
+| `@doai/shared` | `packages/shared/` | Shared TypeScript types and guards |
+| `@doai/supabase` | `packages/supabase/` | Shared Supabase DB types |
+| `@doai/typescript-config` | `packages/config/typescript/` | Shared TS compiler configs |
 
 ## Commands
 
+All commands from the repo root unless noted.
+
 ```bash
-npm run dev          # Next.js dev server
-npm run build        # Production build
-npm run lint         # ESLint
-npm run test         # Vitest unit tests
-npm run test:e2e     # E2E tests (requires running server)
-npm run test:api     # API tests
-npm run agent:dev    # Run agent in dev mode (from agent/)
-npm run agent:start  # Run agent in production mode
-npm run db:link      # Link Supabase project
-npm run db:verify    # Verify DB schema
+# Development
+pnpm run dev                          # all apps via Turborepo
+pnpm --filter @doai/web run dev       # web only (port 3000)
+pnpm --filter @doai/desktop run dev   # Electron dev mode
+
+# Build & type-check
+pnpm run build                        # all apps
+pnpm run typecheck                    # all apps
+pnpm --filter @doai/web run typecheck
+
+# Lint
+pnpm run lint
+
+# Unit tests (Vitest, mocks all Supabase — no external services needed)
+pnpm run test                         # all workspaces
+pnpm --filter @doai/web run test      # web only
+
+# E2E (requires running Agent + Xiaowei on ws://localhost:22222 + seeded DB)
+pnpm --filter @doai/web run test:e2e
+
+# Desktop Windows installer
+pnpm run dist                         # builds win NSIS .exe → apps/desktop/release/
+
+# Legacy agent
+cd agent && npm install && npm start  # production
+cd agent && npm run dev               # tsc --watch
 ```
 
-## Project Structure
+## Web App (`apps/web`)
+
+**Source layout** — Next.js App Router pages/API live in `apps/web/app/`; everything else (components, hooks, lib) lives in `apps/web/src/`:
 
 ```
-app/api/          # 19 serverless API routes
-agent/            # Node.js agent (runs on Windows PCs)
-components/       # React UI components (shadcn/ui based)
-hooks/            # Zustand stores + Realtime hooks (use-*-store.ts)
-lib/
-  supabase/       # server.ts (SERVICE_ROLE), client.ts (anon), types.ts
-  db/             # Server-side query helpers (channels, videos, tasks, schedules)
-  mappers.ts      # DB Row → Frontend Type conversions
-  types.ts        # Frontend types (Device, NodePC, Task, etc.)
-supabase/migrations/  # SQL migrations (may not match actual DB — see below)
-scripts/          # Xiaowei AutoJS scripts
+apps/web/
+├── app/
+│   ├── api/          # 60+ API route handlers
+│   ├── (app)/        # authenticated route group
+│   └── layout.tsx / page.tsx
+└── src/
+    ├── components/   # UI components (shadcn/ui + custom)
+    ├── lib/
+    │   ├── supabase/ # clients + generated types
+    │   ├── db/       # server-side query helpers (channels, videos, tasks, schedules)
+    │   ├── types.ts  # frontend types (Device, NodePC, TaskVariables…)
+    │   ├── mappers.ts
+    │   └── pipeline.ts / dispatch-queue-runner.ts / sync-channels-runner.ts
+    └── services/     # youtubeService, operationsService, eventsService
 ```
 
-## Critical Patterns
+**Path alias**: `@/*` maps to `apps/web/src/*` (via `tsconfig.json` paths). Use `@/lib/…`, `@/components/…` etc. The `app/` directory (API routes, pages) is not under `src/`, so it does not go through the `@` alias — use relative imports or `baseUrl`-relative paths for cross-directory references.
 
-### Supabase Queries
-- **Always use `.returns<T>()`** on ALL Supabase queries — generic type inference fails without it
-- Every table in the `Database` interface MUST have `Relationships: []` (even empty) or client types break
-- Server client (`lib/supabase/server.ts`) uses `SUPABASE_SERVICE_ROLE_KEY`
-- Browser client (`lib/supabase/client.ts`) uses the anon key
+## Desktop App (`apps/desktop`)
 
-### Next.js 15 Dynamic Routes
-- Dynamic route handlers need `params: Promise<{id: string}>` and `await params`
+Electron 33 app — renders a local React + MUI UI (not shadcn/ui) in the renderer process. The Node.js agent (`src/agent/`) is bundled as `extraResources` and spawned by `src/main/agentRunner.ts`. Windows-only NSIS build; no mac/linux targets.
 
-### Type System
-- `lib/types.ts` — frontend types used in components
-- `lib/supabase/types.ts` — DB row types used in API routes and stores
-- Zustand stores in `hooks/use-*-store.ts` map DB rows → frontend types internally
+## Supabase Patterns (Critical)
 
-## Database Gotchas
+**Client selection**:
 
-- **Actual DB uses enums** (not strings):
-  - `task_type`: `preset | adb | direct | batch | youtube`
-  - `task_status`: `pending | assigned | running | done | failed | cancelled | timeout | completed`
-  - `log_level`: `debug | info | warn | error | fatal`
-- **`task_logs` uses `level` NOT `status`** — agent maps success→info, error→error
-- **Migration files ≠ actual DB**: Migrations are recorded as applied but real schema may differ. Do not trust migration files as ground truth.
-- **`broadcast_to_channel()` trigger**: Uses `net.http_post` via pg_net. Must wrap in `BEGIN/EXCEPTION` to avoid blocking inserts on HTTP failure.
-- **Supabase project ref**: `dpjtucajnnqvtdwcqlha`
-- **Supabase CLI auth**: Use `SUPABASE_ACCESS_TOKEN` env var (non-TTY)
+| Context | Function | File |
+|---------|----------|------|
+| API routes (admin, bypasses RLS) | `createServiceRoleClient()` / `getServerClient()` | `src/lib/supabase/server.ts` |
+| Server Components with auth session | `createServerClientWithCookies()` | `src/lib/supabase/server.ts` |
+| Browser / Client Components | `createBrowserClient()` | `src/lib/supabase/client.ts` |
 
-## Agent Architecture
+> **Note**: `src/lib/supabase/client.ts` is the canonical browser client — it returns `null` gracefully when env vars are missing. `browser.ts` is a legacy version that throws; prefer `client.ts` for all new code.
 
-The agent (`agent/`) runs on each Windows PC and:
-1. Connects to Supabase Realtime to receive task assignments
-2. Forwards commands to Xiaowei WebSocket (`ws://127.0.0.1:22222/`)
-3. Reports results back to Supabase
-
-Key modules:
-- `agent.js` — main orchestrator
-- `xiaowei-client.js` — WebSocket client with auto-reconnect
-- `supabase-sync.js` — worker/device registration and task sync
-- `heartbeat.js` — 30s device status sync
-- `task-executor.js` — task type dispatch
-- `device-orchestrator.js` — claim-based device assignment flow
-
-## Env Vars
-
+**Types**: `src/lib/supabase/database.types.ts` is auto-generated. Never edit it manually.
+Regenerate with:
+```bash
+npx supabase gen types typescript --project-id dpjtucajnnqvtdwcqlha > apps/web/src/lib/supabase/database.types.ts
 ```
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-YOUTUBE_API_KEY
-```
+`src/lib/supabase/types.ts` re-exports `Database` and provides convenience aliases (`WorkerRow`, `DeviceRow`, `TaskRow`, `TaskDeviceRow`, etc.) used across the codebase.
 
-## API Routes Reference
+**Query rule**: Always call `.returns<T>()` on Supabase queries — generic type inference fails without it.
 
-| Route | Methods | Purpose |
-|-------|---------|---------|
-| `/api/workers` | GET | List workers with device counts |
-| `/api/workers/[id]` | GET | Worker + devices |
-| `/api/workers/heartbeat` | POST | Agent heartbeat |
-| `/api/devices` | GET | List devices (filter by worker_id/status) |
-| `/api/devices/[id]` | GET, PUT | Device detail/update |
-| `/api/accounts` | GET, POST | YouTube accounts |
-| `/api/presets` | GET, POST | Xiaowei presets |
-| `/api/presets/[id]` | GET, PUT, DELETE | Preset CRUD |
-| `/api/tasks` | GET, POST, PATCH, DELETE | Task queue |
-| `/api/channels` | GET | Channels + videos |
-| `/api/schedules` | GET, POST, PATCH, DELETE | Auto-scheduling |
-| `/api/youtube/channels` | GET, POST | Channel management |
-| `/api/youtube/videos` | GET | Recent videos |
-| `/api/youtube/sync` | GET | Sync all channels |
-| `/api/stats` | GET | Dashboard aggregations |
-| `/api/logs` | GET | Paginated task logs |
-| `/api/health` | GET | Health check |
+## DB Execution Model (SSOT)
 
-## Realtime Channels
+The real execution primitive is **`task_devices`**, not `tasks`. Tasks are logical groupings; `task_devices` rows are what the agent claims and runs (one row = one device execution).
 
-- `room:tasks` — task INSERT/UPDATE/DELETE broadcasts
-- `room:task:<id>:logs` — per-task log stream
-- `room:task_logs` — global log monitoring
+State transitions happen only through these RPCs:
+- `claim_task_devices_for_pc(runner_pc_id, max_to_claim, lease_minutes)` — queued → running
+- `renew_task_device_lease(task_device_id, runner_pc_id, lease_minutes)` — extend lease (every 30s)
+- `complete_task_device(task_device_id, runner_pc_id, result_json)` — running → completed
+- `fail_or_retry_task_device(task_device_id, runner_pc_id, error_text, retryable)` — retry or failed
 
-Broadcast is driven by DB triggers via `pg_net` HTTP calls to Supabase Realtime API.
+**Script execution rules** (enforced by code and DB):
+1. Always pin `(scriptId, version)` / `(workflowId, version)` — no "latest" auto-selection
+2. Publish creates a snapshot in `task_devices.config.snapshot` — agent uses this, not the live DB script
+3. `scripts.status = 'active'` is required; draft/archived scripts are rejected at publish and execution time
+
+## Environment Variables
+
+Web (`.env.local` in `apps/web/`):
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — browser client
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only, never exposed to browser
+- `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY` — Supabase SDK keys
+- `SUPABASE_ACCESS_TOKEN` — Supabase CLI / MCP personal access token
+- `YOUTUBE_API_KEY`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`
+
+Agent (`.env` in `agent/` or `apps/desktop/src/agent/`):
+- `WORKER_NAME`, `PC_NUMBER` — agent identity
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — note: agent uses `SUPABASE_URL`, not `NEXT_PUBLIC_SUPABASE_URL`
+- `XIAOWEI_WS_URL`, `HEARTBEAT_INTERVAL`, `TASK_POLL_INTERVAL`, `MAX_CONCURRENT_TASKS`
+
+## Key Architectural Decisions
+
+- **Device control**: Xiaowei WebSocket API at `ws://127.0.0.1:22222/` (Windows-only). The agent on each Node PC connects to this and relays commands from Supabase.
+- **Realtime**: Supabase Broadcast via DB triggers (`pg_net` HTTP post). Topics: `room:tasks`, `room:task:<id>:logs`, `room:task_logs`, `room:workers`, `room:devices`.
+- **Proxy 1:1**: `devices.proxy_id` and `proxies.device_id` are both UNIQUE — one proxy per device enforced at DB level.
+- **`devices.connection_id`**: Xiaowei target identifier. Agent resolves `connection_id ?? serial` when sending commands.
+- **Migration files ≠ actual DB**: `supabase/migrations/` was the starting point but the production schema has evolved. Regenerate types from the live project (`dpjtucajnnqvtdwcqlha`) rather than inferring from migration files.

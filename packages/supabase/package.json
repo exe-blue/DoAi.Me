@@ -1,0 +1,22 @@
+{
+  "name": "@doai/supabase",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "@supabase/ssr": "^0.8.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@doai/typescript-config": "file:../config/typescript",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0"
+  }
+}

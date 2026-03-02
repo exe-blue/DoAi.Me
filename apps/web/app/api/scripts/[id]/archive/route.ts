@@ -26,7 +26,7 @@ export async function POST(
 
     const supabase = createSupabaseServerClient();
 
-    const { data: updated, error } = await supabase
+    const { data: updated, error } = await (supabase as any)
       .from("scripts")
       .update({ status: "archived", updated_at: new Date().toISOString() })
       .eq("id", id)

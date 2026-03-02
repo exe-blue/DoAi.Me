@@ -20,7 +20,7 @@ export async function POST() {
 
     const result = await runSyncChannels();
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
+      return NextResponse.json({ error: (result as { ok: false; error: string }).error }, { status: 500 });
     }
     return NextResponse.json(result);
   } catch (error) {

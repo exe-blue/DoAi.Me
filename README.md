@@ -8,28 +8,25 @@ YouTube 자동 시청 파밍 시스템. 500대 물리 디바이스를 5대의 No
 
 ## 프로젝트 구조 (모노레포)
 
-- **앱 루트**: Next.js 웹앱 — `app/`, `components/`, `lib/`, `hooks/` 등. `npm run dev` / `next build` 진입점.
-- **패키지 루트**: `packages/` — `package.json`의 `workspaces: ["packages/*"]` (예: `packages/agent-electron`).
-
 ```
 doai.me/
-├── app/                     # Next.js App Router
-│   ├── api/                 # API Routes (19개)
-│   ├── dashboard/           # 대시보드 페이지
-│   └── layout.tsx
-├── packages/                 # 워크스페이스 (예: agent-electron)
-├── components/              # shadcn/ui + 도메인 컴포넌트
-├── hooks/                   # Zustand 스토어 + Realtime 훅
-├── lib/                     # supabase, db, types, schemas
-├── agent/                   # Node PC Agent (CommonJS, 각 PC에서 실행)
-│   ├── agent.js
-│   ├── xiaowei-client.js
-│   ├── supabase-sync.js
-│   └── package.json
+├── apps/
+│   └── web/                 # Next.js 대시보드 (웹 앱 루트)
+│       ├── app/             # App Router (api/, (app)/ 등)
+│       ├── src/             # components, hooks, lib, types
+│       ├── public/
+│       ├── next.config.js
+│       ├── package.json     # @doai/web
+│       └── vercel.json      # Cron 등
+├── packages/                # shared, supabase, ui
+├── agent/                   # Node PC Agent (각 PC에서 실행)
 ├── tests/
-├── supabase/migrations/
-└── package.json             # workspaces: ["packages/*"]
+├── supabase/
+├── pnpm-workspace.yaml
+└── package.json             # 루트: pnpm --filter @doai/web dev/build
 ```
+
+**Vercel 배포**: 프로젝트 설정에서 Root Directory를 `apps/web`으로 지정하세요.
 
 ## 로컬 실행
 
@@ -46,11 +43,11 @@ npm run db:verify
 ### 2. Dashboard (Next.js)
 
 ```bash
-cp .env.example .env.local
-# .env.local 에 Supabase URL, Keys, YouTube API Key 설정
+cp apps/web/.env.example apps/web/.env.local
+# apps/web/.env.local 에 Supabase URL, Keys, YouTube API Key 설정
 
-npm install
-npm run dev          # http://localhost:3000
+pnpm install
+pnpm run dev         # http://localhost:3000
 ```
 
 ### 3. Agent (Node PC)
@@ -81,7 +78,7 @@ npm run dev          # tsc --watch (개발용)
 node tests/seed-channels.js
 
 # E2E 테스트 실행
-npm run test:e2e
+pnpm run test:e2e
 
 # 클린업 없이 실행 (디버깅용)
 node tests/e2e-local.js --no-cleanup

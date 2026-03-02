@@ -37,6 +37,7 @@ Agent 및 서버 플로우를 5개 레이어와 전역설정, 파이프라인 �
 
 - **요구**: task → task_devices 전환은 Supabase(DB 트리거 또는 Edge Function)에서 등록 디바이스 수 N만큼 생성. tasks는 동시 1개만 유지.
 - **구현**: runDispatchQueue에서 task 1건 생성 후, DB 트리거(또는 Edge Function)가 devices 테이블 조회해 task_devices N건 insert. config는 task.payload, task.video_id 등 기반.
+- **보장 규칙**: 앱 레이어(createBatchTask/createManualTask/createTaskWithTaskDevices)는 task_devices를 직접 insert하지 않고, 서버 트리거만 사용.
 
 ---
 
@@ -58,6 +59,7 @@ Agent 및 서버 플로우를 5개 레이어와 전역설정, 파이프라인 �
 
 1. **모든 디바이스 제어는 xiaowei 경유(adb, js)** — agent는 xiaowei만 사용.
 2. **모든 이벤트는 시간순 오래된 것 우선** — task_queue dequeue, task_devices claim 시 created_at ASC.
+   동일 시점(같은 created_at/discovered_run_id)은 `order_key`(제목 정규화)로 가나다 순 처리.
 3. **영상 최소 시청 20%, 최대 시청 95%** — lib/pipeline.ts DEFAULT_VARIABLES 및 _buildDeviceConfig 기본값.
 
 ---

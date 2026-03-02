@@ -1,104 +1,100 @@
 /**
- * Assumption-only types for dashboard UI. No DB/schema guarantee.
- * Real data shape is behind service adapters (existing API or stub+TODO).
+ * Service-layer assumption types.
+ * Field names are assumptions; API/DB may differ. See DASHBOARD_ASSUMPTIONS_AND_TODOS.md.
  */
 
-export interface OperationsKpi {
+// --- Operations ---
+export interface WorkerSummary {
+  id: string;
+  pc_number: string;
+  hostname?: string;
+  status: string;
+  last_heartbeat: string | null;
+  device_count: number;
+  online_count: number;
+  max_devices?: number;
+}
+
+export interface DeviceSummary {
+  id: string;
+  serial_number?: string;
+  serial?: string;
+  connection_id?: string;
+  status: string;
+  worker_id?: string;
+  nickname?: string | null;
+  last_seen?: string | null;
+}
+
+/** Assumption: KPI fields not all from current API; some stub. */
+export interface OperationsKpis {
   onlineDevices: number;
   warningDevices: number;
-  /** Device status=error (eligible 제외, FAILED_FINAL 추론 가능 시) */
-  errorDevices: number;
-  lastHeartbeatAt: string | null;
+  /** Assumption: last heartbeat time (e.g. most recent across workers). */
+  lastHeartbeatTime: string | null;
+  /** Assumption: recent success count. TODO: API 없음 → stub. */
   recentSuccessCount: number;
+  /** Assumption: recent failure count. TODO: API 없음 → stub. */
   recentFailureCount: number;
 }
 
+/** Assumption: alert types. TODO: API 없음 → stub. */
 export interface OperationsAlert {
   id: string;
-  type: string;
+  type: "heartbeat_mismatch" | "unauthorized" | "recent_failures";
   message: string;
+  severity: "warning" | "error";
   at: string;
-  severity: "info" | "warning" | "error";
 }
 
-export interface OperationsDeviceSummary {
-  id: string;
-  pcNumber?: string;
-  serial?: string;
-  ip?: string;
-  status: string;
-  lastHeartbeat?: string | null;
-}
-
-export interface YoutubeChannel {
+// --- YouTube ---
+export interface ChannelSummary {
   id: string;
   name: string;
   handle?: string | null;
-  lastCollectedAt?: string | null;
-  status?: string | null;
-  isMonitored?: boolean;
-  videoCount?: number;
+  profile_url?: string | null;
+  thumbnail_url?: string | null;
+  subscriber_count?: string | number;
+  video_count?: number;
+  is_monitored?: boolean;
+  /** Assumption: last collected at. Use if API provides. */
+  last_collected_at?: string | null;
+  /** Assumption: collection status. TODO: 없으면 stub. */
+  collection_status?: string;
 }
 
-export interface YoutubeContent {
+export interface ContentSummary {
   id: string;
-  title: string;
-  channelId: string;
-  channelName?: string;
+  title?: string;
+  channel_id?: string;
+  channel_name?: string;
+  thumbnail_url?: string | null;
+  duration_sec?: number;
   status?: string;
-  thumbnailUrl?: string | null;
+  /** Assumption: watch/collect related. */
+  watch_duration_sec?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
-/** Catalog event types (spec). Anything else is Unknown. */
-export const EVENT_TYPES = [
-  "heartbeat",
-  "inventory",
-  "diff",
-  "sync",
-  "anomaly",
-  "unknown",
-] as const;
-export type EventType = (typeof EVENT_TYPES)[number];
-
-export interface EventLogItem {
-  id: string;
+// --- Events / Logs ---
+export interface EventLogEntry {
+  id?: string;
+  task_id?: string;
+  device_serial?: string;
   level: string;
   message: string;
   created_at: string;
-  task_id?: string | null;
-  device_serial?: string | null;
+  /** Assumption: raw payload for detail view. */
   raw?: Record<string, unknown>;
-  /** Resolved from raw or message; "unknown" if undefined. */
-  eventType: EventType | "unknown";
-  /** True if eventType is unknown or payload is non-standard. */
-  isUndefined: boolean;
 }
 
-export interface SettingsItem {
-  key: string;
-  value: unknown;
-  description?: string | null;
-  updated_at?: string | null;
-}
-
-/** PC별 슬롯 요약 (ops-queue-spec). 기존 API 없으면 stub+TODO. */
-export interface QueueSlotSummary {
-  pcId: string;
-  pcNumber: string;
-  runningCount: number;
-  target: number;
-  gap: number;
-}
-
-/** TIMEOUT/FAILED_FINAL 카운트 (최근 N분). 기존 API 없으면 stub+TODO. */
-export interface TimeoutFailedCounts {
-  timeoutCount: number;
-  failedFinalCount: number;
-  sinceMinutes: number;
-}
-
-/** Active task는 1개만 (tasks.status=running). */
-export interface ActiveTaskSummary {
-  activeCount: number;
-  expectedMax: 1;
+export interface EventLogDetail {
+  id: string;
+  task_id?: string;
+  device_serial?: string;
+  level: string;
+  message: string;
+  created_at: string;
+  raw: Record<string, unknown>;
 }

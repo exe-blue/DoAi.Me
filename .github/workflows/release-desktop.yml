@@ -1,0 +1,87 @@
+name: Release Desktop (Electron)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Desktop smoke test
+        run: pnpm --filter @doai/desktop run test
+
+      - name: Build desktop (tsc + vite)
+        run: pnpm --filter @doai/desktop run build
+
+      - name: Download Node win x64 for bundle
+        run: node apps/desktop/scripts/download-node-win.js
+
+      - name: Install agent dependencies
+        run: npm --prefix apps/desktop/src/agent install --omit=dev
+
+      - name: Package desktop (electron-builder)
+        run: pnpm --filter @doai/desktop exec electron-builder --win
+
+      - name: Verify installer artifact
+        run: |
+          $exes = Get-ChildItem -Path apps/desktop/release -Filter *.exe -ErrorAction SilentlyContinue
+          if (-not $exes -or $exes.Count -eq 0) {
+            Write-Error "No .exe found in apps/desktop/release. Build may have failed."
+            exit 1
+          }
+          Get-ChildItem apps/desktop/release | ForEach-Object { Write-Host $_.Name }
+
+      - name: Create latest.yml for electron-updater
+        run: |
+          $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
+          $exe = Get-ChildItem apps/desktop/release/*.exe | Where-Object { $_.Name -match 'Setup' } | Select-Object -First 1
+          if (-not $exe) { $exe = Get-ChildItem apps/desktop/release/*.exe | Select-Object -First 1 }
+          if ($exe) {
+            $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA512).Hash
+            $date = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
+            "version: $version`npath: $($exe.Name)`nsha512: $hash`nreleaseDate: $date" | Out-File -FilePath apps/desktop/release/latest.yml -Encoding utf8
+          }
+
+      - name: Copy to versioned dist folder
+        run: |
+          $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
+          $distVersion = "apps/desktop/dist/$version"
+          New-Item -ItemType Directory -Force -Path $distVersion | Out-Null
+          Copy-Item -Path apps/desktop/release/*.exe -Destination $distVersion -Force
+          if (Test-Path apps/desktop/release/latest.yml) {
+            Copy-Item -Path apps/desktop/release/latest.yml -Destination $distVersion -Force
+          }
+          Get-ChildItem $distVersion | ForEach-Object { Write-Host "dist/$version/$($_.Name)" }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Desktop ${{ github.ref_name }}
+          body: |
+            Windows installer (doaime). Internal use only.
+            Download the `.exe` and run to install.
+          prerelease: false
+          files: |
+            apps/desktop/dist/*/*.exe
+            apps/desktop/dist/*/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

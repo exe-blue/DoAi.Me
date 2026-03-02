@@ -132,7 +132,7 @@ doai.me/
 
 - **Agent directory**: Has its own `package.json` and dependencies. Run `npm install` in both root and `agent/` directories.
 - **Workspaces**: `packages/*` are defined in root `package.json` but currently empty stubs.
-- **Monorepo**: Root holds the Next.js app (app/, components/, lib/, hooks/); `packages/` holds workspace packages (e.g. agent-electron).
+- **Legacy code**: `app_legacy/` is archived and excluded from TypeScript compilation.
 - **TypeScript**: Root uses TypeScript; agent uses CommonJS JavaScript (no build step needed).
 
 ---

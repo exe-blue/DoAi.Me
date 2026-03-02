@@ -1,35 +1,52 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".next/**",
-        "!.next/cache/**",
-        "dist/**",
-        "dist-electron/**",
-        "release/**"
-      ]
-    },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": {},
+    "build": {
+      "dependsOn": ["^build", "typecheck"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "dist-electron/**", "release/**"],
+      "env": [
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_URL",
+        "YOUTUBE_API_KEY",
+        "SENTRY_ORG",
+        "SENTRY_PROJECT",
+        "SENTRY_AUTH_TOKEN",
+        "NEXT_PUBLIC_*"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": [],
+      "env": [
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_URL",
+        "YOUTUBE_API_KEY",
+        "SENTRY_ORG",
+        "SENTRY_PROJECT"
+      ]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": [],
+      "env": []
+    },
     "test": {
-      "cache": false,
-      "outputs": []
+      "outputs": [],
+      "env": []
     },
     "dist": {
-      "dependsOn": [
-        "build"
-      ],
-      "outputs": [
-        "release/**"
-      ],
-      "cache": false
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["release/**"],
+      "env": []
     }
   }
 }

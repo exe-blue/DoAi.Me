@@ -1,0 +1,3 @@
+src/agent/node_modules/
+src/agent/.env
+src/agent/.env.*

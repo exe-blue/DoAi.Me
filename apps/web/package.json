@@ -1,5 +1,5 @@
 {
-  "name": "@doai/dashboard",
+  "name": "@doai/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,14 +8,20 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "node ../../tests/e2e-local.js",
+    "test:e2e:watch": "node ../../tests/e2e-youtube-watch.js",
+    "test:api": "node ../../tests/run-api-tests.js",
+    "clean": "rm -rf .next",
+    "clean:cache": "rm -rf .next/cache",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@emotion/react": "^11.13.3",
-    "@emotion/styled": "^11.13.0",
-    "@mui/icons-material": "^6.2.0",
-    "@mui/material": "^6.2.0",
-    "@doai/shared": "workspace:*",
+    "@emotion/cache": "^11.13.5",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.3.0",
+    "@mui/material": "^6.3.0",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-avatar": "^1.1.2",
     "@radix-ui/react-checkbox": "^1.1.3",

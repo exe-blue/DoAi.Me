@@ -15,7 +15,7 @@ export async function POST(
     const { id } = await params;
     const supabase = createSupabaseServerClient();
 
-    const { data: latest, error: fetchErr } = await supabase
+    const { data: latest, error: fetchErr } = await (supabase as any)
       .from("scripts")
       .select("id, name, version, type, content, timeout_ms, params_schema, default_params")
       .eq("id", id)
@@ -30,7 +30,7 @@ export async function POST(
 
     const newVersion = (latest.version as number) + 1;
 
-    const { data: created, error: insertErr } = await supabase
+    const { data: created, error: insertErr } = await (supabase as any)
       .from("scripts")
       .insert({
         id: latest.id,

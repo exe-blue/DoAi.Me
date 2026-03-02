@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerClient } from "@/lib/supabase/server";
 import {
   buildConfigFromWorkflow,
@@ -87,7 +87,7 @@ function getVideoIdFromConfig(
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
     const body = await request.json();
 
     if (!body.task_config || typeof body.task_config !== "object") {
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = getServerClient();
     const { ids } = await request.json();
 
     if (!Array.isArray(ids) || ids.length === 0) {

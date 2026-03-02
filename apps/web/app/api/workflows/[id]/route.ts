@@ -38,7 +38,7 @@ export async function GET(
           { status: 400 }
         );
       }
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("workflows")
         .select("*")
         .eq("id", id)
@@ -55,7 +55,7 @@ export async function GET(
       return NextResponse.json(data);
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("workflows")
       .select("*")
       .eq("id", id)
@@ -113,8 +113,9 @@ export async function PATCH(
     if (body.steps !== undefined) {
       const validation = validateWorkflowSteps(body.steps);
       if (!validation.ok) {
+        const ve = validation as { ok: false; error: string; path?: string };
         return NextResponse.json(
-          { error: validation.error, path: validation.path },
+          { error: ve.error, path: ve.path },
           { status: 400 }
         );
       }
@@ -125,7 +126,7 @@ export async function PATCH(
     if (body.is_active !== undefined) updates.is_active = Boolean(body.is_active);
 
     const supabase = createSupabaseServerClient();
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("workflows")
       .update(updates)
       .eq("id", id)

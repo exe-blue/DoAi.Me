@@ -1,137 +1,97 @@
-/**
- * Events / logs. Uses existing GET /api/logs and GET /api/dashboard/errors.
- * No new endpoints; assumption types only. Unknown/Undefined handled per undefined-registry.md.
- */
 import { apiClient } from "@/lib/api";
-import type { EventLogItem, EventType } from "./types";
-import { EVENT_TYPES } from "./types";
+import type { EventLogEntry, EventLogDetail } from "./types";
 
-const LOGS_URL = "/api/logs";
-const ERRORS_URL = "/api/dashboard/errors";
+/** GET /api/logs returns { logs: [...] }. */
+interface LogsApiResponse {
+  logs?: Array<Record<string, unknown>>;
+}
 
-const CATALOG_SET = new Set<string>(EVENT_TYPES);
+/** GET /api/dashboard/errors returns okList: { ok, data, page, pageSize, total }. */
+interface ErrorsApiResponse {
+  data?: Array<{ type?: string; count?: number; severity?: string; lastOccurred?: string }>;
+  total?: number;
+}
 
-export interface EventsFilters {
+function mapLogRow(row: Record<string, unknown>): EventLogEntry {
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    task_id: row.task_id != null ? String(row.task_id) : undefined,
+    device_serial: row.device_serial != null ? String(row.device_serial) : undefined,
+    level: String(row.level ?? "info"),
+    message: String(row.message ?? ""),
+    created_at: String(row.created_at ?? ""),
+    raw: row as Record<string, unknown>,
+  };
+}
+
+export async function getLogs(params?: {
   task_id?: string;
   device_id?: string;
   level?: string;
-  search?: string;
-  before?: string;
   limit?: number;
-  /** Event type filter (client-side if API does not support). */
-  eventType?: EventType | "";
-  /** Include events with unknown type / non-standard payload. Default true. */
-  includeUndefined?: boolean;
-  /** Start of time range (client-side filter). */
-  timeStart?: string;
-  /** End of time range (client-side filter). */
-  timeEnd?: string;
+  search?: string;
+}): Promise<EventLogEntry[]> {
+  const search = new URLSearchParams();
+  if (params?.task_id) search.set("task_id", params.task_id);
+  if (params?.device_id) search.set("device_id", params.device_id);
+  if (params?.level) search.set("level", params.level);
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.search) search.set("search", params.search);
+  const qs = search.toString();
+  const url = qs ? `/api/logs?${qs}` : "/api/logs";
+  const res = await apiClient.get<LogsApiResponse>(url, { silent: true });
+  if (!res.success) return [];
+  const logs = (res.data as LogsApiResponse)?.logs ?? [];
+  return (logs as Record<string, unknown>[]).map(mapLogRow);
 }
 
-function inferEventType(row: Record<string, unknown>): EventType | "unknown" {
-  const rawType = row.event_type ?? row.eventType ?? row.type;
-  if (typeof rawType === "string" && CATALOG_SET.has(rawType)) {
-    return rawType as EventType;
-  }
-  const msg = (row.message ?? "") as string;
-  const m = msg.toLowerCase();
-  if (m.includes("heartbeat")) return "heartbeat";
-  if (m.includes("inventory")) return "inventory";
-  if (m.includes("diff")) return "diff";
-  if (m.includes("sync")) return "sync";
-  if (m.includes("anomaly")) return "anomaly";
-  return "unknown";
-}
-
-function isPayloadNonStandard(row: Record<string, unknown>): boolean {
-  return !row.message && !row.level && Object.keys(row).length <= 2;
-}
-
-/**
- * GET /api/logs — task_logs list. Maps to EventLogItem with eventType and isUndefined.
- * When API returns empty, returns stub + TODO (no new data creation).
- */
-export async function getEventLogs(filters: EventsFilters = {}): Promise<EventLogItem[]> {
-  const sp = new URLSearchParams();
-  if (filters.task_id) sp.set("task_id", filters.task_id);
-  if (filters.device_id) sp.set("device_id", filters.device_id);
-  if (filters.level) sp.set("level", filters.level);
-  if (filters.search) sp.set("search", filters.search);
-  if (filters.before) sp.set("before", filters.before);
-  if (filters.limit != null) sp.set("limit", String(filters.limit));
-
-  const res = await apiClient.get<{ logs?: unknown[] }>(`${LOGS_URL}?${sp}`);
-
-  let list: unknown[] = [];
-  if (res.success && res.data) {
-    list = (res.data as any).logs ?? (Array.isArray(res.data) ? res.data : []);
-  }
-
-  if (list.length === 0) {
-    // TODO: remove stub when /api/logs reliably returns data; do not create new data source.
-    list = [];
-  }
-
-  const includeUndefined = filters.includeUndefined !== false;
-  const timeStart = filters.timeStart ? new Date(filters.timeStart).getTime() : Number.NaN;
-  const timeEnd = filters.timeEnd ? new Date(filters.timeEnd).getTime() : Number.NaN;
-  const eventTypeFilter = filters.eventType?.trim() || null;
-
-  const mapped: EventLogItem[] = (list as any[]).map((row) => {
-    const eventType = inferEventType(row as Record<string, unknown>);
-    const payloadUndefined = isPayloadNonStandard(row as Record<string, unknown>);
-    const isUndefined = eventType === "unknown" || payloadUndefined;
-    return {
-      id: row.id ?? `${row.created_at}-${(row.message ?? "").toString().slice(0, 8)}`,
-      level: (row.level ?? "info") as string,
-      message: (row.message ?? "") as string,
-      created_at: (row.created_at ?? new Date().toISOString()) as string,
-      task_id: row.task_id ?? null,
-      device_serial: row.device_serial ?? null,
-      raw: row as Record<string, unknown>,
-      eventType,
-      isUndefined,
-    };
-  });
-
-  let out = mapped;
-  if (!includeUndefined) {
-    out = out.filter((e) => !e.isUndefined);
-  }
-  if (eventTypeFilter) {
-    out = out.filter((e) => e.eventType === eventTypeFilter);
-  }
-  if (!Number.isNaN(timeStart)) {
-    out = out.filter((e) => new Date(e.created_at).getTime() >= timeStart);
-  }
-  if (!Number.isNaN(timeEnd)) {
-    out = out.filter((e) => new Date(e.created_at).getTime() <= timeEnd);
-  }
-
-  return out;
-}
-
-/** GET /api/dashboard/errors — aggregated errors (type, count, lastOccurred). */
-export async function getErrorSummary(params: {
+export async function getErrors(params?: {
   hours?: number;
   level?: string;
   q?: string;
-}): Promise<{
-  items: Array<{ type: string; count: number; severity: string; lastOccurred: string }>;
-  total: number;
-}> {
-  const sp = new URLSearchParams();
-  if (params.hours != null) sp.set("hours", String(params.hours));
-  if (params.level) sp.set("level", params.level);
-  if (params.q) sp.set("q", params.q);
-  const res = await apiClient.get<{
-    data?: Array<{ type: string; count: number; severity: string; lastOccurred: string }>;
-    total?: number;
-  }>(`${ERRORS_URL}?${sp}`);
-  if (res.success && res.data) {
-    const data = (res.data as any).data ?? [];
-    const total = (res.data as any).total ?? data.length;
-    return { items: data, total };
-  }
-  return { items: [], total: 0 };
+  page?: number;
+  pageSize?: number;
+}): Promise<{ data: EventLogEntry[]; total: number }> {
+  const search = new URLSearchParams();
+  if (params?.hours != null) search.set("hours", String(params.hours));
+  if (params?.level) search.set("level", params.level);
+  if (params?.q) search.set("q", params.q);
+  if (params?.page != null) search.set("page", String(params.page));
+  if (params?.pageSize != null) search.set("pageSize", String(params.pageSize));
+  const qs = search.toString();
+  const url = qs ? `/api/dashboard/errors?${qs}` : "/api/dashboard/errors";
+  const res = await apiClient.get<ErrorsApiResponse>(url, { silent: true });
+  if (!res.success) return { data: [], total: 0 };
+  const body = res.data as { data?: Array<Record<string, unknown>>; total?: number } | undefined;
+  const data = body?.data ?? [];
+  const total = body?.total ?? data.length;
+  const mapped = data.map((row) =>
+    mapLogRow({
+      ...row,
+      message: row.type ?? row.message ?? "",
+      level: (row.severity as string) ?? "error",
+      created_at: row.lastOccurred ?? row.created_at,
+    })
+  );
+  return { data: mapped, total };
+}
+
+/**
+ * Single log entry detail. No single-log API → stub + TODO.
+ */
+export async function getLogDetail(id: string): Promise<EventLogDetail | null> {
+  // TODO: 단건 조회 API 없음 — stub. When API exists, call e.g. GET /api/logs?id=...
+  const logs = await getLogs({ limit: 1 });
+  const entry = logs.find((e) => e.id === id || e.task_id === id);
+  if (entry)
+    return {
+      id: entry.id ?? id,
+      task_id: entry.task_id,
+      device_serial: entry.device_serial,
+      level: entry.level,
+      message: entry.message,
+      created_at: entry.created_at,
+      raw: entry.raw ?? {},
+    };
+  return null;
 }

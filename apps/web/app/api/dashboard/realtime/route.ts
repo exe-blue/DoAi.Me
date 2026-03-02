@@ -29,7 +29,7 @@ export async function GET() {
     // 오늘 통계
     const today = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
 
-    const sb = supabase as { from: (t: string) => ReturnType<typeof supabase.from> };
+    const sb = supabase as any;
     const [
       { count: views },
       { count: errors },

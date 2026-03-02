@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["*.ts", "*.mts", "*.cts"],
+  "references": [
+    { "path": "./apps/web/tsconfig.json" },
+    { "path": "./apps/desktop/tsconfig.json" },
+    { "path": "./packages/shared/tsconfig.json" },
+    { "path": "./packages/supabase/tsconfig.json" }
+  ]
+}

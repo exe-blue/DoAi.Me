@@ -1,61 +1,17 @@
 {
   "name": "doai-me",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@10.29.3",
   "scripts": {
-    "dev": "concurrently -n web,desktop \"pnpm run dev:web\" \"pnpm run dev:desktop\"",
+    "dev": "turbo run dev",
     "build": "turbo run build",
-    "start": "pnpm --filter @doai/dashboard start",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:watch": "pnpm --filter @doai/dashboard test:watch",
-    "test:e2e": "node apps/web/tests/e2e-local.js",
-    "test:e2e:watch": "node apps/web/tests/e2e-youtube-watch.js",
-    "test:api": "node apps/web/tests/run-api-tests.js",
-    "agent:dev": "cd _archive/agent-legacy && npm run dev",
-    "agent:start": "cd _archive/agent-legacy && npm start",
-    "db:link": "npx supabase link --project-ref vyfxrplzhskncigyfkaz",
-    "db:push": "npx supabase db push",
-    "db:verify": "npx supabase db execute --file apps/web/supabase/verify_schema.sql",
-    "clean": "rm -rf apps/web/.next",
-    "clean:cache": "rm -rf apps/web/.next/cache",
-    "client:dev": "pnpm --filter @doai/client dev",
-    "client:build": "pnpm --filter @doai/client build",
-    "client:dist": "pnpm --filter @doai/client dist",
-    "desktop:build": "pnpm --filter @doai/client build",
-    "desktop:dist": "pnpm --filter @doai/client dist",
-    "register-channels": "node scripts/register-channels.mjs",
-    "deploy": "node scripts/deploy.mjs",
-    "health": "node scripts/pm2-health-check.mjs",
-    "rollback": "node scripts/rollback.mjs",
-    "dev:web": "pnpm --filter @doai/dashboard dev",
-    "dev:desktop": "pnpm --filter @doai/client dev",
-    "dev:all": "turbo run dev --filter=@doai/dashboard --filter=@doai/client"
-  },
-  "overrides": {
-    "tar": ">=7.5.8",
-    "glob": ">=11.1.0",
-    "minimatch": ">=10.2.1",
-    "cross-spawn": ">=7.0.5",
-    "brace-expansion": ">=2.0.2",
-    "diff": ">=5.2.2",
-    "serialize-javascript": ">=7.0.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "@electron/get",
-      "esbuild",
-      "sharp"
-    ]
+    "typecheck": "turbo run typecheck",
+    "dist": "pnpm --filter @doai/desktop dist"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "turbo": "^2.8.12"
+    "turbo": "^2.3.0"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/exe-blue/DoAi.Me.git"
-  }
+  "packageManager": "pnpm@10.29.3"
 }

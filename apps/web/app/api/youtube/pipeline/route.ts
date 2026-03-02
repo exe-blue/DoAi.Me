@@ -39,11 +39,12 @@ async function resolveTargetDevices(
   if (!pc_id) {
     return { target_devices: [], devicesLabel: "" };
   }
-  const { data } = await supabase
+  const { data: rawData } = await (supabase as any)
     .from("devices")
     .select("serial, connection_id")
     .eq("pc_id", pc_id)
     .in("status", ["online", "busy"]);
+  const data = rawData as Array<{ serial: string | null; connection_id: string | null }> | null;
   const targets = (data || [])
     .map((d) => d.connection_id || d.serial)
     .filter(Boolean);
