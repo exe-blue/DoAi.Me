@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import type { Json, VideoRow, TaskDeviceInsert } from "@/lib/supabase/types";
+import type { Json, VideoRow } from "@/lib/supabase/types";
 import type { TaskVariables } from "@/lib/types";
 
 const DEFAULT_VARIABLES: TaskVariables = {
@@ -49,55 +49,7 @@ export async function createManualTask(
     .update({ status: "processing", updated_at: new Date().toISOString() })
     .eq("id", videoId);
 
-  // Create task_devices for each device assigned to this worker
-  if (options.workerId) {
-    const { data: videoRow } = await supabase
-      .from("videos")
-      .select("id, title, duration_sec, watch_duration_min_pct, watch_duration_max_pct, prob_like, prob_comment")
-      .eq("id", videoId)
-      .returns<
-        Array<{
-          id: string;
-          title: string | null;
-          duration_sec: number | null;
-          watch_duration_min_pct: number | null;
-          watch_duration_max_pct: number | null;
-          prob_like: number | null;
-          prob_comment: number | null;
-        }>
-      >()
-      .maybeSingle();
-
-    const vars = options.variables ?? DEFAULT_VARIABLES;
-    const baseConfig = _buildDeviceConfig({
-      videoId,
-      title: videoRow?.title,
-      durationSec: videoRow?.duration_sec,
-      watchMinPct: videoRow?.watch_duration_min_pct,
-      watchMaxPct: videoRow?.watch_duration_max_pct,
-      probLike: videoRow?.prob_like,
-      probComment: videoRow?.prob_comment,
-      variables: vars,
-    });
-
-    const { data: devices } = await supabase
-      .from("devices")
-      .select("serial")
-      .eq("worker_id", options.workerId)
-      .limit(options.deviceCount ?? 20)
-      .returns<Array<{ serial: string }>>();
-
-    if (devices && devices.length > 0) {
-      const taskDevices = devices.map((d) => ({
-        task_id: task.id,
-        device_serial: d.serial,
-        status: "pending" as const,
-        worker_id: options.workerId!,
-        config: baseConfig as Json,
-      }));
-      await supabase.from("task_devices").insert(taskDevices);
-    }
-  }
+  // task_devices are created server-side by DB trigger.
 
   return task;
 }
@@ -352,17 +304,7 @@ export async function createTaskWithTaskDevices(options: TaskWithDevicesOptions)
 
   if (error) throw error;
 
-  if (options.deviceIds && options.deviceIds.length > 0) {
-    const taskDevices: TaskDeviceInsert[] = options.deviceIds.map((d) => ({
-      task_id: task.id,
-      device_serial: d.serial,
-      worker_id: d.pc_id,
-      status: "pending" as const,
-      config: {} as Json,
-    }));
-    const { error: devicesError } = await supabase.from("task_devices").insert(taskDevices);
-    if (devicesError) throw devicesError;
-  }
+  // task_devices are created server-side by DB trigger.
 
   return task;
 }

@@ -20,7 +20,8 @@
     "electron-store": "^10.0.0",
     "electron-updater": "^6.3.9",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -35,8 +36,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.doai.xiaowei",
-    "productName": "Xiaowei",
+    "appId": "me.doai.desktop",
+    "productName": "doai.me",
     "directories": {
       "output": "release"
     },
@@ -46,7 +47,7 @@
     ],
     "win": {
       "target": "nsis",
-      "executableName": "xiaowei"
+      "executableName": "doai-me"
     },
     "nsis": {
       "oneClick": false,

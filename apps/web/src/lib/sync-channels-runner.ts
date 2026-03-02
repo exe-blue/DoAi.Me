@@ -183,9 +183,9 @@ export async function runSyncChannels(): Promise<
             const ta = new Date(a.created_at ?? 0).getTime();
             const tb = new Date(b.created_at ?? 0).getTime();
             if (ta !== tb) return ta - tb;
-            const titleA = (a as { title?: string }).title ?? "";
-            const titleB = (b as { title?: string }).title ?? "";
-            return titleA.localeCompare(titleB, "ko");
+            const titleA = orderKeyFromTitle((a as { title?: string }).title ?? "");
+            const titleB = orderKeyFromTitle((b as { title?: string }).title ?? "");
+            return titleA.localeCompare(titleB, "ko-KR");
           });
           for (const v of sortedByOldestThenTitle) {
             const hasTask = await getTaskByVideoId(v.id);

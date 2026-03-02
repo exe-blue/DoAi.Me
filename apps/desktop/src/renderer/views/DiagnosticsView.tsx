@@ -21,9 +21,12 @@ export function DiagnosticsView() {
       if (result.error) {
         setStatus("error");
         setMessage(result.error);
+      } else if (result.canceled) {
+        setStatus("idle");
+        setMessage("Export canceled.");
       } else {
         setStatus("ok");
-        setMessage(`Saved to ${result.path}. No credentials are included.`);
+        setMessage(`Saved to ${result.zipPath}. No credentials are included.`);
       }
     } catch (e) {
       setStatus("error");

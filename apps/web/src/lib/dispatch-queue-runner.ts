@@ -38,7 +38,19 @@ export type DispatchResult =
 export async function runDispatchQueue(): Promise<DispatchResult> {
   const supabase = createSupabaseServerClient();
 
-  // Atomic dequeue: FOR UPDATE SKIP LOCKED (Phase 2.1, 8.1: no global single-task skip)
+  // Global single-task guard: skip dispatch if there is already a pending/running task.
+  const { count: activeTaskCount, error: activeTaskError } = await supabase
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["pending", "running"]);
+  if (activeTaskError) {
+    return { ok: false, error: activeTaskError.message ?? "failed to count active tasks" };
+  }
+  if ((activeTaskCount ?? 0) > 0) {
+    return { ok: true, dispatched: 0, message: "Skip: active task already exists" };
+  }
+
+  // Atomic dequeue: FOR UPDATE SKIP LOCKED
   const { data: rows, error: rpcError } = await (supabase as any).rpc(
     "dequeue_task_queue_item"
   );
