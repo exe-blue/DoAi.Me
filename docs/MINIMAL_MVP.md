@@ -15,7 +15,7 @@
 3. **디스패치**:  
    - Supabase Scheduler(pg_cron 또는 Scheduled Functions)가 1분마다 `POST /api/cron/dispatch-queue` 호출  
    - 또는 수동: 로그인 후 `POST /api/dispatch-queue`  
-   - 또는 E2E: `POST /api/cron/dispatch-queue` + `Authorization: Bearer ${APP_SCHEDULE_JWT}`  
+   - 또는 E2E: `POST /api/cron/dispatch-queue` + `Authorization: Bearer ${APP_SCHEDULE_SECRET}`  
    → `runDispatchQueue()`가 대기열 1건을 `tasks` + `task_devices`로 디스패치.
 
 4. **클라이언트**: Agent가 `claim_task_devices_for_pc`로 `task_devices`를 claim → Xiaowei로 시청 실행 → `complete_task_device`로 DB 반영.

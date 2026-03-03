@@ -3,7 +3,8 @@
 --
 -- Required Vault secrets:
 --   - app_base_url: e.g. https://your-domain.com
---   - app_schedule_jwt: JWT used as Authorization Bearer token for /api/cron/* endpoints
+--   - app_schedule_secret: Shared secret used as Authorization Bearer token for /api/cron/* endpoints
+--     This value must match the APP_SCHEDULE_SECRET environment variable in the web app.
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
@@ -25,11 +26,11 @@ BEGIN
 
   SELECT decrypted_secret INTO _jwt
     FROM vault.decrypted_secrets
-   WHERE name = 'app_schedule_jwt'
+   WHERE name = 'app_schedule_secret'
    LIMIT 1;
 
   IF _base_url IS NULL OR _jwt IS NULL THEN
-    RAISE WARNING '[invoke_app_schedule_endpoint] app_base_url or app_schedule_jwt not configured';
+    RAISE WARNING '[invoke_app_schedule_endpoint] app_base_url or app_schedule_secret not configured';
     RETURN;
   END IF;
 

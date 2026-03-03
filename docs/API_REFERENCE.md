@@ -12,7 +12,7 @@
 |------|--------|------|
 | **Session** | 대부분의 API | Supabase Auth 세션 (쿠키) |
 | **x-api-key** | `/api/tasks` POST 등 | Agent/외부가 API Key로 호출 |
-| **Bearer (internal)** | `/api/cron/*` | `Authorization: Bearer ${APP_SCHEDULE_JWT}` (Supabase Scheduler / pg_cron) |
+| **Bearer (internal)** | `/api/cron/*` | `Authorization: Bearer ${APP_SCHEDULE_SECRET}` (Supabase pg_cron) |
 | **None** | `/api/health`, `/api/commands/presets` | 인증 불필요 |
 
 ---
