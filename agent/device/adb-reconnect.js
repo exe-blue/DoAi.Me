@@ -246,7 +246,7 @@ class AdbReconnectManager {
 
         // 방법 2: Xiaowei adb connect (기본)
         const result = await Promise.race([
-          this.xiaowei.adb(serial, "connect").then((res) => assertAdbResult(res, { serial, command: "connect", phase: "adb_reconnect" })),
+          this.xiaowei.adb(serial, "connect"),
           this.timeoutPromise(this.reconnectTimeout),
         ]);
 
