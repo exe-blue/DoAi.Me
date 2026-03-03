@@ -14,10 +14,6 @@ async function runAdbShell(xiaowei, serial, command, phase = "adb_reconnect") {
   return res;
 }
 
-function assertAdbResult(res, context) {
-  assertAdbSuccess(res, context);
-  return res;
-}
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
     this.xiaowei = xiaowei;
