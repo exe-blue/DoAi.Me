@@ -3,12 +3,13 @@
  * Agent와 웹 API에서 공통 사용하는 프리셋 모듈
  *
  * Xiaowei API 포맷:
- *   xiaowei.adbShell(serial, command)
+ *   runAdbShell(xiaowei, serial, command)
  *   → 응답: { code: 10000, data: { [serial]: "결과\n" } }
  */
 
 const path = require('path');
 const sleep = require('../lib/sleep');
+const { assertAdbSuccess, classifyAdbResponse } = require('../lib/adb-guard');
 
 const XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR || '/mnt/c/Program Files (x86)/xiaowei/tools';
 
@@ -41,6 +42,13 @@ function extractValue(res, serial) {
   return "";
 }
 
+
+
+async function runAdbShell(xiaowei, serial, command, phase) {
+  const res = await xiaowei.adbShell(serial, command);
+  assertAdbSuccess(res, { serial, command, phase });
+  return res;
+}
 // ════════════════════════════════════════════════════════════
 //  PRESET: SCAN
 // ════════════════════════════════════════════════════════════
@@ -78,7 +86,13 @@ async function scan(xiaowei, serial) {
   for (const check of checks) {
     try {
       const res = await xiaowei.adbShell(serial, check.cmd);
-      results[check.key] = extractValue(res, serial);
+      const classification = classifyAdbResponse(res);
+      if (classification.status === "queued") {
+        results[check.key] = "QUEUED";
+      } else {
+        assertAdbSuccess(res, { serial, command: check.cmd, phase: "preset_scan" });
+        results[check.key] = extractValue(res, serial);
+      }
     } catch (err) {
       results[check.key] = `ERROR: ${err.message}`;
     }
@@ -214,7 +228,7 @@ async function optimize(xiaowei, serial, options = {}) {
 
   for (const item of cmds) {
     try {
-      await xiaowei.adbShell(serial, item.cmd);
+      await runAdbShell(xiaowei, serial, item.cmd);
       log.push({ desc: item.desc, status: "ok" });
       console.log(`  ✓ ${item.desc}`);
     } catch (err) {
@@ -227,18 +241,18 @@ async function optimize(xiaowei, serial, options = {}) {
   // ADBKeyboard 기본 입력기 전환
   if (options.setAdbKeyboard !== false) {
     try {
-      const pkgRes = await xiaowei.adbShell(
+      const pkgRes = await runAdbShell(xiaowei, 
         serial,
         "pm list packages com.android.adbkeyboard"
       );
       const pkgVal = extractValue(pkgRes, serial);
       if (pkgVal.includes("com.android.adbkeyboard")) {
-        await xiaowei.adbShell(
+        await runAdbShell(xiaowei, 
           serial,
           "ime enable com.android.adbkeyboard/.AdbIME"
         );
         await sleep(200);
-        await xiaowei.adbShell(
+        await runAdbShell(xiaowei, 
           serial,
           "ime set com.android.adbkeyboard/.AdbIME"
         );
@@ -289,16 +303,16 @@ async function ytTest(xiaowei, serial, options = {}) {
 
   try {
     // 1. YouTube 종료 + 실행
-    await xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+    await runAdbShell(xiaowei, serial, "am force-stop com.google.android.youtube");
     await sleep(1000);
-    await xiaowei.adbShell(
+    await runAdbShell(xiaowei, 
       serial,
       "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1"
     );
     await sleep(_randInt(4000, 6000));
 
     // 2. foreground 확인
-    const focusRes = await xiaowei.adbShell(
+    const focusRes = await runAdbShell(xiaowei,
       serial,
       "dumpsys window | grep mCurrentFocus"
     );
@@ -314,12 +328,12 @@ async function ytTest(xiaowei, serial, options = {}) {
     }
 
     // 3. UI dump → 검색 버튼 확인
-    await xiaowei.adbShell(
+    await runAdbShell(xiaowei, 
       serial,
       "uiautomator dump /sdcard/window_dump.xml"
     );
     await sleep(2000);
-    const dumpRes = await xiaowei.adbShell(
+    const dumpRes = await runAdbShell(xiaowei,
       serial,
       "cat /sdcard/window_dump.xml"
     );
@@ -341,29 +355,29 @@ async function ytTest(xiaowei, serial, options = {}) {
     if (sm) {
       const cx = Math.round((parseInt(sm[1]) + parseInt(sm[3])) / 2);
       const cy = Math.round((parseInt(sm[2]) + parseInt(sm[4])) / 2);
-      await xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+      await runAdbShell(xiaowei, serial, `input tap ${cx} ${cy}`);
       step("검색 버튼 터치", true, `(${cx},${cy})`);
     } else {
       // 폴백: 우측 상단
-      await xiaowei.adbShell(serial, "input tap 930 80");
+      await runAdbShell(xiaowei, serial, "input tap 930 80");
       step("검색 버튼 터치 (폴백)", true, "(930,80)");
     }
     await sleep(2000);
 
     // 5. 텍스트 입력
-    await xiaowei.adbShell(serial, "input text 'lofi%shiphop'");
+    await runAdbShell(xiaowei, serial, "input text 'lofi%shiphop'");
     await sleep(800);
-    await xiaowei.adbShell(serial, "input keyevent KEYCODE_ENTER");
+    await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_ENTER");
     step("검색어 입력", true, "lofi hiphop");
     await sleep(_randInt(3000, 5000));
 
     // 6. 첫 번째 결과 터치
-    await xiaowei.adbShell(
+    await runAdbShell(xiaowei, 
       serial,
       "uiautomator dump /sdcard/window_dump.xml"
     );
     await sleep(2000);
-    const dump2Res = await xiaowei.adbShell(
+    const dump2Res = await runAdbShell(xiaowei,
       serial,
       "cat /sdcard/window_dump.xml"
     );
@@ -378,16 +392,16 @@ async function ytTest(xiaowei, serial, options = {}) {
       const cy = Math.round(
         (parseInt(videoMatch[2]) + parseInt(videoMatch[4])) / 2
       );
-      await xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+      await runAdbShell(xiaowei, serial, `input tap ${cx} ${cy}`);
       step("검색 결과 터치", true, `(${cx},${cy})`);
     } else {
-      await xiaowei.adbShell(serial, "input tap 540 770");
+      await runAdbShell(xiaowei, serial, "input tap 540 770");
       step("검색 결과 터치 (폴백)", true, "(540,770)");
     }
     await sleep(_randInt(5000, 8000));
 
     // 7. 재생 상태 확인
-    const mediaRes = await xiaowei.adbShell(
+    const mediaRes = await runAdbShell(xiaowei,
       serial,
       "dumpsys media_session | grep -E 'state='"
     );
@@ -405,14 +419,14 @@ async function ytTest(xiaowei, serial, options = {}) {
     }
 
     // 9. 정리
-    await xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
-    await xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+    await runAdbShell(xiaowei, serial, "am force-stop com.google.android.youtube");
+    await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_HOME");
 
     result.pass = isPlaying;
   } catch (err) {
     result.errors.push(`Exception: ${err.message}`);
     try {
-      await xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+      await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_HOME");
     } catch {}
   }
 
@@ -435,16 +449,16 @@ async function warmup(xiaowei, serial, options = {}) {
 
   try {
     // 1. YouTube 실행
-    await xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+    await runAdbShell(xiaowei, serial, "am force-stop com.google.android.youtube");
     await sleep(1000);
-    await xiaowei.adbShell(
+    await runAdbShell(xiaowei, 
       serial,
       "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1"
     );
     await sleep(_randInt(3000, 5000));
 
     // 2. 화면 크기
-    const sizeRes = await xiaowei.adbShell(serial, "wm size");
+    const sizeRes = await runAdbShell(xiaowei, serial, "wm size");
     const sizeVal = extractValue(sizeRes, serial);
     const sizeMatch = sizeVal.match(/(\d+)x(\d+)/);
     const w = sizeMatch ? parseInt(sizeMatch[1]) : 1080;
@@ -453,7 +467,7 @@ async function warmup(xiaowei, serial, options = {}) {
 
     // 3. 홈 피드 스크롤
     for (let i = 0; i < _randInt(2, 4); i++) {
-      await xiaowei.adbShell(
+      await runAdbShell(xiaowei, 
         serial,
         `input swipe ${midX} ${Math.round(h * 0.7)} ${midX} ${Math.round(h * 0.3)} ${_randInt(500, 900)}`
       );
@@ -466,7 +480,7 @@ async function warmup(xiaowei, serial, options = {}) {
     // 4. 랜덤 영상 시청
     while (Date.now() - startTime < targetMs && result.videosWatched < 5) {
       const tapY = Math.round(h * (_randInt(35, 65) / 100));
-      await xiaowei.adbShell(serial, `input tap ${midX} ${tapY}`);
+      await runAdbShell(xiaowei, serial, `input tap ${midX} ${tapY}`);
       await sleep(_randInt(3000, 5000));
 
       const watchMs = Math.min(
@@ -480,7 +494,7 @@ async function warmup(xiaowei, serial, options = {}) {
         await sleep(5000);
         watched += 5000;
         if (watched % 30000 < 5000) {
-          await xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+          await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_WAKEUP");
         }
       }
 
@@ -490,16 +504,16 @@ async function warmup(xiaowei, serial, options = {}) {
       );
 
       // 뒤로 → 스크롤
-      await xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+      await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_BACK");
       await sleep(_randInt(1500, 2500));
-      await xiaowei.adbShell(
+      await runAdbShell(xiaowei, 
         serial,
         `input swipe ${midX} ${Math.round(h * 0.7)} ${midX} ${Math.round(h * 0.3)} ${_randInt(500, 900)}`
       );
       await sleep(_randInt(1500, 2500));
     }
 
-    await xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+    await runAdbShell(xiaowei, serial, "input keyevent KEYCODE_HOME");
     result.totalSec = Math.round((Date.now() - startTime) / 1000);
   } catch (err) {
     result.errors.push(err.message);
@@ -553,7 +567,7 @@ async function installApks(xiaowei, serial, options = {}) {
     // 이미 설치 확인
     if (apk.package) {
       try {
-        const pkgRes = await xiaowei.adbShell(
+        const pkgRes = await runAdbShell(xiaowei, 
           serial,
           `pm list packages ${apk.package}`
         );
@@ -576,7 +590,7 @@ async function installApks(xiaowei, serial, options = {}) {
       // 후속 명령
       if (apk.postInstall) {
         for (const cmd of apk.postInstall) {
-          await xiaowei.adbShell(serial, cmd);
+          await runAdbShell(xiaowei, serial, cmd);
           await sleep(500);
         }
       }

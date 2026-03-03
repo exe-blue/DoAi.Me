@@ -4,7 +4,20 @@
  * Tracks failure counts and flags persistently dead devices
  */
 const sleepLib = require('../lib/sleep');
+const { assertAdbSuccess } = require('../lib/adb-guard');
 
+
+
+async function runAdbShell(xiaowei, serial, command, phase = "adb_reconnect") {
+  const res = await xiaowei.adbShell(serial, command);
+  assertAdbSuccess(res, { serial, command, phase });
+  return res;
+}
+
+function assertAdbResult(res, context) {
+  assertAdbSuccess(res, context);
+  return res;
+}
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
     this.xiaowei = xiaowei;
@@ -213,7 +226,7 @@ class AdbReconnectManager {
         if (ip) {
           try {
             const connectResult = await Promise.race([
-              this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
+              runAdbShell(this.xiaowei, serial, `connect ${ip}:5555`, "adb_reconnect_connect"),
               this.timeoutPromise(this.reconnectTimeout),
             ]);
             const connectOut = this._extractOutput(connectResult);
@@ -233,7 +246,7 @@ class AdbReconnectManager {
 
         // 방법 2: Xiaowei adb connect (기본)
         const result = await Promise.race([
-          this.xiaowei.adb(serial, "connect"),
+          this.xiaowei.adb(serial, "connect").then((res) => assertAdbResult(res, { serial, command: "connect", phase: "adb_reconnect" })),
           this.timeoutPromise(this.reconnectTimeout),
         ]);
 

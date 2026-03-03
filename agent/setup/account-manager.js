@@ -1,3 +1,11 @@
+const { assertAdbSuccess } = require("../lib/adb-guard");
+
+async function runAdbShell(xiaowei, serial, command, phase = "account_manager") {
+  const res = await xiaowei.adbShell(serial, command);
+  assertAdbSuccess(res, { serial, command, phase });
+  return res;
+}
+
 /**
  * DoAi.Me - Account Manager
  * Loads account-device assignments from Supabase and verifies YouTube login status.
@@ -99,7 +107,7 @@ class AccountManager {
 
     try {
       // Check Google accounts registered on the device
-      const resp = await this.xiaowei.adbShell(
+      const resp = await runAdbShell(this.xiaowei, 
         serial,
         "dumpsys account | grep -A1 'Account {' | grep -i com.google"
       );
@@ -116,14 +124,14 @@ class AccountManager {
 
       // Fallback: check if YouTube app has stored data (signed-in indicator)
       if (!result.loggedIn) {
-        const ytResp = await this.xiaowei.adbShell(
+        const ytResp = await runAdbShell(this.xiaowei, 
           serial,
           "pm list packages | grep com.google.android.youtube"
         );
         const ytOutput = _extractAdbOutput(ytResp);
         if (ytOutput && ytOutput.includes("com.google.android.youtube")) {
           // YouTube is installed; check for sign-in via shared_prefs
-          const prefResp = await this.xiaowei.adbShell(
+          const prefResp = await runAdbShell(this.xiaowei, 
             serial,
             "ls /data/data/com.google.android.youtube/shared_prefs/ 2>/dev/null | head -5"
           );

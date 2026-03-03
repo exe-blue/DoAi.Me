@@ -1,3 +1,5 @@
+const { assertAdbSuccess } = require("../lib/adb-guard");
+
 /**
  * DoAi.Me - Proxy Manager
  * Loads proxy assignments from Supabase and applies them to devices via Xiaowei.
@@ -17,6 +19,13 @@
 
 const FAIL_THRESHOLD = 3; // Mark proxy invalid after this many consecutive failures
 
+
+
+async function runAdbShell(xiaowei, serial, command, phase = "proxy_manager") {
+  const res = await xiaowei.adbShell(serial, command);
+  assertAdbSuccess(res, { serial, command, phase });
+  return res;
+}
 class ProxyManager {
   /**
    * @param {import('./xiaowei-client')} xiaowei
@@ -137,7 +146,7 @@ class ProxyManager {
     }
 
     try {
-      await this.xiaowei.adbShell(serial, `settings put global http_proxy ${host}:${port}`);
+      await runAdbShell(this.xiaowei, serial, `settings put global http_proxy ${host}:${port}`);
       console.log(`[Proxy] ${serial} ← proxy: ${this._formatProxyUrl(proxy)} ✓`);
       return true;
     } catch (err) {
@@ -177,7 +186,7 @@ class ProxyManager {
    */
   async clearProxy(serial) {
     try {
-      await this.xiaowei.adbShell(serial, "settings put global http_proxy :0");
+      await runAdbShell(this.xiaowei, serial, "settings put global http_proxy :0");
       console.log(`[Proxy] ${serial} proxy cleared`);
       return true;
     } catch (err) {
@@ -210,10 +219,10 @@ class ProxyManager {
     if (!this.xiaowei.connected) return result;
 
     try {
-      const proxyResp = await this.xiaowei.adbShell(serial, "settings get global http_proxy");
+      const proxyResp = await runAdbShell(this.xiaowei, serial, "settings get global http_proxy");
       result.currentProxy = _extractAdbOutput(proxyResp);
 
-      const ipResp = await this.xiaowei.adbShell(serial, "curl -s --max-time 10 https://ipinfo.io/ip");
+      const ipResp = await runAdbShell(this.xiaowei, serial, "curl -s --max-time 10 https://ipinfo.io/ip");
       result.externalIp = _extractAdbOutput(ipResp);
 
       const proxy = this.assignments.get(serial);
