@@ -28,20 +28,37 @@ const EMPTY_METRICS: DashboardMetrics = {
 export function useDashboardMetricsRealtime() {
   const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refetchSnapshot = useCallback(async () => {
-    const snapshot = await getDashboardMetricsSnapshot();
-    setMetrics(snapshot);
+    try {
+      const snapshot = await getDashboardMetricsSnapshot();
+      setMetrics(snapshot);
+      setError(null);
+    } catch (err) {
+      // API failed, preserve current metrics and show error
+      setError(err instanceof Error ? err.message : "Failed to refresh metrics");
+    }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const snapshot = await getDashboardMetricsSnapshot();
-      if (!cancelled) {
-        setMetrics(snapshot);
-        setLoading(false);
+      try {
+        const snapshot = await getDashboardMetricsSnapshot();
+        if (!cancelled) {
+          setMetrics(snapshot);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load initial metrics");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
 
@@ -51,7 +68,8 @@ export function useDashboardMetricsRealtime() {
   }, []);
 
   const handleRealtimeChange = useCallback(() => {
-    refetchSnapshot().catch(() => void 0);
+    // Errors are handled inside refetchSnapshot and set error state
+    void refetchSnapshot();
   }, [refetchSnapshot]);
 
   const { isConnected, attempt } = useRealtimePostgresChanges({
@@ -64,5 +82,5 @@ export function useDashboardMetricsRealtime() {
   const kpis: OperationsKpis = useMemo(() => metricsToKpis(metrics), [metrics]);
   const alerts: OperationsAlert[] = useMemo(() => metricsToAlerts(metrics), [metrics]);
 
-  return { metrics, kpis, alerts, loading, isConnected, reconnectAttempt: attempt };
+  return { metrics, kpis, alerts, loading, error, isConnected, reconnectAttempt: attempt };
 }

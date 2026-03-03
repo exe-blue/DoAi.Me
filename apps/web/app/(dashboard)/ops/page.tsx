@@ -12,7 +12,7 @@ import { useDashboardMetricsRealtime } from "@/hooks/use-dashboard-metrics-realt
 
 export default function OpsPage() {
   const [filter, setFilter] = useState("");
-  const { kpis, alerts, loading, isConnected, reconnectAttempt } = useDashboardMetricsRealtime();
+  const { kpis, alerts, loading, error, isConnected, reconnectAttempt } = useDashboardMetricsRealtime();
 
   return (
     <Box>
@@ -22,6 +22,17 @@ export default function OpsPage() {
       <Typography variant="caption" color={isConnected ? "success.main" : "warning.main"}>
         Realtime: {isConnected ? "connected" : `reconnecting (${reconnectAttempt})`}
       </Typography>
+      {error && (
+        <Typography
+          variant="caption"
+          color="error.main"
+          sx={{ display: "block", mt: 0.5 }}
+          role="alert"
+          aria-live="polite"
+        >
+          Error: {error}
+        </Typography>
+      )}
 
       {loading ? (
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
