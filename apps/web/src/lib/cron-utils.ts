@@ -8,6 +8,7 @@ import { timingSafeEqual } from "crypto";
  * @returns true if the secret matches, false otherwise
  */
 export function verifyScheduleSecret(request: Request): boolean {
+  // Note: Request.headers.get() is case-insensitive per Fetch API spec
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
 

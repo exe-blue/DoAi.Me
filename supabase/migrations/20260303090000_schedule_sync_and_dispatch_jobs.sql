@@ -17,19 +17,19 @@ SET search_path = public, extensions
 AS $$
 DECLARE
   _base_url text;
-  _jwt text;
+  _secret text;
 BEGIN
   SELECT decrypted_secret INTO _base_url
     FROM vault.decrypted_secrets
    WHERE name = 'app_base_url'
    LIMIT 1;
 
-  SELECT decrypted_secret INTO _jwt
+  SELECT decrypted_secret INTO _secret
     FROM vault.decrypted_secrets
    WHERE name = 'app_schedule_secret'
    LIMIT 1;
 
-  IF _base_url IS NULL OR _jwt IS NULL THEN
+  IF _base_url IS NULL OR _secret IS NULL THEN
     RAISE WARNING '[invoke_app_schedule_endpoint] app_base_url or app_schedule_secret not configured';
     RETURN;
   END IF;
@@ -38,7 +38,7 @@ BEGIN
     url := rtrim(_base_url, '/') || p_path,
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || _jwt
+      'Authorization', 'Bearer ' || _secret
     ),
     body := '{}'::jsonb
   );
