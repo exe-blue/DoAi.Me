@@ -3,13 +3,14 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
+import { commands, isElectron } from "../src";
 
 export function DiagnosticsView() {
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
   const [message, setMessage] = useState("");
 
   const handleExport = async () => {
-    if (!window.electronAPI) {
+    if (!isElectron()) {
       setStatus("error");
       setMessage("Not running in Electron.");
       return;
@@ -17,7 +18,7 @@ export function DiagnosticsView() {
     setStatus("idle");
     setMessage("");
     try {
-      const result = await window.electronAPI.exportDiagnostics();
+      const result = await commands.exportDiagnostics();
       if (result.error) {
         setStatus("error");
         setMessage(result.error);

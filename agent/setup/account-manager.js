@@ -1,11 +1,14 @@
 /**
  * DoAi.Me - Account Manager
  * Loads account-device assignments from Supabase and verifies YouTube login status.
+ * 모든 디바이스 명령은 Xiaowei WebSocket(xiaowei.adbShell) 경유. 응답 code 10000/10001.
  *
  * Flow:
  *   1. loadAssignments() — query accounts table for this worker's device-assigned accounts
- *   2. verifyAll()       — check YouTube/Google login on each device via adb
+ *   2. verifyAll()       — check YouTube/Google login on each device via xiaowei.adbShell
  *   3. updateLoginStatus() — update DB with verification results
+ *
+ * @see docs/xiaowei-api.md, docs/xiaowei_client.md §2.3, §8.2
  */
 
 class AccountManager {
@@ -227,12 +230,18 @@ class AccountManager {
 
 /**
  * Extract clean text output from Xiaowei adbShell response.
+ * Response: { code: 10000|10001, message?, data?: string | { [serial]: string } }
  * @param {object} response
  * @returns {string|null}
  */
 function _extractAdbOutput(response) {
   if (!response) return null;
   if (typeof response === "string") return response.trim();
+  if (response.data != null && typeof response.data === "object" && !Array.isArray(response.data)) {
+    const vals = Object.values(response.data);
+    if (vals.length > 0 && typeof vals[0] === "string") return vals[0].trim();
+  }
+  if (typeof response.data === "string") return response.data.trim();
   const text = response.output || response.result || response.data || response.stdout;
   if (typeof text === "string") return text.trim();
   if (Array.isArray(response)) return response.join("\n").trim();

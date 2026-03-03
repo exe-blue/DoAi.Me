@@ -1,6 +1,6 @@
 {
-  "installCommand": "pnpm install --frozen-lockfile --filter @doai/web --filter @doai/shared --filter @doai/supabase",
-  "buildCommand": "turbo run build",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build",
   "crons": [
     { "path": "/api/cron/sync-channels", "schedule": "* * * * *" },
     { "path": "/api/cron/dispatch-queue", "schedule": "* * * * *" }

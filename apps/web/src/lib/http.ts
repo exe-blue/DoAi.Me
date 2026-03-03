@@ -1,5 +1,6 @@
 /**
- * Fetch wrapper for API calls. Base URL from window (client) or env.
+ * API is WebSocket only (no HTTP). Response code 10000 = success, 10001 = failure.
+ * This fetch wrapper is legacy; use WS client for API. See docs/API_WS_ONLY.md.
  */
 const getBase = () =>
   typeof window !== "undefined"

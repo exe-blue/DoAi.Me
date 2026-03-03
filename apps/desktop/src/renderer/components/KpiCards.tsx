@@ -5,14 +5,12 @@ import CardContent from "@mui/material/CardContent";
 import Typography from "@mui/material/Typography";
 import Grid from "@mui/material/Grid";
 import Badge from "@mui/material/Badge";
-import Button from "@mui/material/Button";
 import Tooltip from "@mui/material/Tooltip";
 import { useTheme } from "@mui/material/styles";
 import { keyframes } from "@emotion/react";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
-import DownloadIcon from "@mui/icons-material/Download";
 import { useDeviceStore } from "../store/useDeviceStore";
 import { usePresetStore } from "../store/usePresetStore";
 
@@ -104,9 +102,8 @@ export function KpiCards() {
   const devices = useDeviceStore((s) => s.devices);
   const lastUpdateTime = useDeviceStore((s) => s.lastUpdateTime);
   const lastResult = usePresetStore((s) => s.lastResult);
-  const expectedDeviceCount = usePresetStore((s) => s.expectedDeviceCount);
 
-  // Re-render every 2s so ADB health check stays current even if no push events arrive
+  // Re-render every 2s so WebSocket health check stays current even if no push events arrive
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 2000);
@@ -119,13 +116,13 @@ export function KpiCards() {
   const onlineCount = devices.filter((d) => d.state === "device").length;
   const unauthorizedCount = devices.filter((d) => d.state === "unauthorized").length;
   const offlineCount = devices.filter((d) => d.state === "offline").length;
+  const totalCount = devices.length;
 
-  const adbSeverity: Severity =
+  const wsSeverity: Severity =
     msSinceUpdate > 10000 ? "ERROR" : msSinceUpdate > 6000 ? "WARN" : "OK";
 
-  const onlinePct = expectedDeviceCount > 0 ? onlineCount / expectedDeviceCount : 1;
   const onlineSeverity: Severity =
-    onlinePct >= 0.9 ? "OK" : onlinePct >= 0.8 ? "WARN" : "ERROR";
+    onlineCount > 0 ? "OK" : totalCount > 0 ? "WARN" : "ERROR";
 
   const unauthSeverity: Severity =
     unauthorizedCount === 0 ? "OK" : unauthorizedCount <= 2 ? "WARN" : "ERROR";
@@ -133,44 +130,45 @@ export function KpiCards() {
   const offlineSeverity: Severity =
     offlineCount === 0 ? "OK" : offlineCount <= 5 ? "WARN" : "ERROR";
 
+  const totalSeverity: Severity = totalCount > 0 ? "OK" : "ERROR";
+
   const lastTaskSeverity: Severity = lastResult ? lastResult.severity : "OK";
   const lastTaskValue = lastResult
     ? `P${lastResult.presetId} ${lastResult.overallSuccess ? "✓" : "✗"}`
     : "N/A";
-
-  const handleExportDiagnostics = () => {
-    window.electronAPI?.exportDiagnostics();
-  };
 
   return (
     <Box>
       <Grid container spacing={2} alignItems="stretch">
         <Grid item xs>
           <KpiCard
-            label="ADB Server"
-            value={adbSeverity === "OK" ? "Online" : adbSeverity === "WARN" ? "Slow" : "Offline"}
-            severity={adbSeverity}
+            label="WebSocket Server"
+            value={wsSeverity === "OK" ? "Online" : wsSeverity === "WARN" ? "Slow" : "Offline"}
+            severity={wsSeverity}
             tooltip={lastUpdateTime > 0 ? `Last update ${Math.round(msSinceUpdate / 1000)}s ago` : "No data yet"}
           />
         </Grid>
         <Grid item xs>
           <KpiCard
-            label="Online Devices"
-            value={`${onlineCount} / ${expectedDeviceCount}`}
+            label="온라인"
+            value={onlineCount}
             severity={onlineSeverity}
-            tooltip={`${Math.round(onlinePct * 100)}% of expected devices online`}
+            tooltip="연결된 기기 (device)"
           />
         </Grid>
         <Grid item xs>
           <KpiCard
-            label="Unauthorized"
+            label="인증안됨"
             value={unauthorizedCount}
             severity={unauthSeverity}
             badgeCount={unauthorizedCount > 0 ? unauthorizedCount : undefined}
           />
         </Grid>
         <Grid item xs>
-          <KpiCard label="Offline" value={offlineCount} severity={offlineSeverity} />
+          <KpiCard label="오프라인" value={offlineCount} severity={offlineSeverity} />
+        </Grid>
+        <Grid item xs>
+          <KpiCard label="전체 기기" value={totalCount} severity={totalSeverity} />
         </Grid>
         <Grid item xs>
           <KpiCard
@@ -182,17 +180,6 @@ export function KpiCards() {
         </Grid>
         <Grid item xs>
           <KpiCard label="App Version" value="v1.0.0" severity="OK" />
-        </Grid>
-        <Grid item xs="auto" sx={{ display: "flex", alignItems: "center" }}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<DownloadIcon />}
-            onClick={handleExportDiagnostics}
-            sx={{ whiteSpace: "nowrap" }}
-          >
-            Diagnostics
-          </Button>
         </Grid>
       </Grid>
     </Box>

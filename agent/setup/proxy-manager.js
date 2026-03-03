@@ -1,18 +1,18 @@
 /**
  * DoAi.Me - Proxy Manager
- * Loads proxy assignments from Supabase and applies them to devices via Xiaowei.
+ * Loads proxy assignments from Supabase and applies them to devices via Xiaowei WebSocket only.
  * Supports failure detection, auto-rotation, and policy-based assignment.
  *
  * Flow:
  *   1. loadAssignments() — query proxies table for this worker's device-assigned proxies
- *   2. applyAll()        — push proxy settings to each device via adb shell
- *   3. verifyAll()       — confirm each device's external IP matches the proxy
+ *   2. applyAll()        — push proxy settings to each device via xiaowei.adbShell
+ *   3. verifyAll()       — confirm each device's external IP via xiaowei.adbShell
  *   4. startCheckLoop()  — periodic proxy validation + failure detection
  *
- * Proxy policies:
- *   - sticky:             keep same proxy until manual change
- *   - rotate_on_failure:  auto-swap when fail_count >= 3
- *   - rotate_daily:       shuffle all proxy assignments once per day
+ * Proxy policies: sticky | rotate_on_failure | rotate_daily
+ *
+ * 응답: code 10000=성공, 10001=실패. data 필요 시 docs/xiaowei-api.md, https://wstool.js.org/ 참고.
+ * @see docs/xiaowei-api.md, docs/xiaowei_client.md §2.3, §8.2
  */
 
 const FAIL_THRESHOLD = 3; // Mark proxy invalid after this many consecutive failures
@@ -564,10 +564,16 @@ class ProxyManager {
 
 /**
  * Extract clean text output from Xiaowei adbShell response.
+ * Response envelope: { code: 10000|10001, message?, data?: string | { [serial]: string } }
  */
 function _extractAdbOutput(response) {
   if (!response) return null;
   if (typeof response === "string") return response.trim();
+  if (response.data != null && typeof response.data === "object" && !Array.isArray(response.data)) {
+    const vals = Object.values(response.data);
+    if (vals.length > 0 && typeof vals[0] === "string") return vals[0].trim();
+  }
+  if (typeof response.data === "string") return response.data.trim();
   const text = response.output || response.result || response.data || response.stdout;
   if (typeof text === "string") return text.trim();
   if (Array.isArray(response)) return response.join("\n").trim();

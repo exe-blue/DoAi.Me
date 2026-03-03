@@ -1,5 +1,7 @@
 # Agent 디바이스 레이어 ↔ JS 매핑
 
+**실행 경로:** apps/desktop/src/agent (Dev), 패키징 시 resources/agent (agent.bundle.cjs 또는 agent.js). 표 내 JS 경로는 해당 디렉터리 기준 상대 경로.
+
 모든 디바이스 단계는 JS로 제어된다. 아래는 **디바이스 이벤트/단계**와 **대응하는 JS 파일** 매핑이며, 미구현이 있으면 추가한다.
 
 ---

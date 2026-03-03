@@ -193,17 +193,20 @@ export async function runSyncChannels(): Promise<
             if (queuedVideoIds.includes(v.id)) continue;
             const title = (v as { title?: string }).title ?? "";
             const keyword = (v as { search_keyword?: string }).search_keyword ?? title ?? v.id;
+            const videoUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const inputs = {
               videoId: v.id,
               channelId: channel.id,
               keyword,
-              video_url: `https://www.youtube.com/watch?v=${v.id}`,
+              video_url: videoUrl,
             };
             const workflowConfig = await buildConfigFromWorkflow(
               DEFAULT_WATCH_WORKFLOW_ID,
               DEFAULT_WATCH_WORKFLOW_VERSION,
               inputs,
             );
+            const durationSec = (v as { duration_sec?: number }).duration_sec ?? 0;
+            const description = (v as { description?: string }).description ?? "";
             const insertRow: Record<string, unknown> = {
               task_config: {
                 ...workflowConfig,
@@ -211,9 +214,14 @@ export async function runSyncChannels(): Promise<
                 videoId: v.id,
                 channelId: channel.id,
                 channel: channel.id,
-                video_url: `https://www.youtube.com/watch?v=${v.id}`,
+                video_url: videoUrl,
                 title,
                 keyword,
+                영상제목: title,
+                영상본문: description,
+                영상길이초: durationSec,
+                영상주소: videoUrl,
+                영상키워드: keyword,
               },
               priority: 5,
               status: "queued",

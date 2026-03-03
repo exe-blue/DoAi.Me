@@ -350,9 +350,16 @@ async function _saveScreenshot(dev, videoId) {
       devices: dev.serial,
       data: { remotePath, localPath },
     });
-  } catch {
-    // pullFile 미지원 시 adb pull 대체
-    await dev.adb(`pull ${remotePath} "${localPath}"`);
+  } catch (pullFileErr) {
+    const msg = (pullFileErr && pullFileErr.message) ? pullFileErr.message : String(pullFileErr);
+    log.warn('pullFile failed, falling back to adb pull', { serial: dev.serial, error: msg });
+    try {
+      await dev.adb(`pull ${remotePath} "${localPath}"`);
+    } catch (adbPullErr) {
+      const adbMsg = (adbPullErr && adbPullErr.message) ? adbPullErr.message : String(adbPullErr);
+      log.warn('adb pull failed', { serial: dev.serial, remotePath, localPath, error: adbMsg });
+      throw adbPullErr;
+    }
   }
 
   // 디바이스 임시 파일 삭제

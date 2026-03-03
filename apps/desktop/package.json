@@ -1,5 +1,5 @@
 {
-  "name": "@doai/desktop",
+  "name": "doaime-desktop",
   "version": "1.0.1",
   "description": "DoAi.Me desktop agent controller",
   "author": "doaime",
@@ -9,8 +9,13 @@
     "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "test": "node src/agent/scripts/smoke-require-agent.js",
-    "dist": "pnpm run test && pnpm run build && node scripts/download-node-win.js && npm --prefix src/agent install --omit=dev && electron-builder --win",
-    "dist:wsl": "pnpm run test && pnpm run build && node scripts/download-node-win.js && npm --prefix src/agent install --omit=dev && WINEPREFIX=$HOME/.wine-eb WINEARCH=win32 electron-builder --win",
+    "agent:run": "node src/agent/agent.js",
+    "bundle:agent": "node src/scripts/bundle-agent.js",
+    "prepare:packaged-env": "node src/scripts/prepare-packaged-env.js",
+    "dist:clean": "node -e \"require('fs').rmSync('release', { recursive: true, force: true })\"",
+    "dist:win": "pnpm run bundle:agent && pnpm run prepare:packaged-env && electron-builder --win",
+    "dist": "pnpm run test && pnpm run build && node src/scripts/download-node-win.js && pnpm run dist:win",
+    "dist:wsl": "pnpm run test && pnpm run build && node src/scripts/download-node-win.js && pnpm run bundle:agent && pnpm run prepare:packaged-env && WINEPREFIX=$HOME/.wine-eb WINEARCH=win32 electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint src/renderer --ext .ts,.tsx"
   },
@@ -37,6 +42,7 @@
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitejs/plugin-react": "^4.3.4",
@@ -45,6 +51,7 @@
     "electron": "^35.7.5",
     "electron-builder": "^26.8.1",
     "electron-builder-squirrel-windows": "^26.8.1",
+    "esbuild": "^0.24.0",
     "eslint": "^9.17.0",
     "eslint-plugin-react": "^7.37.0",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -56,6 +63,7 @@
   "build": {
     "appId": "me.doai.desktop",
     "productName": "doaime",
+    "forceCodeSigning": false,
     "mac": null,
     "linux": null,
     "directories": {
@@ -67,24 +75,26 @@
     ],
     "extraResources": [
       {
-        "from": "src/agent",
-        "to": "agent",
-        "filter": [
-          "**/*",
-          "!.env",
-          "!.env.*",
-          "!.env.prod",
-          "!.env.example"
-        ]
+        "from": "agent-dist",
+        "to": "agent"
       },
       {
         "from": "node-bundle",
         "to": "node"
+      },
+      {
+        "from": "release.env",
+        "to": ".env"
+      },
+      {
+        "from": "release.env",
+        "to": "agent/.env"
       }
     ],
     "win": {
       "target": "nsis",
-      "executableName": "doaime"
+      "executableName": "doaime",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

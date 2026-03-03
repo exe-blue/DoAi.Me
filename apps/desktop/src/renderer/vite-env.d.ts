@@ -82,9 +82,32 @@ declare global {
       error?: string;
     }>;
     getAgentState: () => Promise<AgentState>;
+    getAgentSettings: () => Promise<AgentSettings>;
+    setAgentSettings: (payload: Partial<AgentSettings>) => Promise<AgentSettings>;
+    registerChannels: (payload: { webDashboardUrl: string; handles?: string[]; fetchLatest?: number }) => Promise<{
+      ok: boolean;
+      error?: string;
+      data?: unknown;
+    }>;
+    registerPc: (payload: { webDashboardUrl: string }) => Promise<{
+      ok: boolean;
+      pc_number?: string | null;
+      error?: string;
+    }>;
+    getPresetHistory: () => Promise<PresetResult[]>;
     restartAgent: () => Promise<AgentState>;
     onAgentState: (callback: (state: AgentState) => void) => () => void;
+    onNavigateToTab: (callback: (tab: string) => void) => () => void;
     getAppPath: () => Promise<string>;
+    getSupabaseConfig: () => Promise<{ url: string; anonKey: string }>;
+    openAgentLogsFolder: () => Promise<{ ok: boolean; error?: string }>;
+  }
+
+  interface AgentSettings {
+    pc_number?: string | null;
+    xiaowei_ws_url?: string | null;
+    web_dashboard_url?: string | null;
+    openai_api_key?: string | null;
   }
 
   interface AgentState {
@@ -92,6 +115,19 @@ declare global {
     lastExitCode: number | null;
     lastErrorLine: string;
     restartCount: number;
+    pc_number?: string | null;
+    wsEffectiveUrl?: string;
+    wsStatus?: string; // CONNECTING | CONNECTED | FAILED
+    wsLastFailure?: string;
+    wsAttemptNo?: number;
+    wsFailureCategory?: string; // TCP_REFUSED | HTTP_4XX | TIMEOUT | OTHER
+    wsElapsedMs?: number;
+    wsCloseCode?: number;
+    wsCloseReason?: string;
+    lastPresetResult?: PresetResult | null;
+    xiaoweiHttpApiUrl?: string;
+    /** "disabled" | "unavailable" | "enabled" */
+    xiaoweiHttpApiStatus?: "disabled" | "unavailable" | "enabled";
   }
 
   interface Window {

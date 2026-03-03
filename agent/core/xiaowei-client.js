@@ -2,6 +2,7 @@
  * DoAi.Me - Xiaowei WebSocket Client
  * Connects to Xiaowei automation tool via WebSocket
  * Provides API for device control and action execution
+ * Request/response envelope: docs/xiaowei_client.md §2. Action 목록: §4.
  */
 const EventEmitter = require("events");
 const WebSocket = require("ws");
@@ -56,8 +57,13 @@ class XiaoweiClient extends EventEmitter {
     this._commandQueue = [];
     this._maxQueueSize = 100;
     this._disconnectedAt = null;
+    this._attemptNo = 0;
     /** @type {Array<{serial: string, model?: string, status?: string, battery?: number|null, ipIntranet?: string|null}>} */
     this.lastDevices = [];
+  }
+
+  get attemptNo() {
+    return this._attemptNo;
   }
 
   get isConnected() {
@@ -74,7 +80,8 @@ class XiaoweiClient extends EventEmitter {
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
-    console.log(`[Xiaowei] Connecting to ${this.wsUrl}...`);
+    this._attemptNo = (this._attemptNo || 0) + 1;
+    console.log(`[Xiaowei] Connecting to ${this.wsUrl}... attemptNo=${this._attemptNo}`);
 
     try {
       this.ws = new WebSocket(this.wsUrl);
@@ -302,13 +309,13 @@ class XiaoweiClient extends EventEmitter {
   }
 
   /**
-   * Run full ADB command (with "adb" prefix)
+   * Run full xiaowei.adb command (with "adb" prefix)
    * @param {string} devices - Comma-separated serials or "all"
    * @param {string} command - Full adb command
    */
-  adb(devices, command) {
+  xiaoweiAdb(devices, command) {
     return this.send({
-      action: "adb",
+      action: "xiaowei.adb",
       devices,
       data: { command },
     });

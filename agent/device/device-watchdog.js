@@ -2,10 +2,11 @@
  * DoAi.Me - Device Watchdog
  * Detects and recovers from device-level failures during 24h operation.
  * Runs every 60 seconds to check device health and attempt recovery.
+ *
+ * 모든 명령은 Xiaowei WebSocket 경유(xiaowei.adbShell, xiaowei.xiaoweiAdb).
+ * 응답 code 10000=성공, 10001=실패.
+ * @see docs/xiaowei-api.md, docs/xiaowei_client.md §2.3, §8.2
  */
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
 const sleep = require('../lib/sleep');
 
 class DeviceWatchdog {
@@ -149,22 +150,29 @@ class DeviceWatchdog {
 
     this._recoveryAttempts.set(serial, attempts + 1);
 
-    // Try: adb shell echo ping
+    // Try: xiaowei adb_shell echo ping (device alive check)
     try {
       const result = await this.xiaowei.adbShell(serial, 'echo ping');
-      if (result && JSON.stringify(result).includes('ping')) {
+      const out = extractXiaoweiOutput(result);
+      if (out && out.includes('ping')) {
         this._errorCounts.delete(serial);
         this._recoveryAttempts.delete(serial);
         console.log(`[DeviceWatchdog] ${serial} recovered via ping`);
         return;
       }
+      if (result && result.code === 10000) {
+        this._errorCounts.delete(serial);
+        this._recoveryAttempts.delete(serial);
+        console.log(`[DeviceWatchdog] ${serial} recovered (code 10000)`);
+        return;
+      }
     } catch (e) { /* ignore ping failure */ }
 
-    // Try: host-level adb disconnect + reconnect (adbShell runs on device, not host)
+    // Try: xiaowei.adb disconnect + connect (호스트 adb 명령, 모두 Xiaowei 경유)
     try {
-      await execAsync(`adb disconnect ${serial}`);
+      await this.xiaowei.xiaoweiAdb('all', `disconnect ${serial}`);
       await sleep(2000);
-      await execAsync(`adb connect ${serial}`);
+      await this.xiaowei.xiaoweiAdb('all', `connect ${serial}`);
       console.log(`[DeviceWatchdog] ${serial} reconnect attempt ${attempts + 1}/${this.RECOVERY_MAX_ATTEMPTS}`);
     } catch (err) {
       console.error(`[DeviceWatchdog] Recovery failed for ${serial}: ${err.message}`);
@@ -178,7 +186,8 @@ class DeviceWatchdog {
   async _checkPing(serial) {
     try {
       const result = await this.xiaowei.adbShell(serial, 'echo ping');
-      if (result && JSON.stringify(result).includes('ping')) {
+      const out = extractXiaoweiOutput(result);
+      if ((out && out.includes('ping')) || (result && result.code === 10000)) {
         // Device is alive, heartbeat will update last_seen next cycle
         return;
       }
@@ -288,6 +297,22 @@ class DeviceWatchdog {
       console.error(`[DeviceWatchdog] Failed to publish event: ${err.message}`);
     }
   }
+}
+
+/**
+ * Xiaowei 응답에서 텍스트 추출 (code 10000 시 data: { [serial]: string } 등)
+ * @param {object} res
+ * @returns {string}
+ */
+function extractXiaoweiOutput(res) {
+  if (!res) return '';
+  if (typeof res === 'string') return res.trim();
+  if (res.data != null && typeof res.data === 'object' && !Array.isArray(res.data)) {
+    const vals = Object.values(res.data);
+    if (vals.length > 0 && typeof vals[0] === 'string') return vals[0].trim();
+  }
+  if (typeof res.data === 'string') return res.data.trim();
+  return (res.msg && String(res.msg)) || '';
 }
 
 module.exports = DeviceWatchdog;

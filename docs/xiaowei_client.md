@@ -76,6 +76,8 @@ Auth:     없음(로컬 전용)
 | devices | string | ✅ | 대상 기기. all 또는 serial1,serial2 또는 IP:PORT |  |
 | data | object | ❌ | 요청별 추가 파라미터 |  |
 
+**코드 참조:** 응답 코드 상수·헬퍼는 `apps/desktop/src/agent/core/xiaowei-constants.js`, 웹 쪽은 `apps/web/src/lib/ws-api-response.ts`. 형식 스키마(선택): `docs/xiaowei_request_response.json`.
+
 ---
 
 ## 3. Device Targeting (devices 규칙)
@@ -90,9 +92,13 @@ Auth:     없음(로컬 전용)
     2) 응답의 `onlySerial`을 안정적 식별자로 사용
     
 
+**코드 참조:** 상수 `XIAOWEI_DEVICES_ALL = "all"` → `apps/desktop/src/agent/core/xiaowei-constants.js`.
+
 ---
 
 ## 4. Action Catalog (기능별 Action 요약)
+
+**코드 참조:** action 문자열 상수 객체 `XIAOWEI_ACTIONS` → `apps/desktop/src/agent/core/xiaowei-constants.js`.
 
 ### 4.1 Device
 
@@ -101,7 +107,7 @@ Auth:     없음(로컬 전용)
 
 ### 4.2 Control
 
-- `adb`: ADB 명령 실행(전체 커맨드)
+- `xiaowei.adb`: ADB 명령 실행(전체 커맨드)
 - `adb_shell`: ADB shell 명령 실행
 - `screen`: 스크린샷
 - `pointerEvent`: 터치/스와이프/스크롤
@@ -188,6 +194,8 @@ Auth:     없음(로컬 전용)
 | serial / onlySerial | 장치 식별자. onlySerial을 안정적으로 활용 권장 |  |  |
 | mode | 0:USB, 1:WiFi, 2:OTG, 3:접근성, 10-12:클라우드 |  |  |
 | intranetIp | 내부 IP |  |  |
+
+이 형식은 `parseDeviceList()` (apps/desktop/src/agent/core/xiaowei-client.js), `parseXiaoweiListJson()` (apps/desktop/src/main/main.ts)에서 사용합니다.
 
 ---
 

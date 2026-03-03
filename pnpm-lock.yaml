@@ -3,12 +3,6 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
-  onlyBuiltDependencies:
-    - '@sentry/cli'
-    - electron
-    - esbuild
-    - sharp
-    - unrs-resolver
 
 overrides:
   tar: '>=7.5.8'
@@ -95,6 +89,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.1
         version: 18.3.7(@types/react@18.3.28)
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.56.0
         version: 8.56.1(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.3(jiti@2.6.1))(typescript@5.9.3)
@@ -119,6 +116,9 @@ importers:
       electron-builder-squirrel-windows:
         specifier: '>=26.0.0'
         version: 26.8.1(dmg-builder@26.8.1)
+      esbuild:
+        specifier: '>=0.25.0'
+        version: 0.25.12
       eslint:
         specifier: ^9.17.0
         version: 9.39.3(jiti@2.6.1)
@@ -9430,7 +9430,7 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  electron-builder-squirrel-windows@26.8.1(dmg-builder@26.8.1):
+  22600-squirrel-windows@26.8.1(dmg-builder@26.8.1):
     dependencies:
       app-builder-lib: 26.8.1(dmg-builder@26.8.1)(electron-builder-squirrel-windows@26.8.1)
       builder-util: 26.8.1

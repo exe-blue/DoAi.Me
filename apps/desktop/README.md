@@ -46,7 +46,7 @@ To build the Windows installer in CI and publish it as a GitHub Release:
    git tag v1.0.0
    git push origin v1.0.0
    ```
-3. The workflow [.github/workflows/release-desktop.yml](../../.github/workflows/release-desktop.yml) runs on `windows-latest`, runs `pnpm --filter @doai/desktop dist`, then creates a GitHub Release and uploads the `.exe` and `latest.yml` from `apps/desktop/release/`.
+3. The workflow [.github/workflows/release-desktop.yml](../../.github/workflows/release-desktop.yml) runs on `windows-latest`, runs `pnpm --filter doaime-desktop dist`, then creates a GitHub Release and uploads the `.exe` and `latest.yml` from `apps/desktop/release/`.
 4. On the repo’s **Releases** page you’ll see the new release and can download the installable exe.
 
 Any tag matching `v*` (e.g. `v1.0.0`, `v1.0.1`) triggers the release workflow.

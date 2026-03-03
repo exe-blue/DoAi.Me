@@ -17,7 +17,7 @@ SELECT proname FROM pg_proc WHERE proname IN (
 
 ## Agent (Dev Container)
 
-1. Run agent: `node agent/agent.js` (or `npm run agent:start` from repo root).
+1. Run agent: from `apps/desktop` run `pnpm run agent:run` (or start Desktop app so it spawns `apps/desktop/src/agent/agent.js`). See [AGENT_SRC_STATUS.md](AGENT_SRC_STATUS.md).
 2. Create a task (dashboard or API); confirm `task_devices` rows are created for each PC's devices.
 3. Confirm DeviceOrchestrator claims task_devices and runs them (logs: `[DeviceOrchestrator] … → taskDevice …`, `[TaskExecutor] ✓ task_device … completed`).
 4. On failure: confirm `retry_count` increases and after 3 retries status becomes `failed`.

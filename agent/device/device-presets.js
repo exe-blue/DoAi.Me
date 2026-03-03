@@ -1,16 +1,32 @@
 /**
  * DoAi.Me - Device Preset Commands
- * Agent와 웹 API에서 공통 사용하는 프리셋 모듈
+ * Agent와 웹 API에서 공통 사용하는 프리셋 모듈.
+ * 모든 디바이스 명령은 Xiaowei WebSocket 경유. 응답 code 10000=성공, 10001=실패.
  *
- * Xiaowei API 포맷:
- *   xiaowei.adbShell(serial, command)
- *   → 응답: { code: 10000, data: { [serial]: "결과\n" } }
+ * Xiaowei: xiaowei.adbShell(serial, command), xiaowei.installApk 등
+ * 응답: { code: 10000|10001, message?, data?: string | { [serial]: "결과\n" } }
+ * JSON 확인: docs/xiaowei-api.md, https://wstool.js.org/
+ *
+ * @see docs/xiaowei-api.md, docs/xiaowei_client.md §2.3, §8.2
  */
 
 const path = require('path');
+const fs = require('fs');
 const sleep = require('../lib/sleep');
 
-const XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR || '/mnt/c/Program Files (x86)/xiaowei/tools';
+/**
+ * Effective Xiaowei tools directory. Env wins; otherwise OS-specific default.
+ * - win32: C:\Program Files (x86)\xiaowei\tools (dist/install friendly)
+ * - linux/wsl: /mnt/c/Program Files (x86)/xiaowei/tools
+ */
+function getEffectiveXiaoweiToolsDir() {
+  if (process.env.XIAOWEI_TOOLS_DIR) return process.env.XIAOWEI_TOOLS_DIR;
+  return process.platform === 'win32'
+    ? path.join('C:', 'Program Files (x86)', 'xiaowei', 'tools')
+    : '/mnt/c/Program Files (x86)/xiaowei/tools';
+}
+
+const XIAOWEI_TOOLS_DIR = getEffectiveXiaoweiToolsDir();
 
 const _randInt = (min, max) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
@@ -443,10 +459,10 @@ async function warmup(xiaowei, serial, options = {}) {
     );
     await sleep(_randInt(3000, 5000));
 
-    // 2. 화면 크기
+    // 2. 화면 크기 (wm size + extract so sizeVal is always defined; guard against null/undefined)
     const sizeRes = await xiaowei.adbShell(serial, "wm size");
-    const sizeVal = extractValue(sizeRes, serial);
-    const sizeMatch = sizeVal.match(/(\d+)x(\d+)/);
+    const sizeVal = extractValue(sizeRes, serial) ?? "";
+    const sizeMatch = (typeof sizeVal === "string" && sizeVal) ? sizeVal.match(/(\d+)x(\d+)/) : null;
     const w = sizeMatch ? parseInt(sizeMatch[1]) : 1080;
     const h = sizeMatch ? parseInt(sizeMatch[2]) : 1920;
     const midX = Math.round(w / 2);
@@ -511,10 +527,28 @@ async function warmup(xiaowei, serial, options = {}) {
   return result;
 }
 
+/**
+ * Log tools dir and APK paths for diagnostics (PRE_CHECK / preset run).
+ * Call before using XIAOWEI_TOOLS_DIR so failures can be classified (path vs other).
+ */
+function logToolsDirDiagnostics() {
+  const dir = XIAOWEI_TOOLS_DIR;
+  const dirExists = fs.existsSync(dir);
+  console.log(`[Preset:Tools] EFFECTIVE_XIAOWEI_TOOLS_DIR=${dir}`);
+  console.log(`[Preset:Tools] existsSync(dir)=${dirExists}`);
+  const apkNames = ['XWKeyboard.apk', 'assistant.apk', 'hidmanager.apk'];
+  for (const name of apkNames) {
+    const p = path.join(dir, name);
+    console.log(`[Preset:Tools] existsSync(${name})=${fs.existsSync(p)} path=${p}`);
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 //  PRESET: INSTALL_APKS
 // ════════════════════════════════════════════════════════════
 async function installApks(xiaowei, serial, options = {}) {
+  logToolsDirDiagnostics();
+
   const apks = [
     {
       name: "XWKeyboard (ADB Keyboard)",
@@ -590,6 +624,9 @@ async function installApks(xiaowei, serial, options = {}) {
       console.warn(
         `[Preset:Install] ${serial.substring(0, 6)} ${apk.name} failed: ${err.message}`
       );
+      if (err && err.stack) {
+        console.error(`[Preset:Install] ${apk.name} stack:\n${err.stack}`);
+      }
     }
   }
 

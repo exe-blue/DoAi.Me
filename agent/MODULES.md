@@ -7,6 +7,8 @@ Configuration: `config.js`
 
 Initialization order: Core → Task → Heartbeat → Setup → Subscriptions → Scheduling → DeviceOrchestrator
 
+**워크플로우 정의(선행조건: 스킵/대기/병렬):** `docs/WORKFLOWS.md`
+
 ---
 
 ## Layer 1 — Core / External Communication

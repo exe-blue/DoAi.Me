@@ -27,7 +27,7 @@
 
 ### 1.2 Build desktop 단계 실패
 
-`pnpm --filter @doai/desktop run dist`는 다음을 순서대로 실행함:
+`pnpm --filter doaime-desktop run dist`는 다음을 순서대로 실행함:
 
 ```json
 "dist": "pnpm run test && pnpm run build && node scripts/download-node-win.js && electron-builder --win"
@@ -73,7 +73,7 @@ Turbo와의 관계:
 ```bash
 # 루트에서
 pnpm install
-pnpm --filter @doai/desktop run dist
+pnpm --filter doaime-desktop run dist
 ```
 
 - 실패 시: 터미널에서 **어느 단계(test/build/download-node/electron-builder)**에서 끊기는지 확인.
@@ -111,7 +111,7 @@ pnpm --filter @doai/desktop run dist
 
 | 대상 | 권장 변경 |
 |------|-----------|
-| **워크플로 (로그)** | Install: 실패 시 로그 확보를 위해 `run: pnpm install` 유지하되, 다음 실행에서 실패하면 Actions 탭에서 "Install dependencies" 단계 로그 전체 확인. Build desktop: 실패 지점 파악을 위해 dist를 단계별로 쪼개기 — 예: `pnpm --filter @doai/desktop run test`, `pnpm --filter @doai/desktop run build`, `node apps/desktop/scripts/download-node-win.js`(cwd: apps/desktop), `pnpm --filter @doai/desktop exec electron-builder --win` — 각각 별도 step으로 두면 어느 단계에서 exit 1인지 명확히 보임. |
+| **워크플로 (로그)** | Install: 실패 시 로그 확보를 위해 `run: pnpm install` 유지하되, 다음 실행에서 실패하면 Actions 탭에서 "Install dependencies" 단계 로그 전체 확인. Build desktop: 실패 지점 파악을 위해 dist를 단계별로 쪼개기 — 예: `pnpm --filter doaime-desktop run test`, `pnpm --filter doaime-desktop run build`, `node apps/desktop/scripts/download-node-win.js`(cwd: apps/desktop), `pnpm --filter doaime-desktop exec electron-builder --win` — 각각 별도 step으로 두면 어느 단계에서 exit 1인지 명확히 보임. |
 | **워크플로 (캐시)** | 재현 시 캐시 제거: `cache: "pnpm"`을 일시 제거하고 한 번 실행해, 캐시로 인한 설치 실패 여부 확인. |
 | **워크플로 (lockfile)** | 안정화 후 재도입: 문제 원인 제거 후 `pnpm install --frozen-lockfile`로 되돌려 재현성 확보. |
 | **package.json (desktop)** | dist 단계 분리(선택): CI 전용 스크립트 예: `"dist:ci": "pnpm run build && node scripts/download-node-win.js && electron-builder --win"`처럼 test를 제외하고, test는 별도 job에서만 실행. (smoke가 CI에서 불필요하다고 판단될 때만.) |

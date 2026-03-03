@@ -1,44 +1,23 @@
 /**
- * API response format standard.
- * - Success: { ok: true, data }
- * - List: { ok: true, data: [...], page, pageSize, total }
- * - Error: { ok: false, code, message, details? }
- * All /api/* routes must use these helpers. Never expose Service Role key to client.
+ * API: WebSocket only (no HTTP). See docs/API_WS_ONLY.md.
+ * - Success: code 10000
+ * - Failure: code 10001
+ * Re-exports from ws-api-response. parseListParams for WS handler use.
  */
-import { NextResponse } from "next/server";
+import { wsErr, type WsErrorPayload } from "./ws-api-response";
+export {
+  API_RESPONSE_CODE_SUCCESS,
+  API_RESPONSE_CODE_FAILURE,
+  wsOk as ok,
+  wsOkList as okList,
+  wsErr as err,
+  isWsSuccess,
+  isWsFailure,
+} from "./ws-api-response";
+export type { WsSuccessPayload, WsListPayload, WsErrorPayload } from "./ws-api-response";
 
-export type ApiSuccess<T> = { ok: true; data: T };
-export type ApiList<T> = { ok: true; data: T[]; page: number; pageSize: number; total: number };
-export type ApiError = { ok: false; code: string; message: string; details?: unknown };
-
-export function ok<T>(data: T, status = 200): NextResponse {
-  return NextResponse.json({ ok: true as const, data }, { status });
-}
-
-export function okList<T>(
-  data: T[],
-  opts: { page: number; pageSize: number; total: number },
-  status = 200
-): NextResponse {
-  return NextResponse.json(
-    { ok: true as const, data, page: opts.page, pageSize: opts.pageSize, total: opts.total },
-    { status }
-  );
-}
-
-export function err(
-  code: string,
-  message: string,
-  status = 400,
-  details?: unknown
-): NextResponse {
-  return NextResponse.json(
-    { ok: false as const, code, message, ...(details != null && { details }) },
-    { status }
-  );
-}
-
-export function errFrom(e: unknown, fallbackCode = "INTERNAL_ERROR", fallbackStatus = 500): NextResponse {
+/** Build error payload from unknown exception (code 10001). */
+export function errFrom(e: unknown, fallbackErrorCode = "INTERNAL_ERROR"): WsErrorPayload {
   let message: string;
   if (e instanceof Error) {
     message = e.message;
@@ -48,11 +27,7 @@ export function errFrom(e: unknown, fallbackCode = "INTERNAL_ERROR", fallbackSta
     const s = String(e);
     message = s === "[object Object]" ? "오류가 발생했습니다" : s;
   }
-  const status = fallbackStatus;
-  return NextResponse.json(
-    { ok: false as const, code: fallbackCode, message },
-    { status }
-  );
+  return wsErr(fallbackErrorCode, message);
 }
 
 /** Parse common query params (page, pageSize, sortBy, sortOrder, q). */

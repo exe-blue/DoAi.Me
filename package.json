@@ -8,14 +8,21 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "dist": "pnpm --filter @doai/desktop dist"
+    "dist": "pnpm --filter doaime-desktop dist"
   },
   "devDependencies": {
     "turbo": "^2.3.0"
   },
   "packageManager": "pnpm@10.29.3",
   "pnpm": {
-    "onlyBuiltDependencies": ["@sentry/cli", "electron", "electron-winstaller", "esbuild", "sharp", "unrs-resolver"],
+    "onlyBuiltDependencies": [
+      "@sentry/cli",
+      "electron",
+      "electron-winstaller",
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ],
     "overrides": {
       "tar": ">=7.5.8",
       "serialize-javascript": ">=7.0.3",
@@ -30,5 +37,8 @@
       "markdown-it": ">=14.1.1",
       "electron-builder-squirrel-windows": ">=26.0.0"
     }
+  },
+  "dependencies": {
+    "claude-code": "^1.0.0"
   }
 }

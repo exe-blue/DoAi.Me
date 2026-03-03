@@ -122,9 +122,10 @@ class TaskExecutor {
     this._devicePersonalities = new Map();
 
     this.commentGenerator = null;
-    if (process.env.OPENAI_API_KEY) {
+    const openaiKey = config?.openaiApiKey ?? process.env.OPENAI_API_KEY;
+    if (openaiKey) {
       this.commentGenerator = new CommentGenerator(
-        process.env.OPENAI_API_KEY,
+        openaiKey,
         process.env.OPENAI_MODEL || "gpt-4o-mini"
       );
       console.log("[TaskExecutor] ✓ CommentGenerator initialized (OpenAI)");
@@ -154,18 +155,22 @@ class TaskExecutor {
       await this._updateTaskDevice(taskDevice.id, "failed", { error: "No video_url in config" });
       return;
     }
-    const searchKeyword = cfg.keyword ?? cfg.title ?? null;
-    const videoTitle = cfg.title ?? null;
-    const waitMinSec = Math.max(0, Number(cfg.min_wait_sec) || 1);
-    const waitMaxSec = Math.max(waitMinSec, Number(cfg.max_wait_sec) || 5);
+    const searchKeyword = cfg.영상키워드 ?? cfg.keyword ?? cfg.title ?? null;
+    const videoTitle = cfg.영상제목 ?? cfg.title ?? null;
+    const waitMinMs = Math.max(0, parseInt(cfg.min_wait_ms, 10) || (parseInt(cfg.min_wait_sec, 10) * 1000) || 1000);
+    const waitMaxMs = Math.max(waitMinMs, parseInt(cfg.max_wait_ms, 10) || (parseInt(cfg.max_wait_sec, 10) * 1000) || 5000);
     const durationSec = this._resolveWatchDurationSec(cfg);
 
-    // Phase 1: comment_status ready → use pre-generated; pending → agent fallback (generate + set fallback)
+    // Phase 1: comment_pool (Layer 4 AI pre-generated) → pick one; else comment_content/ready; else pending fallback
     let commentContent = null;
+    const pool = cfg.comment_pool;
+    if (Array.isArray(pool) && pool.length > 0) {
+      commentContent = pool[Math.floor(Math.random() * pool.length)];
+    }
     const commentStatus = taskDevice.comment_status ?? cfg.comment_status ?? "pending";
-    if (commentStatus === "ready" && (cfg.comment_content || taskDevice.comment_content)) {
+    if (!commentContent && commentStatus === "ready" && (cfg.comment_content || taskDevice.comment_content)) {
       commentContent = cfg.comment_content ?? taskDevice.comment_content;
-    } else if (commentStatus === "pending" && this.commentGenerator) {
+    } else if (!commentContent && commentStatus === "pending" && this.commentGenerator) {
       try {
         commentContent = await this.commentGenerator.generate(videoTitle || "", "");
         await this.supabaseSync.supabase
@@ -185,8 +190,8 @@ class TaskExecutor {
       channelName: "",
       videoId,
       warmupSec: this._shouldWarmup(serial) ? _randInt(60, 180) : 0,
-      waitMinSec,
-      waitMaxSec,
+      waitMinMs,
+      waitMaxMs,
       commentContent,
       actionTouchCoords: cfg.action_touch_coords ?? null,
     };
@@ -323,9 +328,9 @@ class TaskExecutor {
   async _watchVideoOnDevice(serial, videoUrl, durationSec, searchKeyword, videoTitle, engagementConfig) {
     const startTime = Date.now();
     const eng = engagementConfig || {};
-    const waitMinMs = () => (eng.waitMinSec != null ? eng.waitMinSec * 1000 : 1000);
-    const waitMaxMs = () => (eng.waitMaxSec != null ? eng.waitMaxSec * 1000 : 5000);
-    const stepWait = () => sleep(_randInt(waitMinMs(), waitMaxMs()));
+    const waitMin = () => (eng.waitMinMs != null ? eng.waitMinMs : (eng.waitMinSec != null ? eng.waitMinSec * 1000 : 1000));
+    const waitMax = () => (eng.waitMaxMs != null ? eng.waitMaxMs : (eng.waitMaxSec != null ? eng.waitMaxSec * 1000 : 5000));
+    const stepWait = () => sleep(_randInt(waitMin(), waitMax()));
 
     if (eng.warmupSec && eng.warmupSec > 0) {
       await this._doWarmup(serial, eng.warmupSec);
@@ -1370,11 +1375,12 @@ class TaskExecutor {
         return this.xiaowei.autojsCreate(devices, payload.scriptPath, options);
 
       case "adb":
+      case "xiaowei.adb":
         if (!payload.command) {
-          throw new Error("command is required for adb type");
+          throw new Error("command is required for xiaowei.adb type");
         }
-        console.log(`[TaskExecutor]   Xiaowei adb: "${payload.command}" → ${devices}`);
-        return this.xiaowei.adb(devices, payload.command);
+        console.log(`[TaskExecutor]   xiaowei.adb: "${payload.command}" → ${devices}`);
+        return this.xiaowei.xiaoweiAdb(devices, payload.command);
 
       case "adb_shell":
         if (!payload.command) {

@@ -144,12 +144,31 @@ async function main() {
 
   xiaowei.on("connected", onXiaoweiConnected);
 
+  // PRE_CHECK Stage A: WS open = connected, proceed. Full failure log on reject (no retry loop).
+  const effectiveUrl = config.xiaoweiWsUrl;
+  const checkTypeA = "WS_OPEN";
+  console.log(`[PRE_CHECK] checkType=${checkTypeA} EFFECTIVE_WS_URL=${effectiveUrl} attemptNo=${xiaowei.attemptNo}`);
   try {
     await waitForXiaowei(xiaowei, 10000);
-    console.log(`[Agent] ✓ Xiaowei connected (${config.xiaoweiWsUrl})`);
+    console.log(`[Agent] ✓ Xiaowei connected (${effectiveUrl}) — Stage A (${checkTypeA}) OK`);
   } catch (err) {
-    console.warn(`[Agent] ✗ Xiaowei connection failed: ${err.message}`);
-    console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect");
+    const errMsg = (err && err.message) ? err.message : String(err);
+    const errStack = (err && err.stack) ? err.stack : "";
+    console.error(
+      `[PRE_CHECK] failed checkType=${checkTypeA} EFFECTIVE_WS_URL=${effectiveUrl} attemptNo=${xiaowei.attemptNo} failedAction=timeout/error error.message=${errMsg} closeCode=— closeReason=— elapsedMs=—`
+    );
+    if (errStack) console.error(`[PRE_CHECK] error.stack:\n${errStack}`);
+    console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect (no blocking retry)");
+  }
+
+  // PRE_CHECK Stage B: optional list check. Failure = WARN only, connected unchanged.
+  if (xiaowei.connected) {
+    try {
+      await xiaowei.list();
+      console.log("[PRE_CHECK] Stage B (capability list) OK");
+    } catch (err) {
+      console.warn(`[PRE_CHECK] Stage B failed (list): ${err.message} — connection remains open, WARN only`);
+    }
   }
 
   // 4a. Run optimize on all devices once on first connect (effects off, resolution 1080x1920)

@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xiaowei_request_response",
+  "title": "Xiaowei WebSocket API envelopes (docs/xiaowei_client.md §2, §5.1)",
+  "definitions": {
+    "XiaoweiRequest": {
+      "type": "object",
+      "required": ["action", "devices"],
+      "properties": {
+        "action": { "type": "string", "description": "요청 이벤트 타입 (§2.4)" },
+        "devices": { "type": "string", "description": "all | serial1,serial2 | IP:PORT (§3)" },
+        "data": { "type": "object", "description": "요청별 추가 파라미터" }
+      }
+    },
+    "XiaoweiResponse": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "integer", "enum": [10000, 10001], "description": "10000=SUCCESS, 10001=실패 (§8.2)" },
+        "message": { "type": "string" },
+        "data": {}
+      }
+    },
+    "XiaoweiListDevice": {
+      "type": "object",
+      "properties": {
+        "serial": { "type": "string" },
+        "onlySerial": { "type": "string" },
+        "model": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "mode": { "type": "integer", "description": "0:USB, 1:WiFi, 2:OTG, 3:접근성, 10-12:클라우드" },
+        "intranetIp": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "sourceWidth": { "type": "number" },
+        "sourceHeight": { "type": "number" },
+        "connectTime": { "type": "number" },
+        "sort": { "type": "number" },
+        "hide": { "type": "boolean" }
+      }
+    }
+  }
+}

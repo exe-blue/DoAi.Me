@@ -101,7 +101,7 @@ export function LogPanel() {
         }}
       >
         <Typography variant="subtitle2" sx={{ mr: 0.5 }}>
-          Logs
+          Logs (실시간)
         </Typography>
         <Chip
           label="All"

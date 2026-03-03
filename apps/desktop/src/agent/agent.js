@@ -2,8 +2,8 @@
  * DoAi.Me Node PC Agent
  * Supabase Realtime <-> Xiaowei WebSocket bridge
  * Runs 24/7 on Windows Node PCs
+ * Xiaowei API: docs/xiaowei_ws_api (ws://127.0.0.1:22222/)
  */
-const os = require("os");
 const config = require("./config");
 const XiaoweiClient = require("./core/xiaowei-client");
 const SupabaseSync = require("./core/supabase-sync");
@@ -67,7 +67,7 @@ function waitForXiaowei(client, timeoutMs = 10000) {
 }
 
 async function main() {
-  console.log(`[Agent] Starting (hostname: ${os.hostname()})`);
+  console.log(`[Agent] Starting PC: ${config.pcNumber}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
   // ---------- Phase 1: Environment / DB / settings ----------
@@ -101,12 +101,10 @@ async function main() {
     console.warn(`[Agent] ✗ Settings load failed: ${err.message}`);
   }
 
-  // 3. Register PC — hostname-based DB assignment (no PC_NUMBER env required)
+  // 3. Register PC
   try {
-    const hostname = os.hostname();
-    const pcNumber = await supabaseSync.getPcByHostname(hostname);
-    config.pcNumber = pcNumber;
-    console.log(`[Agent] ✓ PC registered: ${pcNumber} (hostname: ${hostname})`);
+    const pcId = await supabaseSync.getPcId(config.pcNumber);
+    console.log(`[Agent] PC ID: ${pcId}`);
     config.setPrimaryFromDb(supabaseSync.pcUuid);
   } catch (err) {
     console.error(`[Agent] ✗ PC registration failed: ${err.message}`);
@@ -116,8 +114,9 @@ async function main() {
   logger.info("Agent", `Phase 1 complete: env/DB/settings`, { pc_id: supabaseSync.pcId });
 
   // ---------- Phase 2: Xiaowei / device preparation ----------
-  // 4. Initialize Xiaowei WebSocket client (Rule D: do not exit process on connection failure)
+  // 4. Initialize Xiaowei WebSocket client and connect immediately (Rule D: do not exit process on connection failure)
   xiaowei = new XiaoweiClient(config.xiaoweiWsUrl);
+  xiaowei.connect();
 
   xiaowei.on("disconnected", () => {
     console.log("[Agent] Xiaowei connection lost, will reconnect...");
@@ -147,12 +146,31 @@ async function main() {
 
   xiaowei.on("connected", onXiaoweiConnected);
 
+  // PRE_CHECK Stage A: WS open = connected, proceed. Full failure log on reject (no retry loop).
+  const effectiveUrl = config.xiaoweiWsUrl;
+  const checkTypeA = "WS_OPEN";
+  console.log(`[PRE_CHECK] checkType=${checkTypeA} EFFECTIVE_WS_URL=${effectiveUrl} attemptNo=${xiaowei.attemptNo}`);
   try {
     await waitForXiaowei(xiaowei, 10000);
-    console.log(`[Agent] ✓ Xiaowei connected (${config.xiaoweiWsUrl})`);
+    console.log(`[Agent] ✓ Xiaowei connected (${effectiveUrl}) — Stage A (${checkTypeA}) OK`);
   } catch (err) {
-    console.warn(`[Agent] ✗ Xiaowei connection failed: ${err.message}`);
-    console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect");
+    const errMsg = (err && err.message) ? err.message : String(err);
+    const errStack = (err && err.stack) ? err.stack : "";
+    console.error(
+      `[PRE_CHECK] failed checkType=${checkTypeA} EFFECTIVE_WS_URL=${effectiveUrl} attemptNo=${xiaowei.attemptNo} failedAction=timeout/error error.message=${errMsg} closeCode=— closeReason=— elapsedMs=—`
+    );
+    if (errStack) console.error(`[PRE_CHECK] error.stack:\n${errStack}`);
+    console.warn("[Agent] Agent will continue — Xiaowei will auto-reconnect (no blocking retry)");
+  }
+
+  // PRE_CHECK Stage B: optional list check. Failure = WARN only, connected unchanged.
+  if (xiaowei.connected) {
+    try {
+      await xiaowei.list();
+      console.log("[PRE_CHECK] Stage B (capability list) OK");
+    } catch (err) {
+      console.warn(`[PRE_CHECK] Stage B failed (list): ${err.message} — connection remains open, WARN only`);
+    }
   }
 
   // 4a. Run optimize on all devices once on first connect (effects off, resolution 1080x1920)
@@ -307,7 +325,7 @@ async function main() {
   deviceOrchestrator = new DeviceOrchestrator(xiaowei, supabaseSync.supabase, taskExecutor, {
     pcId: supabaseSync.pcId,
     pcUuid: supabaseSync.pcUuid,
-    maxConcurrent: config.maxConcurrentTasks || 10,
+    maxConcurrent: config.maxConcurrentTasks ?? 20,
     loggingDir: config.loggingDir,
   });
   console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);

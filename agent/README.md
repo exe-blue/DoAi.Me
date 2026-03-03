@@ -1,8 +1,15 @@
-# DoAi.Me PC Agent
+# DoAi.Me PC Agent (root)
+
+# ⚠️ NOT USED BY DESKTOP
+
+**Desktop (Electron) never runs this folder.** The running agent SSOT is **`apps/desktop/src/agent`** only.  
+Dev and dist both use `apps/desktop/src/agent/agent.js`. This root `agent/` is standalone/legacy; do not reference it from Desktop code or agentRunner.
+
+---
 
 Node.js agent that bridges Supabase and Xiaowei to run YouTube view tasks on connected devices.
 
-**Run:** `node agent.js`
+**Run (standalone only):** `node agent.js`
 
 **Execution path (enforced):** SSOT is `task_devices`. Only `claim_task_devices_for_pc` / `claim_next_task_device` → `runTaskDevice`. No `job_assignments` path for new execution.
 

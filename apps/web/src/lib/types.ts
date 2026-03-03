@@ -72,6 +72,8 @@ export interface TaskDeviceConfig {
   prob_comment?: number;
   prob_playlist?: number;
   comment_content?: string;
+  /** Layer 4: AI pre-generated comments (server); agent picks one per device. */
+  comment_pool?: string[];
   /** Phase 11: Prefer ratio (0–1) for device-agnostic taps. Server must not store absolute pixels. */
   action_touch_coords?: Record<string, { x_ratio?: number; y_ratio?: number; x?: number; y?: number }>;
 }

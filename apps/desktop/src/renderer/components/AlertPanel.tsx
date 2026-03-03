@@ -17,6 +17,7 @@ import DialogContentText from "@mui/material/DialogContentText";
 import DialogActions from "@mui/material/DialogActions";
 import CloseIcon from "@mui/icons-material/Close";
 import { useAlertStore } from "../store/useAlertStore";
+import { commands } from "../src";
 
 export function AlertPanel() {
   const alerts = useAlertStore((s) => s.alerts);
@@ -25,7 +26,7 @@ export function AlertPanel() {
   const [confirmClear, setConfirmClear] = useState(false);
 
   const handleExportDiagnostic = (serial?: string) => {
-    window.electronAPI?.exportDiagnostic(serial ? { serials: [serial] } : undefined);
+    commands.exportDiagnostic(serial ? { serials: [serial] } : undefined);
   };
 
   return (
@@ -42,7 +43,7 @@ export function AlertPanel() {
         }}
       >
         <Typography variant="subtitle2">
-          Alerts{alerts.length > 0 && ` (${alerts.length})`}
+          알림 (중요함 이상 · WARN/ERROR){alerts.length > 0 && ` (${alerts.length})`}
         </Typography>
         <Button
           size="small"

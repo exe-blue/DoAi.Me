@@ -2,29 +2,34 @@
  * DoAi.Me - Xiaowei WebSocket Client
  * Connects to Xiaowei automation tool via WebSocket
  * Provides API for device control and action execution
+ * Request/response envelope: docs/xiaowei_client.md §2. Action 목록: §4.
  */
 const EventEmitter = require("events");
 const WebSocket = require("ws");
 
+/**
+ * Parse device list from Xiaowei list response.
+ * Prefers onlySerial as stable identifier (docs/xiaowei_ws_api §3, §5.1).
+ */
 function parseDeviceList(response) {
   if (!response) return [];
   if (Array.isArray(response)) {
     return response.map(d => ({
-      serial: d.serial || d.id || d.deviceId || "",
+      serial: d.onlySerial || d.serial || d.id || d.deviceId || "",
       model: d.model || d.name || "",
-      status: "online",
+      status: d.status || "online",
       battery: d.battery != null ? d.battery : null,
-      ipIntranet: d.ip || d.ipIntranet || null,
+      ipIntranet: d.intranetIp || d.ip || d.ipIntranet || null,
     }));
   }
   const devices = response.data || response.devices || response.list;
   if (Array.isArray(devices)) {
     return devices.map(d => ({
-      serial: d.serial || d.id || d.deviceId || "",
+      serial: d.onlySerial || d.serial || d.id || d.deviceId || "",
       model: d.model || d.name || "",
-      status: "online",
+      status: d.status || "online",
       battery: d.battery != null ? d.battery : null,
-      ipIntranet: d.ip || d.ipIntranet || null,
+      ipIntranet: d.intranetIp || d.ip || d.ipIntranet || null,
     }));
   }
   if (typeof response === "object") {
@@ -32,11 +37,11 @@ function parseDeviceList(response) {
       ([key]) => !["action", "status", "code", "msg"].includes(key)
     );
     return entries.map(([serial, info]) => ({
-      serial,
+      serial: (info && info.onlySerial) || serial,
       model: (info && info.model) || "",
-      status: "online",
+      status: (info && info.status) || "online",
       battery: (info && info.battery) != null ? (info && info.battery) : null,
-      ipIntranet: (info && info.ip) || null,
+      ipIntranet: (info && info.intranetIp) || (info && info.ip) || null,
     }));
   }
   return [];
@@ -56,8 +61,13 @@ class XiaoweiClient extends EventEmitter {
     this._commandQueue = [];
     this._maxQueueSize = 100;
     this._disconnectedAt = null;
+    this._attemptNo = 0;
     /** @type {Array<{serial: string, model?: string, status?: string, battery?: number|null, ipIntranet?: string|null}>} */
     this.lastDevices = [];
+  }
+
+  get attemptNo() {
+    return this._attemptNo;
   }
 
   get isConnected() {
@@ -74,7 +84,8 @@ class XiaoweiClient extends EventEmitter {
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
-    console.log(`[Xiaowei] Connecting to ${this.wsUrl}...`);
+    this._attemptNo = (this._attemptNo || 0) + 1;
+    console.log(`[Xiaowei] Connecting to ${this.wsUrl}... attemptNo=${this._attemptNo}`);
 
     try {
       this.ws = new WebSocket(this.wsUrl);
@@ -302,31 +313,31 @@ class XiaoweiClient extends EventEmitter {
   }
 
   /**
-   * Run full ADB command (with "adb" prefix)
+   * Run full xiaowei.adb command (with "adb" prefix)
    * @param {string} devices - Comma-separated serials or "all"
    * @param {string} command - Full adb command
    */
-  adb(devices, command) {
+  xiaoweiAdb(devices, command) {
     return this.send({
-      action: "adb",
+      action: "xiaowei.adb",
       devices,
       data: { command },
     });
   }
 
   /**
-   * Send pointer/touch event
+   * Send pointer/touch event (docs/xiaowei_ws_api §5.3 pointerEvent)
    * @param {string} devices - Comma-separated serials or "all"
-   * @param {string} type - "0"=press, "1"=release, "2"=move, "3"=scroll_up, "4"=scroll_down,
-   *                         "5"=swipe_up, "6"=swipe_down, "7"=swipe_left, "8"=swipe_right
-   * @param {string|number} x - X coordinate (0-100%)
-   * @param {string|number} y - Y coordinate (0-100%)
+   * @param {string} type - "0"=누르기, "1"=떼기, "2"=이동, "4"=휠 위, "5"=휠 아래,
+   *                         "6"=위 스와이프, "7"=아래 스와이프, "8"=왼쪽, "9"=오른쪽
+   * @param {string|number} x - X (필요 시)
+   * @param {string|number} y - Y (필요 시)
    */
   pointerEvent(devices, type, x, y) {
     return this.send({
       action: "pointerEvent",
       devices,
-      data: { type: String(type), x: String(x || "50"), y: String(y || "50") },
+      data: { type: String(type), x: String(x ?? "20"), y: String(y ?? "70") },
     });
   }
 
@@ -396,22 +407,22 @@ class XiaoweiClient extends EventEmitter {
   }
 
   /**
-   * Take a screenshot
+   * Take a screenshot (docs/xiaowei_ws_api §5.2: data.savePath)
    * @param {string} devices
-   * @param {string} [savePath] - Optional path to save screenshot
+   * @param {string} [savePath] - PC save path (default: D:\\Pictures)
    */
   screen(devices, savePath) {
     return this.send({
       action: "screen",
       devices,
-      data: savePath ? { path: savePath } : {},
+      data: savePath ? { savePath } : {},
     });
   }
 
   /**
-   * Navigation key event
+   * Navigation key event (docs/xiaowei_ws_api §5.4 pushEvent)
    * @param {string} devices
-   * @param {string} type - "0"=back, "1"=home, "2"=recents
+   * @param {string} type - "1"=최근앱, "2"=홈, "3"=뒤로
    */
   pushEvent(devices, type) {
     return this.send({
@@ -461,18 +472,18 @@ class XiaoweiClient extends EventEmitter {
     });
   }
 
-  // ── Convenience methods ──
+  // ── Convenience methods (docs/xiaowei_ws_api §5.4 pushEvent, §5.3 pointerEvent) ──
 
   goHome(devices) {
-    return this.pushEvent(devices, "1");
+    return this.pushEvent(devices, "2");
   }
 
   goBack(devices) {
-    return this.pushEvent(devices, "0");
+    return this.pushEvent(devices, "3");
   }
 
   recentApps(devices) {
-    return this.pushEvent(devices, "2");
+    return this.pushEvent(devices, "1");
   }
 
   async tap(devices, x, y) {
@@ -482,11 +493,53 @@ class XiaoweiClient extends EventEmitter {
   }
 
   swipeUp(devices) {
-    return this.pointerEvent(devices, "5", "50", "50");
+    return this.pointerEvent(devices, "6", "50", "50");
   }
 
   swipeDown(devices) {
-    return this.pointerEvent(devices, "6", "50", "50");
+    return this.pointerEvent(devices, "7", "50", "50");
+  }
+
+  swipeLeft(devices) {
+    return this.pointerEvent(devices, "8", "50", "50");
+  }
+
+  swipeRight(devices) {
+    return this.pointerEvent(devices, "9", "50", "50");
+  }
+
+  /**
+   * Pull file from device to PC (docs/xiaowei_ws_api §4.3 File - pullFile)
+   * @param {string} devices - Single serial or "IP:PORT"
+   * @param {string} remotePath - Device path
+   * @param {string} localPath - PC save path
+   */
+  pullFile(devices, remotePath, localPath) {
+    return this.send({
+      action: "pullFile",
+      devices,
+      data: { remotePath, localPath },
+    });
+  }
+
+  /**
+   * AutoJS: remove running script by name (docs §4.7, §8.1 v8.288+)
+   * @param {string} devices - "all" or "serial1,serial2"
+   * @param {string} scriptName - File name only (e.g. "youtube_commander.js")
+   */
+  autojsRemove(devices, scriptName) {
+    return this.send({
+      action: "autojsRemove",
+      devices,
+      data: { name: scriptName },
+    });
+  }
+
+  /**
+   * AutoJS: list registered tasks
+   */
+  autojsTasks() {
+    return this.send({ action: "autojsTasks" });
   }
 
   /** Gracefully close the connection */

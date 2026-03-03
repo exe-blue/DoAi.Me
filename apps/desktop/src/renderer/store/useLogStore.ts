@@ -5,6 +5,7 @@ const MAX_LOGS = 500;
 interface LogStore {
   logs: LogEntry[];
   addLog: (entry: LogEntry) => void;
+  setLogs: (entries: LogEntry[]) => void;
   clearLogs: () => void;
 }
 
@@ -15,5 +16,7 @@ export const useLogStore = create<LogStore>((set) => ({
       const next = [...s.logs, entry];
       return { logs: next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next };
     }),
+  setLogs: (entries) =>
+    set({ logs: entries.length > MAX_LOGS ? entries.slice(-MAX_LOGS) : entries }),
   clearLogs: () => set({ logs: [] }),
 }));

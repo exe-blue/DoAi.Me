@@ -26,6 +26,7 @@ apps/desktop/node-bundle/
 # Environment
 .env
 .env.local
+apps/desktop/release.env
 .env.development.local
 .env.test.local
 .env.production.local

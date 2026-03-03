@@ -5,13 +5,15 @@
  * Emits 'config-updated' with { key, oldValue, newValue } on every change.
  */
 const EventEmitter = require("events");
-require("dotenv").config({ path: require("path").resolve(__dirname, ".env"), override: true });
+const fs = require("fs");
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env"), override: true });
 
 // Env validation (warn, don't exit — tests may not have env vars)
 const requiredEnv = [
   ["SUPABASE_URL", process.env.SUPABASE_URL],
   ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
-  // PC_NUMBER removed — PC identity is assigned from DB via hostname
+  ["PC_NUMBER", process.env.PC_NUMBER],
 ];
 for (const [name, val] of requiredEnv) {
   if (val === undefined || val === "") {
@@ -41,13 +43,28 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    // pcNumber is null on startup — populated from DB after hostname-based registration
     this.pcNumber = process.env.PC_NUMBER || null;
     this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
     this.xiaoweiWsUrl = process.env.XIAOWEI_WS_URL || "ws://127.0.0.1:22222/";
+    /** OpenAI API Key for comment generation (댓글 생성). Set in env or agent-settings. */
+    this.openaiApiKey = process.env.OPENAI_API_KEY || null;
+    // Override from agent-settings file when Desktop passes AGENT_SETTINGS_PATH
+    const settingsPath = process.env.AGENT_SETTINGS_PATH;
+    if (settingsPath) {
+      try {
+        if (fs.existsSync(settingsPath)) {
+          const data = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+          if (data.pc_number != null && data.pc_number !== "") this.pcNumber = String(data.pc_number);
+          if (data.xiaowei_ws_url != null && data.xiaowei_ws_url !== "") this.xiaoweiWsUrl = String(data.xiaowei_ws_url);
+          if (data.openai_api_key != null && data.openai_api_key !== "") this.openaiApiKey = String(data.openai_api_key);
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
     this.scriptsDir = process.env.SCRIPTS_DIR || "";
     this.screenshotsDir = process.env.SCREENSHOTS_DIR || "";
     this.configDir = process.env.CONFIG_DIR || "";
@@ -69,7 +86,7 @@ class AgentConfig extends EventEmitter {
     this.proxyCheckInterval = 300000;
     this.proxyPolicy = "sticky";
     this.maxConcurrentTasks = parseInt(
-      process.env.MAX_CONCURRENT_TASKS || "10",
+      process.env.MAX_CONCURRENT_TASKS || "20",
       10,
     );
     this.taskExecutionTimeoutMs = parseInt(

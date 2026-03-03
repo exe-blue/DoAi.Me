@@ -1,19 +1,231 @@
 import { execFile } from "child_process";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import Store from "electron-store";
 import log from "electron-log";
 import { autoUpdater } from "electron-updater";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
+import WebSocket from "ws";
 import * as agentRunner from "./agentRunner";
+
+// ─── Fatal boot logger: %TEMP%\doaime-boot.log (no userData dependency) ───
+const BOOT_LOG_PATH =
+  process.platform === "win32"
+    ? path.join(process.env.TEMP || "C:\\", "doaime-boot.log")
+    : path.join(process.env.HOME || "/tmp", "doaime-boot.log");
+
+function bootLog(msg: string): void {
+  try {
+    fs.appendFileSync(BOOT_LOG_PATH, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {
+    // ignore
+  }
+}
+
+function bootLogError(msg: string, err?: unknown): void {
+  const extra =
+    err instanceof Error ? err.stack : err != null ? (typeof err === "object" ? JSON.stringify(err) : String(err)) : "";
+  bootLog(`${msg} ${extra}`.trim());
+}
+
+function getBootLogPath(): string {
+  return BOOT_LOG_PATH;
+}
+
+function showFatalDialog(title: string, detail: string): void {
+  const bootPath = getBootLogPath();
+  const full = `${detail}\n\nBoot log: ${bootPath}`;
+  try {
+    if (typeof dialog !== "undefined" && dialog.showMessageBoxSync) {
+      dialog.showMessageBoxSync({
+        type: "error",
+        title: title || "DoAi.Me Fatal Error",
+        message: title || "DoAi.Me Fatal Error",
+        detail: full,
+        noLink: true,
+      });
+    }
+  } catch {
+    bootLog(`showFatalDialog failed: ${title} ${detail}`);
+  }
+}
+
+process.on("uncaughtException", (err: Error) => {
+  bootLogError("uncaughtException", err);
+  showFatalDialog("Uncaught Exception", err.message || String(err));
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason: unknown) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : "";
+  bootLogError(`unhandledRejection: ${msg}`, stack ? { stack } : reason);
+  showFatalDialog("Unhandled Promise Rejection", msg);
+});
+
+app.on("render-process-gone", (_event, _webContents, details) => {
+  bootLogError("render-process-gone", details);
+  showFatalDialog("Render Process Gone", details.reason || JSON.stringify(details));
+});
+
+app.on("child-process-gone", (_event, details) => {
+  bootLogError("child-process-gone", details);
+  showFatalDialog("Child Process Gone", details.type || JSON.stringify(details));
+});
+
+bootLog("main.ts loaded");
+process.on("uncaughtException", (err) => bootLogError("UNCAUGHT_EXCEPTION", err));
+process.on("unhandledRejection", (err: unknown) => bootLogError("UNHANDLED_REJECTION", err));
+
+// Squirrel: installer/updater lifecycle; exit without starting app
+const isSquirrel = process.argv.some((a) => typeof a === "string" && a.startsWith("--squirrel-"));
+if (isSquirrel) {
+  bootLog("BOOT_SQUIRREL exit");
+  app.quit();
+  process.exit(0);
+}
+
+// Load env first so agent spawn and renderer get explicit SUPABASE_* / XIAOWEI_WS_URL
+// Packaged: resources/.env then resources/agent/.env (fallback if .env missing)
+if (typeof process !== "undefined" && app.isPackaged && typeof process.resourcesPath === "string") {
+  const resourcesEnv = path.join(process.resourcesPath, ".env");
+  const agentEnv = path.join(process.resourcesPath, "agent", ".env");
+  dotenv.config({ path: resourcesEnv });
+  dotenv.config({ path: agentEnv }); // fallback / override when resources/.env missing or partial
+}
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.prod") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+bootLog("BOOT_1 env load");
+
+const gotLock = app.requestSingleInstanceLock();
+bootLog(`BOOT_LOCK gotLock=${gotLock}`);
+
+if (!gotLock) {
+  bootLog("BOOT_LOCK failed -> quit");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    bootLog("EVT second-instance");
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+
+  bootLog("BOOT_REG before whenReady");
+  app
+    .whenReady()
+    .then(() => {
+      bootLog("BOOT_1 whenReady");
+      try {
+        bootLog("BOOT_CW_0 enter");
+        createWindow();
+        bootLog(`BOOT_CW_1 ok windows=${BrowserWindow.getAllWindows().length}`);
+      } catch (err) {
+        bootLogError("BOOT_CW_THROW", err);
+        const win = new BrowserWindow({
+          width: 1100,
+          height: 700,
+          show: true,
+          title: "DoAi.Me (Safe UI)",
+          webPreferences: { contextIsolation: true },
+        });
+        win.loadURL(
+          "data:text/html," +
+            encodeURIComponent(`
+              <h2>Safe UI boot</h2>
+              <pre>createWindow() threw. Check %TEMP%\\doaime-boot.log</pre>
+            `),
+        );
+      }
+      bootLog("BOOT_2 createWindow done");
+      setImmediate(() => startBackgroundInit());
+    })
+    .catch((err) => bootLogError("WHENREADY_THROW", err));
+
+  bootLog("BOOT_REG after whenReady");
+
+  app.on("before-quit", async () => {
+    agentRunner.stopAgent();
+    stopDevicePolling();
+    if (!IS_WS_ONLY_PROVIDER) {
+      await adb(["kill-server"]);
+    }
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("activate", () => {
+    if (mainWindow === null) createWindow();
+  });
+}
+
+const AGENT_SETTINGS_FILE = path.join(app.getPath("userData"), "agent-settings.json");
+
+interface AgentSettings {
+  pc_number?: string | null;
+  xiaowei_ws_url?: string | null;
+  web_dashboard_url?: string | null;
+  openai_api_key?: string | null;
+}
+
+function getAgentSettings(): AgentSettings {
+  try {
+    if (fs.existsSync(AGENT_SETTINGS_FILE)) {
+      const raw = fs.readFileSync(AGENT_SETTINGS_FILE, "utf8");
+      return JSON.parse(raw) as AgentSettings;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function setAgentSettings(payload: AgentSettings): AgentSettings {
+  const current = getAgentSettings();
+  const next: AgentSettings = {
+    ...current,
+    ...(payload.pc_number !== undefined && { pc_number: payload.pc_number }),
+    ...(payload.xiaowei_ws_url !== undefined && { xiaowei_ws_url: payload.xiaowei_ws_url }),
+    ...(payload.web_dashboard_url !== undefined && { web_dashboard_url: payload.web_dashboard_url }),
+    ...(payload.openai_api_key !== undefined && { openai_api_key: payload.openai_api_key }),
+  };
+  fs.mkdirSync(path.dirname(AGENT_SETTINGS_FILE), { recursive: true });
+  fs.writeFileSync(AGENT_SETTINGS_FILE, JSON.stringify(next, null, 2), "utf8");
+  return next;
+}
+
+/** Env passed to agent spawn. SUPABASE_* from env only; PC_NUMBER and XIAOWEI_WS_URL from agent-settings.json (or env fallback). */
+function getAgentEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (process.env.SUPABASE_URL) out.SUPABASE_URL = process.env.SUPABASE_URL;
+  if (process.env.SUPABASE_ANON_KEY) out.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+  const file = getAgentSettings();
+  out.PC_NUMBER = file.pc_number ?? process.env.PC_NUMBER ?? "";
+  out.XIAOWEI_WS_URL = file.xiaowei_ws_url ?? process.env.XIAOWEI_WS_URL ?? "ws://127.0.0.1:22222/";
+  if (file.openai_api_key ?? process.env.OPENAI_API_KEY) out.OPENAI_API_KEY = file.openai_api_key ?? process.env.OPENAI_API_KEY ?? "";
+  if (process.env.XIAOWEI_TOOLS_DIR) out.XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR;
+  out.AGENT_SETTINGS_PATH = AGENT_SETTINGS_FILE;
+  return out;
+}
 
 const execFileAsync = promisify(execFile);
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 const PRELOAD_PATH = path.join(__dirname, "../preload/preload.js");
 const LAUNCH_AT_LOGIN_FILE = path.join(app.getPath("userData"), "launch-at-login.json");
-const DEVICE_CONTROL_PROVIDER = process.env.DEVICE_CONTROL_PROVIDER ?? "xiaowei_api";
-const XIAOWEI_API_URL = process.env.XIAOWEI_API_URL ?? "http://127.0.0.1:22600/command";
+/** Device control is WS-only (22222). No HTTP API (22222). */
+const DEVICE_CONTROL_PROVIDER = process.env.DEVICE_CONTROL_PROVIDER ?? "xiaowei_ws";
+const IS_WS_ONLY_PROVIDER =
+  DEVICE_CONTROL_PROVIDER === "xiaowei_ws" || DEVICE_CONTROL_PROVIDER === "xiaowei_ws";
+/** Readiness and agent: WebSocket only (22222). No HTTP. */
+const XIAOWEI_WS_URL = process.env.XIAOWEI_WS_URL ?? "ws://127.0.0.1:22222/";
 
 const POLL_INTERVAL_MS = 5000;
 const COMMAND_TIMEOUT_MS = 10000;
@@ -103,12 +315,6 @@ interface ExecBufferResult {
   timedOut: boolean;
 }
 
-interface XiaoweiEnvelope {
-  code?: number;
-  message?: string;
-  data?: unknown;
-}
-
 const settingsStore = new Store<AppSettings>({
   name: "settings",
   defaults: {
@@ -157,82 +363,114 @@ function resolveAdbPath(): string {
   return process.platform === "win32" ? "adb.exe" : "adb";
 }
 
-async function xiaoweiRequest(
-  action: string,
-  devices?: string,
-  data?: Record<string, unknown>,
-  timeout = COMMAND_TIMEOUT_MS
-): Promise<ExecResult> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const payload: Record<string, unknown> = { action };
-    if (devices) payload.devices = devices;
-    if (data) payload.data = data;
+const XIAOWEI_WS_PRECHECK_TIMEOUT_MS = 5000;
 
-    const response = await fetch(XIAOWEI_API_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
+/** PRE_CHECK: Xiaowei reachability via WebSocket (22222). Success = open / 101 handshake. */
+async function xiaoweiWsPreCheck(): Promise<{ success: boolean; error?: string }> {
+  const effectiveWsUrl = XIAOWEI_WS_URL;
+  log.info(`[MAIN_PRECHECK] effective WS url=${effectiveWsUrl}`);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { ws.close(); } catch { /* ignore */ }
+      log.warn(`[MAIN_PRECHECK] result=fail error=timeout (${XIAOWEI_WS_PRECHECK_TIMEOUT_MS}ms)`);
+      resolve({ success: false, error: "timeout" });
+    }, XIAOWEI_WS_PRECHECK_TIMEOUT_MS);
+    let done = false;
+    const ws = new WebSocket(effectiveWsUrl);
+    ws.on("open", () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      log.info(`[MAIN_PRECHECK] result=success (WebSocket open / 101)`);
+      resolve({ success: true });
     });
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      return {
-        success: false,
-        stdout: "",
-        stderr: `Xiaowei API ${response.status}: ${response.statusText}`,
-        timedOut: false,
-      };
-    }
-
-    const body = await response.text();
-    let parsed: XiaoweiEnvelope | null = null;
-    try {
-      parsed = JSON.parse(body) as XiaoweiEnvelope;
-    } catch {
-      // plain text response
-    }
-
-    if (!parsed) {
-      return { success: true, stdout: body, stderr: "", timedOut: false };
-    }
-
-    if (typeof parsed.code === "number" && parsed.code !== 10000) {
-      return {
-        success: false,
-        stdout: "",
-        stderr: `Xiaowei code=${parsed.code} message=${parsed.message ?? ""}`,
-        timedOut: false,
-      };
-    }
-
-    const stdout =
-      typeof parsed.data === "string"
-        ? parsed.data
-        : parsed.data == null
-          ? body
-          : JSON.stringify(parsed.data);
-
-    return { success: true, stdout, stderr: "", timedOut: false };
-  } catch (error) {
-    const err = error as Error;
-    const timedOut = err.name === "AbortError";
-    return {
-      success: false,
-      stdout: "",
-      stderr: timedOut ? "Xiaowei API timeout" : err.message,
-      timedOut,
-    };
-  }
+    ws.on("error", (err: Error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      const errMsg = err?.message ?? String(err);
+      log.warn(`[MAIN_PRECHECK] result=fail error=${errMsg}`);
+      resolve({ success: false, error: errMsg });
+    });
+    ws.on("close", () => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        log.warn(`[MAIN_PRECHECK] result=fail error=closed before open`);
+        resolve({ success: false, error: "closed before open" });
+      }
+    });
+  });
 }
 
-function parseAdbArgs(args: string[]): { devices?: string; command: string } {
-  if (args[0] === "-s" && args.length >= 3) {
-    return { devices: args[1], command: args.slice(2).join(" ") };
-  }
-  return { command: args.join(" ") };
+/** One-shot WS request to Xiaowei (22222). Used for list when DEVICE_CONTROL_PROVIDER is xiaowei_ws. */
+async function xiaoweiWsRequestOnce(
+  payload: Record<string, unknown>,
+  timeoutMs = 3000
+): Promise<{ success: boolean; stdout?: string; stderr?: string }> {
+  const wsUrl = XIAOWEI_WS_URL;
+  return new Promise((resolve) => {
+    let done = false;
+    const ws = new WebSocket(wsUrl);
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ success: false, stderr: `timeout (${timeoutMs}ms)` });
+    }, timeoutMs);
+
+    ws.on("open", () => {
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (e: unknown) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { ws.close(); } catch { /* ignore */ }
+        resolve({ success: false, stderr: (e as Error)?.message ?? String(e) });
+      }
+    });
+
+    ws.on("message", (data: Buffer | string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      const str = typeof data === "string" ? data : (data as Buffer).toString("utf8");
+      resolve({ success: true, stdout: str });
+    });
+
+    ws.on("error", (err: Error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ success: false, stderr: err?.message ?? String(err) });
+    });
+
+    ws.on("close", () => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve({ success: false, stderr: "closed before message" });
+      }
+    });
+  });
+}
+
+/** Parse Xiaowei WS list response JSON into Device[] shape. */
+function parseXiaoweiListJson(jsonText: string): Array<{ serial: string; model?: string; state: DeviceState }> {
+  const data = JSON.parse(jsonText) as unknown;
+  const arr = Array.isArray(data) ? data : (data as { data?: unknown[] })?.data ?? [];
+  return (Array.isArray(arr) ? arr : []).map((d: { serial?: string; onlySerial?: string; serialNumber?: string; model?: string; status?: string }) => ({
+    serial: d.serial ?? d.onlySerial ?? d.serialNumber ?? "",
+    model: d.model,
+    state: (d.status === "offline" ? "offline" : "device") as DeviceState,
+  })).filter((d) => d.serial);
 }
 
 function sendToRenderer(channel: "log:stream" | "device:update", payload: unknown): void {
@@ -322,31 +560,14 @@ async function runCommandBinary(file: string, args: string[], timeout = COMMAND_
 }
 
 async function adb(args: string[], timeout = COMMAND_TIMEOUT_MS): Promise<ExecResult> {
-  if (DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-    const parsed = parseAdbArgs(args);
-    return xiaoweiRequest("adb", parsed.devices, { command: parsed.command }, timeout);
-  }
   return runCommand(resolveAdbPath(), args, timeout);
 }
 
 async function adbBinary(args: string[], timeout = COMMAND_TIMEOUT_MS): Promise<ExecBufferResult> {
-  if (DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-    const parsed = parseAdbArgs(args);
-    const result = await xiaoweiRequest("adb", parsed.devices, { command: parsed.command }, timeout);
-    return {
-      success: result.success,
-      stdout: Buffer.from(result.stdout ?? "", "utf8"),
-      stderr: result.stderr,
-      timedOut: result.timedOut,
-    };
-  }
   return runCommandBinary(resolveAdbPath(), args, timeout);
 }
 
 async function adbShell(serial: string, command: string, timeout = COMMAND_TIMEOUT_MS): Promise<ExecResult> {
-  if (DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-    return xiaoweiRequest("adb_shell", serial, { command }, timeout);
-  }
   return adb(["-s", serial, "shell", command], timeout);
 }
 
@@ -389,90 +610,84 @@ async function fetchDeviceDetails(device: Device): Promise<Device> {
 
 let previousUnauthorizedCount = 0;
 
-/**
- * Classify a Xiaowei/ADB error from stderr into a short type tag.
- * Tags: XIAOWEI_OFFLINE | XIAOWEI_TIMEOUT | XIAOWEI_ADB_ERROR | XIAOWEI_HTTP_ERROR | ADB_COMMAND_FAILED
- */
-function classifyAdbError(stderr: string): string {
-  if (stderr.includes("fetch failed") || stderr.includes("ECONNREFUSED")) return "XIAOWEI_OFFLINE";
-  if (stderr.includes("Xiaowei API timeout")) return "XIAOWEI_TIMEOUT";
-  if (stderr.includes("Xiaowei code=")) return "XIAOWEI_ADB_ERROR";
-  if (stderr.startsWith("Xiaowei API")) return "XIAOWEI_HTTP_ERROR";
-  return "ADB_COMMAND_FAILED";
-}
-
 async function pollDevicesOnce(): Promise<void> {
-  // 1. Check Xiaowei/ADB connectivity first
-  const adbHealth = DEVICE_CONTROL_PROVIDER === "xiaowei_api"
-    ? await xiaoweiRequest("list", undefined, undefined, COMMAND_TIMEOUT_WARN_MS)
-    : await adb(["version"], COMMAND_TIMEOUT_WARN_MS);
+  // 1. Reachability: WS-only = WS 22222 only; adb = adb version. Never use HTTP/fetch.
+  const adbHealth =
+    IS_WS_ONLY_PROVIDER
+      ? await (async (): Promise<ExecResult> => {
+          const wsCheck = await xiaoweiWsPreCheck();
+          return wsCheck.success
+            ? { success: true, stdout: "", stderr: "", timedOut: false }
+            : { success: false, stdout: "", stderr: wsCheck.error ?? "WebSocket precheck failed", timedOut: false };
+        })()
+      : await adb(["version"], COMMAND_TIMEOUT_WARN_MS);
   const healthy = adbHealth.success;
-  if (!healthy && state.adbHealthy) {
-    pushAlert({
-      severity: "ERROR",
-      type: "ADB_DOWN",
-      message: adbHealth.stderr || "ADB did not respond to adb version",
-    });
+  if (!healthy) {
+    const effectiveUrl = IS_WS_ONLY_PROVIDER ? XIAOWEI_WS_URL : "—";
+    const errMsg = adbHealth.stderr || "ADB did not respond to adb version";
+    log.warn(`[MAIN_PRECHECK] result=fail effectiveUrl=${effectiveUrl} error=${errMsg}`);
+    if (state.adbHealthy) {
+      pushLog({
+        level: "ERROR",
+        presetName: "SYSTEM",
+        step: "PRE_CHECK",
+        message: `Xiaowei 연결 실패 (WS): url=${effectiveUrl} error=${errMsg}`,
+      });
+      pushAlert({
+        severity: "ERROR",
+        type: "ADB_DOWN",
+        message: errMsg,
+      });
+    }
   }
   state.adbHealthy = healthy;
 
   // 2. Only proceed to device list once connection is confirmed
   if (!healthy) return;
 
-  const devicesRes = await adb(["devices", "-l"]);
-  if (!devicesRes.success) {
-    const errType = DEVICE_CONTROL_PROVIDER === "xiaowei_api"
-      ? classifyAdbError(devicesRes.stderr)
-      : "ADB_COMMAND_FAILED";
+  // WS-only: do NOT call adb(["devices","-l"]). Device list from WS action "list" only.
+  const ws = await xiaoweiWsPreCheck();
+  if (!ws.success) {
     pushLog({
-      level: "ERROR",
+      level: "WARN",
       presetName: "SYSTEM",
       step: "PRE_CHECK",
-      message: `adb devices [${errType}]: ${devicesRes.stderr}`,
+      message: `xiaowei_ws [OFFLINE]: ${ws.error ?? "unknown"}`,
     });
     return;
   }
 
-  const parsed = parseDevices(devicesRes.stdout);
-  if (parsed.length === 0 && DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-    const listRes = await xiaoweiRequest("list");
-    if (listRes.success) {
-      try {
-        const data = JSON.parse(listRes.stdout) as Array<{
-          serial?: string;
-          onlySerial?: string;
-          model?: string;
-          status?: string;
-        }>;
-        const mapped = data.map((d) => ({
-          serial: d.serial || d.onlySerial || "",
-          model: d.model,
-          state: (d.status === "offline" ? "offline" : "device") as DeviceState,
-        }));
-        state.devices = mapped;
-        sendToRenderer("device:update", state.devices);
-        if (mapped.length === 0) {
-          pushLog({ level: "INFO", presetName: "SYSTEM", step: "PRE_CHECK", message: "adb devices [NO_DEVICES]: 연결된 기기 없음" });
-        }
-        return;
-      } catch {
-        // ignore parse fallback
-      }
-    }
+  const listRes = await xiaoweiWsRequestOnce({ action: "list" }, 3000);
+  if (!listRes.success || !listRes.stdout) {
+    pushLog({
+      level: "WARN",
+      presetName: "SYSTEM",
+      step: "PRE_CHECK",
+      message: `xiaowei_ws [LIST_FAILED]: ${listRes.stderr ?? "no response"}`,
+    });
+    return;
   }
-  const hydrated = await Promise.all(parsed.map(fetchDeviceDetails));
-  state.devices = hydrated;
-  sendToRenderer("device:update", state.devices);
 
-  const unauthorized = hydrated.filter((d) => d.state === "unauthorized").length;
-  if (unauthorized > previousUnauthorizedCount) {
-    pushAlert({
-      severity: unauthorized >= 3 ? "ERROR" : "WARN",
-      type: "UNAUTHORIZED",
-      message: `Unauthorized devices increased: ${previousUnauthorizedCount} -> ${unauthorized}`,
+  try {
+    const mapped = parseXiaoweiListJson(listRes.stdout);
+    state.devices = mapped;
+    sendToRenderer("device:update", state.devices);
+    if (mapped.length === 0) {
+      pushLog({
+        level: "INFO",
+        presetName: "SYSTEM",
+        step: "PRE_CHECK",
+        message: "devices [NO_DEVICES]: 연결된 기기 없음",
+      });
+    }
+  } catch (e: unknown) {
+    pushLog({
+      level: "WARN",
+      presetName: "SYSTEM",
+      step: "PRE_CHECK",
+      message: `xiaowei_ws [LIST_PARSE_FAILED]: ${(e as Error)?.message ?? String(e)}`,
     });
   }
-  previousUnauthorizedCount = unauthorized;
 }
 
 function startDevicePolling(): void {
@@ -790,28 +1005,11 @@ async function executePreset(serial: string, presetId: PresetId, options?: Recor
     const fileName = `${y}${m}${d}_${hh}${mm}${ss}_${serial}.png`;
     const filePath = path.join(outputDir, fileName);
 
-    if (DEVICE_CONTROL_PROVIDER === "xiaowei_api") {
-      const screenRes = await xiaoweiRequest("screen", serial, { savePath: outputDir });
-      if (!screenRes.success) {
-        return failWith("APPLY", `[SHOT] screen 실패: ${screenRes.stderr}`, "SCREENSHOT_FAIL");
-      }
-      if (!fs.existsSync(filePath)) {
-        const newest = fs
-          .readdirSync(outputDir)
-          .filter((f) => f.toLowerCase().endsWith(".png"))
-          .map((f) => ({ path: path.join(outputDir, f), mtime: fs.statSync(path.join(outputDir, f)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime)[0];
-        if (newest?.path) {
-          fs.copyFileSync(newest.path, filePath);
-        }
-      }
-    } else {
-      const shotRes = await adbBinary(["-s", serial, "exec-out", "screencap", "-p"]);
-      if (!shotRes.success || shotRes.stdout.length === 0) {
-        return failWith("APPLY", `[SHOT] screencap 실패: ${shotRes.stderr}`, "SCREENSHOT_FAIL");
-      }
-      fs.writeFileSync(filePath, shotRes.stdout);
+    const shotRes = await adbBinary(["-s", serial, "exec-out", "screencap", "-p"]);
+    if (!shotRes.success || shotRes.stdout.length === 0) {
+      return failWith("APPLY", `[SHOT] screencap 실패: ${shotRes.stderr}`, "SCREENSHOT_FAIL");
     }
+    fs.writeFileSync(filePath, shotRes.stdout);
     if (!fs.existsSync(filePath)) {
       return failWith("APPLY", "[SHOT] 파일 생성 실패", "SCREENSHOT_FAIL");
     }
@@ -871,27 +1069,81 @@ function setStoredLaunchAtLogin(open: boolean): void {
   }
 }
 
+const DEBUG_UI = process.argv.includes("--debug-ui");
+
 function createWindow(): void {
+  bootLog("CREATE_WINDOW_ENTER");
+  const showImmediately = isDev || DEBUG_UI;
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    show: showImmediately,
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  bootLog(
+    `CREATE_WINDOW_CREATED id=${mainWindow.id} osPid=${mainWindow.webContents.getOSProcessId?.() ?? "n/a"}`,
+  );
+
+  if (!showImmediately) {
+    mainWindow.once("ready-to-show", () => {
+      mainWindow?.show();
+    });
+  }
 
   if (isDev) {
     void mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"));
+    if (DEBUG_UI) {
+      mainWindow.webContents.once("did-finish-load", () => {
+        mainWindow?.webContents.openDevTools();
+      });
+    }
   }
 
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  // Application menu: navigation + Agent logs folder
+  const sendNavigate = (tab: string) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("app:navigate-tab", tab);
+    }
+  };
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "View",
+      submenu: [
+        { label: "Status Board", click: () => sendNavigate("status") },
+        { label: "Devices", click: () => sendNavigate("devices") },
+        { label: "Logs", click: () => sendNavigate("logs") },
+        { label: "채널/컨텐츠", click: () => sendNavigate("channels") },
+        { label: "히스토리", click: () => sendNavigate("history") },
+        { label: "Settings", click: () => sendNavigate("settings") },
+        { type: "separator" },
+        {
+          label: "Open logs folder",
+          click: () => {
+            const dir = agentRunner.getAgentLogDir();
+            void shell.openPath(dir).then((err) => {
+              if (err) log.warn("[Main] openPath logs folder failed:", err);
+            });
+          },
+        },
+      ],
+    },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+  ]);
+  Menu.setApplicationMenu(menu);
+  bootLog("CREATE_WINDOW_EXIT");
 }
 
 async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: string; error?: string; canceled?: boolean }> {
@@ -912,7 +1164,7 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
   });
   if (save.canceled || !save.filePath) return { zipPath: "", canceled: true };
 
-  const archiverModule = (await import("archiver")).default;
+  const archiverModule = (await import("archiver")).default as any;
 
   // Ensure parent directory exists
   const zipDir = path.dirname(save.filePath);
@@ -925,7 +1177,7 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
   return new Promise((resolve) => {
     const zipPath = save.filePath as string;
     const output = fs.createWriteStream(zipPath);
-    const archive = archiverModule("zip", { zlib: { level: 9 } });
+    const archive = new archiverModule("zip", { zlib: { level: 9 } });
 
     let settled = false;
     function finish(result: { zipPath: string; error?: string }) {
@@ -937,7 +1189,16 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
 
     archive.on("error", (err?: Error) => finish({ zipPath: "", error: `Archive error: ${err?.message ?? "unknown"}` }));
     output.on("error", (err: NodeJS.ErrnoException) => finish({ zipPath: "", error: `Write error (${err.code}): ${err.message}` }));
-    output.on("close", () => finish({ zipPath }));
+    output.on("close", () => {
+      finish({ zipPath });
+      if (zipPath) {
+        try {
+          shell.showItemInFolder(zipPath);
+        } catch (err) {
+          log.warn("[Main] showItemInFolder failed:", err);
+        }
+      }
+    });
 
     archive.pipe(output);
 
@@ -946,8 +1207,18 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
         const adbVersion = await adb(["version"]);
         archive.append(adbVersion.stdout || adbVersion.stderr, { name: "adb_version.txt" });
 
-        const adbDevices = await adb(["devices", "-l"]);
-        archive.append(adbDevices.stdout || adbDevices.stderr, { name: "adb_devices.txt" });
+        const listRes = await xiaoweiWsRequestOnce({ action: "list" }, 3000);
+        if (listRes.success && listRes.stdout) {
+          try {
+            const mapped = parseXiaoweiListJson(listRes.stdout);
+            state.devices = mapped;
+            archive.append(JSON.stringify(mapped, null, 2), { name: "adb_devices.txt" });
+          } catch {
+            archive.append(listRes.stdout, { name: "adb_devices.txt" });
+          }
+        } else {
+          archive.append(`WS list failed: ${listRes.stderr ?? "no response"}`, { name: "adb_devices.txt" });
+        }
 
         const selectedSerials = serials && serials.length > 0 ? serials : state.devices.map((d) => d.serial);
         for (const serial of selectedSerials) {
@@ -975,7 +1246,7 @@ async function exportDiagnosticsZip(serials?: string[]): Promise<{ zipPath: stri
           appPath: app.getPath("exe"),
           adbPath: resolveAdbPath(),
           deviceControlProvider: DEVICE_CONTROL_PROVIDER,
-          xiaoweiApiUrl: XIAOWEI_API_URL,
+          xiaoweiWsUrl: XIAOWEI_WS_URL,
         };
         archive.append(JSON.stringify(systemInfo, null, 2), { name: "system_info.json" });
 
@@ -1026,6 +1297,7 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("log:list", async () => state.logBuffer);
   ipcMain.handle("alert:list", async () => state.alertQueue);
+  ipcMain.handle("preset:getHistory", async () => state.presetHistory);
 
   ipcMain.handle("getLaunchAtLogin", () => app.getLoginItemSettings().openAtLogin);
   ipcMain.handle("setLaunchAtLogin", (_e, open: boolean) => {
@@ -1034,84 +1306,112 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("agent:getState", () => agentRunner.getAgentState());
+  ipcMain.handle("agent:getSettings", () => getAgentSettings());
+  ipcMain.handle("agent:setSettings", (_e, payload: AgentSettings) => setAgentSettings(payload));
   ipcMain.handle("agent:restart", () => {
     agentRunner.restartAgent();
     return agentRunner.getAgentState();
   });
+  ipcMain.handle("channels:register", async (_e, payload: { webDashboardUrl: string; handles?: string[]; fetchLatest?: number }) => {
+    const base = (payload.webDashboardUrl || "").replace(/\/$/, "");
+    if (!base) return { ok: false, error: "web_dashboard_url required" };
+    const url = `${base}/api/youtube/register-channels`;
+    const body = JSON.stringify({
+      handles: payload.handles ?? [],
+      fetchLatest: payload.fetchLatest ?? 5,
+    });
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const text = await res.text();
+      if (!res.ok) return { ok: false, error: `${res.status}: ${text}` };
+      return { ok: true, data: text ? JSON.parse(text) : undefined };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("pcs:register", async (_e, payload: { webDashboardUrl: string }) => {
+    const base = (payload.webDashboardUrl || "").replace(/\/$/, "");
+    if (!base) return { ok: false, error: "web_dashboard_url required" };
+    const url = `${base}/api/pcs/register`;
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
+      const data = (await res.json()) as { ok?: boolean; pc_number?: string; error?: string };
+      if (!res.ok) return { ok: false, error: data.error ?? `${res.status}` };
+      return { ok: true, pc_number: data.pc_number ?? null, error: data.error };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
   ipcMain.handle("getAppPath", () => app.getPath("exe"));
+  ipcMain.handle("getSupabaseConfig", () => ({
+    url: process.env.SUPABASE_URL ?? "",
+    anonKey: process.env.SUPABASE_ANON_KEY ?? "",
+  }));
+  ipcMain.handle("agent:openLogsFolder", () => {
+    const dir = agentRunner.getAgentLogDir();
+    return shell.openPath(dir).then((err) => (err ? { ok: false, error: err } : { ok: true }));
+  });
 }
 
-process.on("uncaughtException", (error) => {
-  log.error("uncaughtException", error);
-});
+/** Background init after createWindow: log transport, launch-at-login, autoUpdater, IPC, polling, adb, agent, agent:state interval. */
+function startBackgroundInit(): void {
+  (async () => {
+    log.transports.file.resolvePathFn = () => path.join(app.getPath("userData"), "logs", "desktop.log");
+    log.transports.file.maxSize = 5 * 1024 * 1024;
 
-process.on("unhandledRejection", (reason) => {
-  log.error("unhandledRejection", reason);
-});
+    const stored = getStoredLaunchAtLogin();
+    app.setLoginItemSettings({ openAtLogin: stored });
 
-app.whenReady().then(async () => {
-  log.transports.file.resolvePathFn = () => path.join(app.getPath("userData"), "logs", "desktop.log");
-  log.transports.file.maxSize = 5 * 1024 * 1024;
-
-  const stored = getStoredLaunchAtLogin();
-  app.setLoginItemSettings({ openAtLogin: stored });
-
-  if (!isDev && app.isPackaged) {
-    try {
-      autoUpdater.setFeedURL({
-        provider: "github",
-        owner: "doai-me",
-        repo: "doai.me",
-      });
-    } catch {
-      // no-op
+    if (!isDev && app.isPackaged) {
+      try {
+        autoUpdater.setFeedURL({
+          provider: "github",
+          owner: "doai-me",
+          repo: "doai.me",
+        });
+      } catch {
+        // no-op
+      }
     }
-  }
 
-  if (DEVICE_CONTROL_PROVIDER !== "xiaowei_api") {
-    const adbStart = await adb(["start-server"]);
-    if (!adbStart.success) {
-      pushAlert({
-        severity: "ERROR",
-        type: "ADB_DOWN",
-        message: `adb start-server failed: ${adbStart.stderr}`,
-      });
+    registerIpcHandlers();
+    agentRunner.setXiaoweiReadyCheck(IS_WS_ONLY_PROVIDER ? () => true : () => state.adbHealthy);
+    startDevicePolling();
+
+    if (!IS_WS_ONLY_PROVIDER) {
+      const adbStart = await adb(["start-server"]);
+      if (!adbStart.success) {
+        pushAlert({
+          severity: "ERROR",
+          type: "ADB_DOWN",
+          message: `adb start-server failed: ${adbStart.stderr}`,
+        });
+      }
     }
-  } else {
-    const ping = await xiaoweiRequest("list");
-    if (!ping.success) {
-      pushAlert({
-        severity: "ERROR",
-        type: "ADB_DOWN",
-        message: `Xiaowei API 연결 실패: ${ping.stderr}`,
-      });
+
+    if (process.platform === "win32") {
+      bootLog("BOOT_3 agentRunner start");
+      const agentEnv = {
+        ...getAgentEnv(),
+        AGENT_WS_STATUS_FILE: path.join(app.getPath("userData"), "agent-ws-status.json"),
+        AGENT_DEVICES_FILE: path.join(app.getPath("userData"), "agent-devices.json"),
+      };
+      const started = agentRunner.startAgent(agentEnv);
+      if (!started) {
+        log.error("[Main] Embedded agent failed to start; check agent path and Node.");
+      }
     }
-  }
 
-  registerIpcHandlers();
-  agentRunner.setXiaoweiReadyCheck(() => state.adbHealthy);
-  createWindow();
-  startDevicePolling();
-  if (process.platform === "win32") {
-    const started = agentRunner.startAgent();
-    if (!started) {
-      log.error("[Main] Embedded agent failed to start; check agent path and Node.");
-    }
-  }
-});
-
-app.on("before-quit", async () => {
-  agentRunner.stopAgent();
-  stopDevicePolling();
-  if (DEVICE_CONTROL_PROVIDER !== "xiaowei_api") {
-    await adb(["kill-server"]);
-  }
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
-
-app.on("activate", () => {
-  if (mainWindow === null) createWindow();
-});
+    setInterval(() => {
+      const w = BrowserWindow.getAllWindows()[0];
+      if (w && !w.isDestroyed()) {
+        const agentState = agentRunner.getAgentState();
+        const lastPreset = state.presetHistory[state.presetHistory.length - 1] ?? null;
+        w.webContents.send("agent:state", { ...agentState, lastPresetResult: lastPreset });
+      }
+    }, 2000);
+  })().catch((err) => {
+    bootLogError("whenReady setImmediate error", err);
+    log.error("[Main] Background init error", err);
+  });
+}

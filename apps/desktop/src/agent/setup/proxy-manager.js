@@ -111,10 +111,10 @@ class ProxyManager {
 
   /**
    * Build the proxy URL string for display/logging.
-   * Note: Do not include passwords in this formatted value to avoid logging secrets.
    */
   _formatProxyUrl(proxy) {
-    const creds = proxy.username ? `${proxy.username}@` : "";
+    const creds =
+      proxy.username && proxy.password ? `${proxy.username}:${proxy.password}@` : "";
     return `${proxy.type}://${creds}${proxy.address}`;
   }
 

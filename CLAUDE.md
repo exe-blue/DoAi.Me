@@ -9,7 +9,7 @@ pnpm workspaces + Turborepo. Three deployable apps and two shared packages:
 | App | Path | Purpose |
 |-----|------|---------|
 | `@doai/web` | `apps/web/` | Next.js 15 dashboard (Vercel) |
-| `@doai/desktop` | `apps/desktop/` | Electron agent controller (Windows .exe) |
+| `doaime-desktop` | `apps/desktop/` | Electron agent controller (Windows .exe) |
 | Legacy agent | `agent/` | Root-level Node.js CommonJS agent (Windows PCs) |
 
 | Package | Path | Purpose |
@@ -31,7 +31,7 @@ All commands from the repo root unless noted.
 # Development
 pnpm run dev                          # all apps via Turborepo
 pnpm --filter @doai/web run dev       # web only (port 3000)
-pnpm --filter @doai/desktop run dev   # Electron dev mode
+pnpm --filter doaime-desktop run dev   # Electron dev mode
 
 # Build & type-check
 pnpm run build                        # all apps

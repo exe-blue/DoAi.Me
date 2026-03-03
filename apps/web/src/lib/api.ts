@@ -1,16 +1,10 @@
 import { toast } from "sonner";
 
 /**
- * API 클라이언트 기반 — 모든 API 호출 공통 래퍼.
- * 응답 형식: { success, data?, error? }. 에러 시 toast (silent 옵션으로 비활성화 가능).
- *
- * 사용 예:
- *   // SWR
- *   const { data, error, isLoading } = useSWR('/api/dashboard/realtime', fetcher);
- *
- *   // 직접 호출 (POST, PATCH 등)
- *   const result = await apiClient.post('/api/tasks', { body: taskData });
- *   if (result.success) { ... }
+ * API: WebSocket only (no HTTP). HTTP /api/* routes have been removed.
+ * Response code: 10000 = success, 10001 = failure.
+ * This module is for future WS-based client: parse payload.code (10000/10001) and map to success/error.
+ * See docs/API_WS_ONLY.md and src/lib/ws-api-response.ts.
  */
 
 // ---------------------------------------------------------------------------
@@ -63,18 +57,19 @@ async function request<T>(
     });
 
     const json = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      const msg =
-        json?.error ?? json?.message ?? `API error ${res.status}`;
+    const code = json?.code as number | undefined;
+    if (code === 10001) {
+      const msg = json?.message ?? json?.error ?? "API error";
       if (!silent) toast.error(msg);
       return { success: false, error: msg };
     }
-
-    if (json && "success" in json) {
-      return json as ApiResponse<T>;
+    if (!res.ok) {
+      const msg = json?.message ?? json?.error ?? `API error ${res.status}`;
+      if (!silent) toast.error(msg);
+      return { success: false, error: msg };
     }
-
+    if (code === 10000 && "data" in json) return { success: true, data: json.data as T };
+    if (json && "success" in json) return json as ApiResponse<T>;
     return { success: true, data: (json?.data ?? json) as T };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Network error";

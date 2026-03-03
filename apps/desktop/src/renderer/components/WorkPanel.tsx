@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -21,7 +21,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import SaveIcon from "@mui/icons-material/Save";
 import { useDeviceStore } from "../store/useDeviceStore";
 import { usePresetStore } from "../store/usePresetStore";
+import { usePresetsListStore } from "../store/usePresetsListStore";
 import { useAlertStore } from "../store/useAlertStore";
+import { commands } from "../src";
 
 const STATE_COLOR: Record<Device["state"], string> = {
   device: "#28C76F",
@@ -44,6 +46,7 @@ type ButtonState = "idle" | "running" | "success" | "fail";
 
 export function WorkPanel() {
   const devices = useDeviceStore((s) => s.devices);
+  const presetsList = usePresetsListStore((s) => s.presetsList);
   const { imeId, setImeId, setLastResult, screenshotPath } = usePresetStore();
   const addAlert = useAlertStore((s) => s.addAlert);
 
@@ -51,9 +54,21 @@ export function WorkPanel() {
   const [imeIdInput, setImeIdInput] = useState(imeId);
   const [presetStates, setPresetStates] = useState<Record<number, ButtonState>>({});
 
+  // Use Supabase preset names when available (sort_order); fallback to default labels
+  const displayPresets = useMemo(() => {
+    if (presetsList.length >= 7) {
+      return presetsList.slice(0, 7).map((p, i) => ({
+        id: (i + 1) as PresetId,
+        label: p.name,
+        icon: PRESETS[i].icon,
+      }));
+    }
+    return PRESETS;
+  }, [presetsList]);
+
   // Load persisted settings on mount
   useEffect(() => {
-    window.electronAPI?.getSettings().then((s) => {
+    commands.getSettings().then((s) => {
       if (s.imeId) setImeIdInput(s.imeId);
       if (s.imeId) setImeId(s.imeId);
     });
@@ -66,7 +81,7 @@ export function WorkPanel() {
     setPresetStates((s) => ({ ...s, [presetId]: "running" }));
 
     try {
-      const { results } = await window.electronAPI!.executePreset({
+      const { results } = await commands.executePreset({
         serial: selectedDevices.map((d) => d.serial),
         presetId,
         options: presetId === 2 ? { imeId } : undefined,
@@ -106,7 +121,7 @@ export function WorkPanel() {
 
   const handleSaveImeId = () => {
     setImeId(imeIdInput);
-    window.electronAPI?.setSettings({ imeId: imeIdInput });
+    commands.setSettings({ imeId: imeIdInput });
   };
 
   const getButtonIcon = (presetId: PresetId, defaultIcon: React.ReactNode) => {
@@ -194,7 +209,7 @@ export function WorkPanel() {
       </Typography>
 
       <Stack spacing={0.5}>
-        {PRESETS.map(({ id, label, icon }) => (
+        {displayPresets.map(({ id, label, icon }) => (
           <Button
             key={id}
             variant="outlined"

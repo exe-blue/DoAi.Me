@@ -1,6 +1,8 @@
 /**
  * DoAi.Me - Task Execution Engine
- * Maps Supabase tasks to Xiaowei WebSocket commands
+ * Maps Supabase tasks to Xiaowei WebSocket commands.
+ * 모든 디바이스 명령은 Xiaowei 경유(adb_shell, xiaowei.adb, pushEvent 등). 응답 code 10000/10001.
+ * @see docs/xiaowei-api.md, docs/xiaowei_client.md §2.3, §4, §8.2
  */
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
@@ -1370,11 +1372,12 @@ class TaskExecutor {
         return this.xiaowei.autojsCreate(devices, payload.scriptPath, options);
 
       case "adb":
+      case "xiaowei.adb":
         if (!payload.command) {
-          throw new Error("command is required for adb type");
+          throw new Error("command is required for xiaowei.adb type");
         }
-        console.log(`[TaskExecutor]   Xiaowei adb: "${payload.command}" → ${devices}`);
-        return this.xiaowei.adb(devices, payload.command);
+        console.log(`[TaskExecutor]   xiaowei.adb: "${payload.command}" → ${devices}`);
+        return this.xiaowei.xiaoweiAdb(devices, payload.command);
 
       case "adb_shell":
         if (!payload.command) {

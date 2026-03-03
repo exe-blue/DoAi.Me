@@ -37,3 +37,5 @@ See `package.json` scripts. Summary:
 - `npm workspaces` are defined (`packages/*`) for shared packages; root `npm install` covers them.
 - Vitest tests do NOT require Supabase or any external services; they mock all DB calls.
 - Production is single stack: root `app/` (web) + legacy agent `agent/agent.js` only.
+- **Env:** Keep in `.env` / env only values that must be stored or used by the web (e.g. `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `YOUTUBE_API_KEY`). PC-ID and Xiaowei WS URL are configured via the Desktop UI and stored in `userData/agent-settings.json` (and passed to the agent at spawn).
+- **Vercel:** Next.js lives in `apps/web/`. In Vercel → Project Settings → General, set **Root Directory** to `apps/web` so the build uses that `package.json` (with `next`). Leave Framework Preset as Next.js.

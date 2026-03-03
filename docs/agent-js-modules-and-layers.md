@@ -1,6 +1,8 @@
 # Agent JS 모듈 정의 및 5레이어 호출 흐름
 
-**현재 프로세스:** `agent.js` 진입점에서 직접·간접 `require()` 되는 모듈만 `agent/`에 있음 (18개 파일). 나머지 레거시·스크립트·barrel·선택 모듈은 `_archive/agent-legacy/`로 이동됨 (2026-02-28). 상세 목록은 `_archive/agent-legacy/README.md` 참고.
+**실행 경로(SSOT):** Agent 실행은 `apps/desktop/src/agent` 기준. Dev 시 이 디렉터리의 `agent.js`를 Desktop이 스폰하며, 패키징 시에는 `resources/agent/agent.bundle.cjs`(또는 agent.js)를 사용. 아래 파일 경로는 모두 이 디렉터리 기준 상대 경로(예: agent.js, device/heartbeat.js).
+
+**현재 프로세스:** `agent.js` 진입점에서 직접·간접 `require()` 되는 모듈만 사용 (18개 파일). 나머지 레거시·스크립트·barrel·선택 모듈은 `_archive/agent-legacy/`에 보관. 상세 목록은 `_archive/agent-legacy/README.md` 참고. 위 목록은 apps/desktop/src/agent 기준이며, 번들(agent.bundle.cjs)에 동일 모듈이 포함됨.
 
 이 문서는 **사용 중인 모듈**의 기능 정의와, **5레이어 아키텍처** 기준 호출 흐름을 정리한다.
 
