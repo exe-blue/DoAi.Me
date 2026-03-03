@@ -110,16 +110,7 @@ class XiaoweiClient extends EventEmitter {
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        this.emit("response", msg);
-
-        // Resolve pending request if there's a matching one
-        // Xiaowei may not echo requestId, so resolve the oldest pending
-        if (this._pendingRequests.size > 0) {
-          const [id, pending] = this._pendingRequests.entries().next().value;
-          this._pendingRequests.delete(id);
-          clearTimeout(pending.timer);
-          pending.resolve(msg);
-        }
+        this._handleIncomingMessage(msg);
       } catch (err) {
         console.error(`[Xiaowei] Failed to parse message: ${err.message}`);
       }
@@ -167,6 +158,92 @@ class XiaoweiClient extends EventEmitter {
     this._pendingRequests.clear();
   }
 
+  _createRequestId() {
+    this._requestId += 1;
+    return `${Date.now()}-${this._requestId}`;
+  }
+
+  _extractRequestId(msg) {
+    if (!msg || typeof msg !== "object") return null;
+    return (
+      msg.requestId ||
+      (msg.data && msg.data.requestId) ||
+      (msg.echo && msg.echo.requestId) ||
+      null
+    );
+  }
+
+  _isErrorResponse(msg) {
+    if (!msg || typeof msg !== "object") return false;
+    const status = typeof msg.status === "string" ? msg.status.toLowerCase() : "";
+    if (["error", "failed", "fail"].includes(status)) return true;
+    if (typeof msg.code === "number" && msg.code >= 400) return true;
+    if (msg.success === false) return true;
+    return false;
+  }
+
+  _buildResponseError(msg, fallbackAction) {
+    const action = (msg && msg.action) || fallbackAction || "unknown";
+    const detail =
+      (msg && (msg.error || msg.msg || msg.message)) ||
+      `Xiaowei request failed: ${action}`;
+    return new Error(detail);
+  }
+
+  _resolvePending(requestId, msg) {
+    const pending = this._pendingRequests.get(requestId);
+    if (!pending) return false;
+    this._pendingRequests.delete(requestId);
+    clearTimeout(pending.timer);
+    if (this._isErrorResponse(msg)) {
+      pending.reject(this._buildResponseError(msg, pending.meta.action));
+    } else {
+      pending.resolve(msg);
+    }
+    return true;
+  }
+
+  _findFallbackPendingId(msg) {
+    const entries = Array.from(this._pendingRequests.entries());
+    if (entries.length === 0) return null;
+    if (entries.length === 1) return entries[0][0];
+
+    const responseAction = msg && msg.action;
+    const responseDevices = msg && msg.devices;
+
+    const candidates = entries.filter(([, pending]) => {
+      const actionMatches = !responseAction || pending.meta.action === responseAction;
+      const deviceMatches = !responseDevices || pending.meta.devices === responseDevices;
+      return actionMatches && deviceMatches;
+    });
+
+    if (candidates.length > 0) {
+      return candidates
+        .slice()
+        .sort((a, b) => a[1].meta.sentAt - b[1].meta.sentAt)[0][0];
+    }
+
+    // Last-resort compatibility path for legacy servers without requestId echo.
+    return entries[0][0];
+  }
+
+  _handleIncomingMessage(msg) {
+    this.emit("response", msg);
+
+    if (this._pendingRequests.size === 0) return;
+
+    const requestId = this._extractRequestId(msg);
+    if (requestId) {
+      // If the server echoes requestId but we no longer track it, ignore instead of mismatching.
+      this._resolvePending(requestId, msg);
+      return;
+    }
+
+    const fallbackId = this._findFallbackPendingId(msg);
+    if (!fallbackId) return;
+    this._resolvePending(fallbackId, msg);
+  }
+
   /**
    * Flush queued commands after reconnect.
    * Commands are sent raw — callers already received { queued: true }.
@@ -199,6 +276,9 @@ class XiaoweiClient extends EventEmitter {
    */
   send(message, timeout = 30000) {
     return new Promise((resolve, reject) => {
+      const requestId = this._createRequestId();
+      const payload = { ...message, requestId };
+
       if (!this.connected || !this.ws) {
         // Queue command instead of rejecting
         let dropped = 0;
@@ -206,22 +286,31 @@ class XiaoweiClient extends EventEmitter {
           this._commandQueue.shift();
           dropped = 1;
         }
-        this._commandQueue.push({ message });
-        return resolve({ queued: true, dropped });
+        this._commandQueue.push({ message: payload });
+        return resolve({ queued: true, dropped, requestId });
       }
 
-      const id = ++this._requestId;
       const timer = setTimeout(() => {
-        this._pendingRequests.delete(id);
+        this._pendingRequests.delete(requestId);
         reject(new Error(`Xiaowei request timed out: ${message.action}`));
       }, timeout);
 
-      this._pendingRequests.set(id, { resolve, reject, timer });
+      this._pendingRequests.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        meta: {
+          requestId,
+          action: payload.action || "",
+          devices: payload.devices || "",
+          sentAt: Date.now(),
+        },
+      });
 
       try {
-        this.ws.send(JSON.stringify(message));
+        this.ws.send(JSON.stringify(payload));
       } catch (err) {
-        this._pendingRequests.delete(id);
+        this._pendingRequests.delete(requestId);
         clearTimeout(timer);
         reject(err);
       }

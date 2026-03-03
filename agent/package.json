@@ -5,7 +5,8 @@
   "main": "agent.js",
   "scripts": {
     "start": "node agent.js",
-    "dev": "node agent.js"
+    "dev": "node agent.js",
+    "test": "node --test core/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
