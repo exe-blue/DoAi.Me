@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createServerClientWithCookies, getServerClient } from "@/lib/supabase/server";
+import { createServerClientWithCookies, createServiceRoleClient } from "@/lib/supabase/server";
 import { ok, err, errFrom } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = getServerClient();
+    const supabase = createServiceRoleClient();
     if (command_type === "enable" || command_type === "disable") {
       const newStatus = command_type === "enable" ? "online" : "offline";
       const { error: updateError } = await supabase

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase/auth-server";
+import { createServerClientWithCookies } from "@/lib/supabase/server";
 
 async function signOutAndRedirect(request: NextRequest) {
-  const supabase = await createAuthServerClient();
+  const supabase = await createServerClientWithCookies();
   await supabase.auth.signOut();
   const url = new URL("/", request.url);
   return NextResponse.redirect(url);
