@@ -34,6 +34,7 @@ apps/desktop/node-bundle/
 .env.prod
 apps/web/.env
 apps/web/.env*
+!apps/web/.env.example
 agent/.env
 agent/.env*
 agent/data/

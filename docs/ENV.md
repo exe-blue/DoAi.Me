@@ -1,31 +1,56 @@
 # 환경 변수 가이드
 
-이 문서는 DoAi.Me v2.1 프로젝트의 모든 환경 변수를 정의합니다.
+이 문서는 DoAi.Me v2.1 프로젝트의 환경 변수와 주입 위치를 정의합니다.
 
 ---
 
 ## 1. 웹 애플리케이션 (Next.js / Vercel)
 
-**파일**: `.env.local` (로컬 개발) | Vercel 대시보드 (배포)
+**기본 템플릿 파일**: `apps/web/.env.example`  
+**로컬 개발 파일**: `apps/web/.env.local` (Git 커밋 금지)  
+**배포 주입 위치**: Vercel Project Settings → Environment Variables
 
-| 변수명 | 필수 | 설명 | 예시 |
-|--------|------|------|------|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase 프로젝트 URL | `https://xxx.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase 익명 키 (클라이언트용) | `eyJhbGciOiJIUzI1NiIs...` |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase 서비스 키 (API Routes용, 서버 전용) | `eyJhbGciOiJIUzI1NiIs...` |
-| `YOUTUBE_API_KEY` | ⚠️ | YouTube Data API v3 키 (채널/영상 등록 시) | `AIza...` |
+### 1-1. 변수 분류 (필수/선택 + 공개/비공개)
 
-### Supabase Auth (로그인/회원가입)
+| 변수명 | 필수 | 공개 범위 | 설명 | 주입 위치 |
+|--------|------|-----------|------|-----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Public (`NEXT_PUBLIC_*`) | Supabase 프로젝트 URL | Local `.env.local`, Vercel (Development/Preview/Production) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Public (`NEXT_PUBLIC_*`) | Supabase 익명 키 (클라이언트 사용) | Local `.env.local`, Vercel (Development/Preview/Production) |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Server-only | API Routes/Server Actions용 관리자 키 | Local `.env.local`, Vercel (Development/Preview/Production) |
+| `YOUTUBE_API_KEY` | 선택 | Server-only | YouTube Data API 호출(채널/영상 동기화) | Local `.env.local`, Vercel (필요 환경만) |
 
-- 로그인·인증은 Supabase Auth 사용 (이메일/비밀번호, Magic Link 등)
-- Supabase Dashboard → Authentication → URL Configuration:
-  - Site URL: `http://localhost:3000` (로컬) / `https://doai.me` (프로덕션)
-  - Redirect URLs: `http://localhost:3000/auth/callback`, `https://doai.me/auth/callback`
+### 1-2. 환경별 주입 매트릭스
 
-### 규칙
+| 환경 | 값 소스 | 실제 주입 위치 |
+|------|---------|----------------|
+| Local | 개발자 개인 키 | `apps/web/.env.local` |
+| Preview | 스테이징/검증용 키 | Vercel `Preview` Environment Variables |
+| Production | 운영 키 | Vercel `Production` Environment Variables |
 
-- `NEXT_PUBLIC_` 접두사: 클라이언트에 노출됨 (브라우저에서 접근 가능)
-- `SUPABASE_SERVICE_ROLE_KEY`: **절대** 클라이언트에 노출 금지. API Routes에서만 사용
+> `NEXT_PUBLIC_*`는 빌드 결과에 포함되어 브라우저에서 확인 가능하므로 비밀값을 넣으면 안 됩니다.
+
+### 1-3. `NEXT_PUBLIC_*` vs 서버 전용 키 경계
+
+- `NEXT_PUBLIC_*` 접두사: **클라이언트 노출 허용 값만** 사용
+- `SUPABASE_SERVICE_ROLE_KEY`: **절대 클라이언트 전달 금지**
+  - 사용 위치: `app/api/*`, Server Actions, 서버 전용 라이브러리
+  - 금지 위치: React Client Component, 브라우저 번들, `NEXT_PUBLIC_` 접두사 변수
+
+### 1-4. Supabase 쪽 시크릿 관리
+
+- Supabase Dashboard → Project Settings → API
+  - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+  - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
+- Supabase Edge Functions를 사용하는 경우에는 Supabase Dashboard의 **Edge Function Secrets**에 별도 저장하고, 웹앱(Vercel) 변수와 분리 관리합니다.
+
+### 1-5. 키 노출 사고 대응 (필수)
+
+- 저장소/채팅/로그에 키가 노출되었으면 즉시 아래 순서로 처리:
+  1. Supabase/Google 콘솔에서 해당 키 **폐기(rotate/revoke)**
+  2. 새 키 재발급
+  3. Vercel(Local 포함) 값 교체
+  4. 재배포 및 동작 점검
 
 ---
 
@@ -67,18 +92,8 @@
 
 ---
 
-## 3. Supabase (대시보드 설정)
-
-Supabase 프로젝트 생성 후:
-
-- **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`
-- **anon key** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_ANON_KEY`
-- **service_role key** → `SUPABASE_SERVICE_ROLE_KEY` (서버 전용)
-
----
-
-## 4. 보안 체크리스트
+## 3. 보안 체크리스트
 
 - [ ] `.env`, `.env.local`은 `.gitignore`에 포함
-- [ ] `SUPABASE_SERVICE_ROLE_KEY`는 Vercel 환경 변수에만 저장 (클라이언트 빌드 제외)
+- [ ] `SUPABASE_SERVICE_ROLE_KEY`는 서버 환경 변수에만 저장
 - [ ] Agent `.env`는 각 노드PC에 수동 배포 (저장소에 커밋 금지)
