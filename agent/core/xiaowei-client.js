@@ -53,6 +53,13 @@ class XiaoweiClient extends EventEmitter {
     this.shouldReconnect = true;
     this._pendingRequests = new Map();
     this._requestId = 0;
+    this._clientRequestSeq = 0;
+    this._fallbackMatchWindowMs = 15000;
+    this._serializationChains = new Map();
+    this._serializationOptions = {
+      actionCreate: { enabled: true, perDevice: true },
+      autojsCreate: { enabled: true, perDevice: true },
+    };
     this._commandQueue = [];
     this._maxQueueSize = 100;
     this._disconnectedAt = null;
@@ -110,6 +117,12 @@ class XiaoweiClient extends EventEmitter {
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
+        this.emit("response", msg);
+        this._handleResponse(msg);
+      } catch (err) {
+        console.error(`[Xiaowei] Failed to parse message: ${err.message}`);
+      }
+    });
 
     this.ws.on("close", () => {
       const wasConnected = this.connected;
@@ -213,6 +226,15 @@ class XiaoweiClient extends EventEmitter {
           return;
         }
       }
+      // clientRequestId present but unmatched - log and return early (skip fallback)
+      console.warn("[Xiaowei] response_unmatched", {
+        reason: "clientRequestId_present_but_unmatched",
+        responseAction: this._extractResponseAction(msg),
+        responseDevices: this._extractResponseDevices(msg),
+        responseClientRequestId: echoedId,
+        pendingRequestIds: Array.from(this._pendingRequests.values()).map(p => p.clientRequestId),
+      });
+      return;
     }
 
     const candidates = [];
@@ -420,6 +442,46 @@ class XiaoweiClient extends EventEmitter {
    * @returns {Promise<object>}
    */
   send(message, timeout = 30000) {
+    return this._sendWithSerialization(message, () => new Promise((resolve, reject) => {
+      if (!this.connected || !this.ws) {
+        // Queue command instead of rejecting
+        let dropped = 0;
+        if (this._commandQueue.length >= this._maxQueueSize) {
+          this._commandQueue.shift();
+          dropped = 1;
+        }
+        this._commandQueue.push({ message });
+        return resolve({ queued: true, dropped });
+      }
+
+      const id = ++this._requestId;
+      const clientRequestId = this._nextClientRequestId();
+      const messageWithRequestId = { ...message, clientRequestId };
+      const timer = setTimeout(() => {
+        this._pendingRequests.delete(id);
+        reject(new Error(`Xiaowei request timed out: ${message.action}`));
+      }, timeout);
+
+      this._pendingRequests.set(id, {
+        id,
+        resolve,
+        reject,
+        timer,
+        clientRequestId,
+        action: String(message.action || ""),
+        devices: this._normalizeDevices(message.devices),
+        sentAt: Date.now(),
+      });
+
+      try {
+        this.ws.send(JSON.stringify(messageWithRequestId));
+      } catch (err) {
+        this._pendingRequests.delete(id);
+        clearTimeout(timer);
+        reject(err);
+      }
+    }));
+  }
 
   /**
    * Send a message without waiting for response (fire-and-forget)
