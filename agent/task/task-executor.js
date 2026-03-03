@@ -1199,16 +1199,17 @@ class TaskExecutor {
 
       // 5. Extract response summary for logging
       const summary = _extractResponseSummary(result);
+      const matchedRequestId = _extractMatchedRequestId(result);
 
       // 6. Log success
       await this.supabaseSync.insertExecutionLog(
         task.id,
         devices,
         taskType,
-        task.payload,
+        { ...task.payload, matchedRequestId },
         result,
         "success",
-        `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`
+        `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}${matchedRequestId ? ` [requestId=${matchedRequestId}]` : ""}`
       );
 
       // 7. Update video play_count if this was a batch task
@@ -1219,7 +1220,7 @@ class TaskExecutor {
       // 8. Mark completed
       await this.supabaseSync.updateTaskStatus(task.id, "completed", result, null);
       this.stats.succeeded++;
-      console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`);
+      console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}${matchedRequestId ? ` [requestId=${matchedRequestId}]` : ""}`);
     } catch (err) {
       const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
       this.stats.failed++;
@@ -1535,6 +1536,11 @@ class TaskExecutor {
  * @param {object} result
  * @returns {string|null}
  */
+function _extractMatchedRequestId(result) {
+  if (!result || typeof result !== "object") return null;
+  return result.matchedClientRequestId || result.clientRequestId || null;
+}
+
 function _extractResponseSummary(result) {
   if (!result) return null;
   if (typeof result === "string") return result.substring(0, 100);
