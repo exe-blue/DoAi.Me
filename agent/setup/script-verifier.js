@@ -9,6 +9,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const { summarizeResponse } = require("../lib/xiaowei-response");
 
 /** Scripts that must exist for core task types */
 const REQUIRED_SCRIPTS = ["youtube_watch.js"];
@@ -118,7 +119,7 @@ class ScriptVerifier {
         deviceInterval: "500",
       });
 
-      const output = _extractResponse(response);
+      const output = summarizeResponse(response, serial);
       console.log(`[Script] autojsCreate ${TEST_SCRIPT_NAME} → ${serial}: success`);
 
       if (output) {
@@ -162,19 +163,6 @@ class ScriptVerifier {
       testOk,
     };
   }
-}
-
-/**
- * Try to extract a human-readable result from Xiaowei response.
- * @param {object} response
- * @returns {string|null}
- */
-function _extractResponse(response) {
-  if (!response) return null;
-  if (typeof response === "string") return response.trim();
-  const text = response.output || response.result || response.data || response.msg || response.message;
-  if (typeof text === "string") return text.trim();
-  return null;
 }
 
 module.exports = ScriptVerifier;

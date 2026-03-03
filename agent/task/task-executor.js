@@ -5,20 +5,9 @@
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
 const sleep = require("../lib/sleep");
-const { assertAdbSuccess } = require("../lib/adb-guard");
 
 function _escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Extract shell command output from Xiaowei adbShell response (code, msg, data, stdout). */
-function _extractShellOutput(res) {
-  if (res == null) return "";
-  if (typeof res === "string") return res;
-  if (res.data != null) return Array.isArray(res.data) ? (res.data[0] != null ? String(res.data[0]) : "") : String(res.data);
-  if (res.msg != null) return String(res.msg);
-  if (res.stdout != null) return String(res.stdout);
-  return String(res);
 }
 
 /** Random int [min, max] inclusive */
@@ -26,20 +15,77 @@ function _randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-/** Layer 3: run async fn up to maxAttempts times; on throw retries after short delay, then rethrows. */
-async function _withRetry(fn, maxAttempts = 3) {
-  let lastErr;
+function _isRetryableNetworkError(err) {
+  const message = String(err?.message || err || "").toLowerCase();
+  return /(timeout|timed out|econn|epipe|network|socket|websocket|disconnected|etimedout|enotfound)/.test(message);
+}
+
+function _normalizeRetrySnapshot(result) {
+  return {
+    code: result && result.code !== undefined ? result.code : undefined,
+    msg: result && result.msg != null ? String(result.msg) : "",
+    output: _extractShellOutput(result),
+  };
+}
+
+function expectNonEmptyOutput(result) {
+  return _extractShellOutput(result).trim().length > 0;
+}
+
+/**
+ * Layer 3: run async fn up to maxAttempts times with Xiaowei-aware retry policy.
+ * Retryable: network/timeout errors, queued=true, code!==10000, validator failure.
+ */
+async function _withRetry(fn, { maxAttempts = 3, serial = "", command = "", validator = null } = {}) {
+  let lastError = null;
+  let lastSnapshot = { code: undefined, msg: "", output: "" };
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (attempt < maxAttempts) {
-        await sleep(500 * attempt);
+      const result = await fn();
+      lastSnapshot = _normalizeRetrySnapshot(result);
+
+      const isQueued = result && result.queued === true;
+      const hasCode = result && result.code !== undefined;
+      const codeFailed = hasCode && Number(result.code) !== 10000;
+      const validatorFailed = typeof validator === "function" && !validator(result);
+
+      if (!isQueued && !codeFailed && !validatorFailed) {
+        return result;
       }
+
+      lastError = new Error(
+        isQueued
+          ? "queued response"
+          : codeFailed
+            ? `unexpected code=${result.code}`
+            : "validator failed"
+      );
+    } catch (err) {
+      if (!_isRetryableNetworkError(err)) {
+        throw err;
+      }
+      lastError = err;
+      lastSnapshot = {
+        code: undefined,
+        msg: err?.message ? String(err.message) : "",
+        output: "",
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      const base = lastSnapshot.msg === "queued response" ? 200 : 500;
+      await sleep(base * attempt);
     }
   }
-  throw lastErr;
+
+  const fail = new Error(
+    `Retry exceeded serial=${serial} command=${JSON.stringify(command)} ` +
+      `last_code=${lastSnapshot.code ?? "n/a"} last_msg=${JSON.stringify(lastSnapshot.msg || "")} ` +
+      `last_output=${JSON.stringify((lastSnapshot.output || "").substring(0, 300))}`
+  );
+  if (lastError) fail.cause = lastError;
+  throw fail;
 }
 
 /** YouTube UI 요소 (resource-id / content-desc). docs/youtube-ui-objects.md 참고. */
@@ -328,8 +374,6 @@ class TaskExecutor {
   /**
    * Layer 3: adbShell with up to 3 retries on failure (무응답/에러 시 재시도).
    */
-  async _adbShellWithRetry(serial, command, maxAttempts = 3, phase = "task_executor") {
-    return _withRetry(() => this._adbShell(serial, command, phase), maxAttempts);
   }
 
   async _updateTaskDevice(id, status, extra = {}) {
@@ -517,12 +561,7 @@ class TaskExecutor {
     while (Date.now() < deadline) {
       await sleep(POLL_MS);
       try {
-        const statRes = await this._adbShell(serial, `stat -c %Y ${DUMP_PATH} 2>/dev/null || echo 0`);
-        const mtimeSec = parseInt(_extractShellOutput(statRes), 10) || 0;
-        const mtimeMs = mtimeSec * 1000;
-        if (mtimeMs > 0 && Date.now() - mtimeMs < FRESHNESS_MS) {
-          const dumpRes = await this._adbShell(serial, `cat ${DUMP_PATH}`);
-          const xml = _extractShellOutput(dumpRes);
+
           if (xml && xml.length > 100) return xml;
           lastXml = xml || "";
         }
@@ -531,8 +570,7 @@ class TaskExecutor {
       }
     }
     try {
-      const dumpRes = await this._adbShell(serial, `cat ${DUMP_PATH}`);
-      lastXml = _extractShellOutput(dumpRes) || lastXml;
+
     } catch {
       // keep lastXml
     }
@@ -670,8 +708,6 @@ class TaskExecutor {
    */
   async _getScreenSize(serial) {
     try {
-      const res = await this._adbShell(serial, "wm size");
-      const output = _extractShellOutput(res);
       const match = output && output.match(/(\d+)x(\d+)/);
       if (match) {
         return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
@@ -730,7 +766,7 @@ class TaskExecutor {
       const res = await this._adbShell(serial,
         `am broadcast -a ADB_INPUT_B64 --es msg '${encoded}' 2>/dev/null`
       );
-      const output = _extractShellOutput(res);
+      const output = extractDeviceOutput(res);
       if (output && output.includes("result=0")) return;
     } catch {
       // fallback
@@ -809,8 +845,6 @@ class TaskExecutor {
       await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
     } catch (err) {
       try {
-        const res = await this._adbShell(serial, "dumpsys media_session | grep -E 'state='");
-        const output = _extractShellOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
           await sleep(500);
@@ -1223,16 +1257,17 @@ class TaskExecutor {
 
       // 5. Extract response summary for logging
       const summary = _extractResponseSummary(result);
+      const matchedRequestId = _extractMatchedRequestId(result);
 
       // 6. Log success
       await this.supabaseSync.insertExecutionLog(
         task.id,
         devices,
         taskType,
-        task.payload,
+        { ...(task.payload || {}), matchedRequestId },
         result,
         "success",
-        `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`
+        `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}${matchedRequestId ? ` [requestId=${matchedRequestId}]` : ""}`
       );
 
       // 7. Update video play_count if this was a batch task
@@ -1243,7 +1278,7 @@ class TaskExecutor {
       // 8. Mark completed
       await this.supabaseSync.updateTaskStatus(task.id, "completed", result, null);
       this.stats.succeeded++;
-      console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}`);
+      console.log(`[TaskExecutor] ✓ ${task.id} completed (${durationSec}s)${summary ? ` — ${summary}` : ""}${matchedRequestId ? ` [requestId=${matchedRequestId}]` : ""}`);
     } catch (err) {
       const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
       this.stats.failed++;
@@ -1561,18 +1596,28 @@ class TaskExecutor {
  * @param {object} result
  * @returns {string|null}
  */
-function _extractResponseSummary(result) {
-  if (!result) return null;
-  if (typeof result === "string") return result.substring(0, 100);
+function _extractMatchedRequestId(result) {
+  if (!result || typeof result !== "object") return null;
 
-  // Common Xiaowei response patterns
-  if (result.msg) return String(result.msg).substring(0, 100);
-  if (result.message) return String(result.message).substring(0, 100);
-  if (result.status) return `status=${result.status}`;
-  if (result.code !== undefined) return `code=${result.code}`;
-  if (result.success !== undefined) return result.success ? "success=true" : "success=false";
+  // Fast path: top-level match metadata
+  if (result.matchedClientRequestId || result.clientRequestId) {
+    return result.matchedClientRequestId || result.clientRequestId;
+  }
+
+  // Batch wrapper shape: { batch: true, results: [...] }
+  if (result.batch && Array.isArray(result.results)) {
+    for (const item of result.results) {
+      if (!item || typeof item !== "object") continue;
+      const id = item.matchedClientRequestId || item.clientRequestId;
+      if (id) return id;
+    }
+  }
 
   return null;
+}
+
+function _extractResponseSummary(result) {
+  return summarizeResponse(result);
 }
 
 module.exports = TaskExecutor;

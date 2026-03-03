@@ -5,6 +5,27 @@ Organized by subdirectory. All modules are CommonJS.
 
 ---
 
+## 표준 응답 파싱 규약 (Xiaowei)
+
+모든 Xiaowei 응답 파싱은 **반드시** `agent/lib/xiaowei-response.js`의 공통 유틸만 사용한다.
+
+- `isSuccessResponse(res)`
+  - 성공 기준은 `code === 10000`.
+  - `queued: true` 응답은 연결 끊김 시 임시 큐잉 상태로 간주하며 성공으로 처리하지 않는다.
+- `extractDeviceOutput(res, serial?)`
+  - 출력 추출 우선순서:
+    1. `data[serial]`
+    2. `data` 객체의 첫 번째 값
+    3. `data` 문자열
+    4. `stdout` → `msg` → `result` → `output`
+- `summarizeResponse(res, serial?)`
+  - 로그/에러 메시지용 짧은 요약 문자열 생성.
+
+신규 모듈에서 응답 파싱 로직(예: `_extractAdbOutput`, `_extractOutput`, `_extractResponse`)을 중복 구현하지 말고,
+기존 모듈 리팩터링 시에도 동일 유틸로 통일한다.
+
+---
+
 ## core/
 
 Three modules exported from `agent/core/index.js`. All are plain CommonJS classes. `XiaoweiClient` extends `EventEmitter`; the other two do not.
@@ -119,6 +140,18 @@ updateDevices(devices: string, data: object): Promise<object>
 | `"extended-disconnect"` | `{ duration: number }` | Reconnect after >2 minutes offline |
 | `"error"` | `Error` | WebSocket `error` fires |
 | `"response"` | `object` | Every parsed inbound message |
+
+
+
+**동시성 응답 매칭 보장 방식 (Concurrency Response Matching):**
+
+- `send()`는 모든 outbound payload에 고유 `requestId`를 자동 주입한다.
+- 수신 응답에서 `requestId`가 존재하면 해당 `pending` 엔트리를 **우선** resolve/reject 한다.
+- 응답이 `status=error|failed`, `code>=400`, `success=false` 중 하나면 reject 처리한다.
+- 구버전 Xiaowei 서버처럼 `requestId`를 에코하지 않는 경우, 다음 fallback 순서로 매칭한다.
+  1. `action` + `devices`가 일치하는 pending 중 가장 먼저 보낸 요청
+  2. 위 조건이 없으면 단일 in-flight/최오래된 요청(oldest pending)
+- 이 fallback은 레거시 호환용이며, 동시 다발 요청 안전성은 `requestId` 에코를 지원하는 서버에서 가장 강하게 보장된다.
 
 **Usage in `agent.js`:**
 

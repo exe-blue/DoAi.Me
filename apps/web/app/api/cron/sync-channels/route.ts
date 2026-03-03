@@ -1,26 +1,33 @@
 import { NextResponse } from "next/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import { runSyncChannels } from "@/lib/sync-channels-runner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function verifyCronAuth(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    const env = process.env.NODE_ENV;
-    if (env === "development" || env === "test") return true;
+async function verifySupabaseScheduleAuth(request: Request): Promise<boolean> {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+
+  const jwt = authHeader.replace("Bearer ", "").trim();
+  if (!jwt) return false;
+
+  try {
+    const supabase = createServiceRoleClient();
+    const { data, error } = await supabase.auth.getUser(jwt);
+    if (error) return false;
+    return Boolean(data.user?.id);
+  } catch {
     return false;
   }
-  const authHeader = request.headers.get("authorization");
-  return authHeader === `Bearer ${secret}`;
 }
 
 /**
- * GET /api/cron/sync-channels
- * Vercel Cron에서 1분마다 호출. YouTube Data API로 최근 영상 조회 후 videos upsert 및 task_queue enqueue.
+ * POST /api/cron/sync-channels
+ * Supabase Scheduled Functions 또는 pg_cron + HTTP 호출에서 실행되는 내부 스케줄 엔드포인트.
  */
-export async function GET(request: Request) {
-  if (!verifyCronAuth(request)) {
+export async function POST(request: Request) {
+  if (!(await verifySupabaseScheduleAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

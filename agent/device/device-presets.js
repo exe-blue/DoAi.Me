@@ -9,46 +9,13 @@
 
 const path = require('path');
 const sleep = require('../lib/sleep');
-const { assertAdbSuccess, classifyAdbResponse } = require('../lib/adb-guard');
+
 
 const XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR || '/mnt/c/Program Files (x86)/xiaowei/tools';
 
 const _randInt = (min, max) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
 
-/**
- * Xiaowei 응답에서 값 추출
- * @param {object} res - { code, data: { [serial]: "value\n" } }
- * @param {string} serial
- * @returns {string}
- */
-function extractValue(res, serial) {
-  if (!res) return "";
-  // queued 응답 (연결 끊김 시)
-  if (res.queued) return "";
-  // data가 문자열
-  if (typeof res.data === "string") return res.data.trim();
-  // data가 객체 (정상 응답)
-  if (res.data && typeof res.data === "object") {
-    if (serial && res.data[serial] != null) {
-      return String(res.data[serial]).trim();
-    }
-    // serial 모르면 첫 번째 값
-    const vals = Object.values(res.data);
-    if (vals.length > 0 && vals[0] != null) {
-      return String(vals[0]).trim();
-    }
-  }
-  return "";
-}
-
-
-
-async function runAdbShell(xiaowei, serial, command, phase) {
-  const res = await xiaowei.adbShell(serial, command);
-  assertAdbSuccess(res, { serial, command, phase });
-  return res;
-}
 // ════════════════════════════════════════════════════════════
 //  PRESET: SCAN
 // ════════════════════════════════════════════════════════════
@@ -86,13 +53,6 @@ async function scan(xiaowei, serial) {
   for (const check of checks) {
     try {
       const res = await xiaowei.adbShell(serial, check.cmd);
-      const classification = classifyAdbResponse(res);
-      if (classification.status === "queued") {
-        results[check.key] = "QUEUED";
-      } else {
-        assertAdbSuccess(res, { serial, command: check.cmd, phase: "preset_scan" });
-        results[check.key] = extractValue(res, serial);
-      }
     } catch (err) {
       results[check.key] = `ERROR: ${err.message}`;
     }
@@ -245,7 +205,7 @@ async function optimize(xiaowei, serial, options = {}) {
         serial,
         "pm list packages com.android.adbkeyboard"
       );
-      const pkgVal = extractValue(pkgRes, serial);
+      const pkgVal = extractDeviceOutput(pkgRes, serial);
       if (pkgVal.includes("com.android.adbkeyboard")) {
         await runAdbShell(xiaowei, 
           serial,
@@ -316,7 +276,7 @@ async function ytTest(xiaowei, serial, options = {}) {
       serial,
       "dumpsys window | grep mCurrentFocus"
     );
-    const focus = extractValue(focusRes, serial);
+    const focus = extractDeviceOutput(focusRes, serial);
     if (
       !step(
         "YouTube foreground",
@@ -337,7 +297,7 @@ async function ytTest(xiaowei, serial, options = {}) {
       serial,
       "cat /sdcard/window_dump.xml"
     );
-    const dump = extractValue(dumpRes, serial);
+    const dump = extractDeviceOutput(dumpRes, serial);
     const hasSearch =
       dump.includes("검색") ||
       dump.includes("Search") ||
@@ -381,7 +341,7 @@ async function ytTest(xiaowei, serial, options = {}) {
       serial,
       "cat /sdcard/window_dump.xml"
     );
-    const dump2 = extractValue(dump2Res, serial);
+    const dump2 = extractDeviceOutput(dump2Res, serial);
     const videoMatch = dump2.match(
       /resource-id="com\.google\.android\.youtube:id\/video_title"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/
     );
@@ -405,7 +365,7 @@ async function ytTest(xiaowei, serial, options = {}) {
       serial,
       "dumpsys media_session | grep -E 'state='"
     );
-    const media = extractValue(mediaRes, serial);
+    const media = extractDeviceOutput(mediaRes, serial);
     const isPlaying = media.includes("state=3");
     step("재생 상태", isPlaying, isPlaying ? "Playing ✓" : media.substring(0, 60));
 
@@ -458,8 +418,6 @@ async function warmup(xiaowei, serial, options = {}) {
     await sleep(_randInt(3000, 5000));
 
     // 2. 화면 크기
-    const sizeRes = await runAdbShell(xiaowei, serial, "wm size");
-    const sizeVal = extractValue(sizeRes, serial);
     const sizeMatch = sizeVal.match(/(\d+)x(\d+)/);
     const w = sizeMatch ? parseInt(sizeMatch[1]) : 1080;
     const h = sizeMatch ? parseInt(sizeMatch[2]) : 1920;
@@ -571,7 +529,7 @@ async function installApks(xiaowei, serial, options = {}) {
           serial,
           `pm list packages ${apk.package}`
         );
-        const pkgVal = extractValue(pkgRes, serial);
+        const pkgVal = extractDeviceOutput(pkgRes, serial);
         if (pkgVal.includes(apk.package)) {
           console.log(
             `[Preset:Install] ${serial.substring(0, 6)} ${apk.name} already installed ✓`
@@ -688,5 +646,4 @@ module.exports = {
   warmup,
   installApks,
   init,
-  extractValue,
 };
