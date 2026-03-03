@@ -120,11 +120,14 @@ class ProxyManager {
 
   /**
    * Build the proxy URL string for display/logging.
+   * Passwords are never included; they are redacted if present.
    */
   _formatProxyUrl(proxy) {
-    const creds =
-      proxy.username && proxy.password ? `${proxy.username}:${proxy.password}@` : "";
-    return `${proxy.type}://${creds}${proxy.address}`;
+    let authPart = "";
+    if (proxy.username) {
+      authPart = proxy.password ? `${proxy.username}:***@` : `${proxy.username}@`;
+    }
+    return `${proxy.type}://${authPart}${proxy.address}`;
   }
 
   /**
