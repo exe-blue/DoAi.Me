@@ -3,9 +3,11 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
+import Alert from "@mui/material/Alert";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 function maskUrl(url: string): string {
   if (!url || url.length < 20) return "***";
@@ -20,6 +22,7 @@ export default function SettingsPage() {
   const hasAnon =
     typeof process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "string" &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length > 0;
+  const configured = isSupabaseConfigured();
 
   return (
     <Box>
@@ -27,6 +30,12 @@ export default function SettingsPage() {
         Settings
       </Typography>
       <Paper sx={{ p: 2, maxWidth: 560 }}>
+        {!configured && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Supabase 환경 변수가 누락되어 일부 기능이 비활성화되었습니다. `.env.local`에
+            `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`를 설정해 주세요.
+          </Alert>
+        )}
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
           Environment (read-only)
         </Typography>

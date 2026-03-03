@@ -10,7 +10,7 @@ import {
   taskUpdateSchema,
   batchTaskCreateSchema,
 } from "@/lib/schemas";
-import { createAuthServerClient } from "@/lib/supabase/auth-server";
+import { createServerClientWithCookies } from "@/lib/supabase/server";
 import { okList, errFrom, parseListParams } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     let createdByUserId: string | undefined;
     if (!request.headers.has("x-api-key")) {
       try {
-        const supabase = await createAuthServerClient();
+        const supabase = await createServerClientWithCookies();
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id) createdByUserId = user.id;
       } catch {

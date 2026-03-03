@@ -4,7 +4,10 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
+import {
+  createBrowserClient,
+  isSupabaseConfigured,
+} from "@/lib/supabase/client";
 import { Smartphone } from "lucide-react";
 
 export default function LoginPage() {
@@ -13,10 +16,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createBrowserClient();
+  const isConfigured = isSupabaseConfigured();
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!supabase) {
+      setError("로그인 기능이 비활성화되어 있습니다. Supabase 환경 변수를 설정해 주세요.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -35,6 +45,11 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (!supabase) {
+      setError("Google 로그인 기능이 비활성화되어 있습니다. Supabase 환경 변수를 설정해 주세요.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -67,6 +82,12 @@ export default function LoginPage() {
           스마트폰 팜 관제 시스템에 로그인하세요.
         </p>
 
+        {!isConfigured && (
+          <div className="w-full rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            Supabase 환경 변수가 설정되지 않아 로그인 기능이 비활성화되었습니다.
+          </div>
+        )}
+
         {error && (
           <div className="w-full rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
             {error}
@@ -96,7 +117,7 @@ export default function LoginPage() {
           </div>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isConfigured}
             className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {loading ? "로그인 중..." : "이메일로 로그인"}
@@ -116,7 +137,7 @@ export default function LoginPage() {
 
         <button
           onClick={handleGoogleLogin}
-          disabled={loading}
+          disabled={loading || !isConfigured}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-input bg-background px-6 text-base font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">

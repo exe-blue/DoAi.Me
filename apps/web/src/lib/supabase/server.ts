@@ -1,14 +1,36 @@
 /**
  * Supabase server clients.
- * - createServerClientWithCookies(): cookie-based session (Server Components, Route Handlers with auth).
- *   Env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
- * - createServiceRoleClient(): service role (API Routes that need admin/RLS bypass).
- *   Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ *
+ * Usage rules:
+ * 1) createServerClientWithCookies()
+ *    - For Server Components and Route Handlers that need the signed-in user session.
+ *    - Uses `cookies()` and anon key.
+ *    - Typical use: auth checks (`supabase.auth.getUser()`).
+ *
+ * 2) createServiceRoleClient()
+ *    - For server-only admin operations that require RLS bypass.
+ *    - Never expose service-role key in client bundles.
+ *    - Use in Route Handlers only after explicit authorization checks.
  */
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { Database } from "./types";
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function isSupabaseConfiguredServer(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  return isValidHttpUrl(url) && key.length > 0;
+}
 
 /**
  * Cookie-based Supabase client for Server Components and Route Handlers.
@@ -54,16 +76,12 @@ export function createServiceRoleClient() {
   });
 }
 
-/**
- * Default server client for API Routes: service role (admin).
- * For session-based auth in server code, use createServerClientWithCookies().
- * API routes must use this client only on the server; never expose SUPABASE_SERVICE_ROLE_KEY to the client bundle.
- */
+/** @deprecated Use createServiceRoleClient(). */
 export function createSupabaseServerClient() {
   return createServiceRoleClient();
 }
 
-/** Canonical name for API routes. Same as createSupabaseServerClient(). Use only in server-side API handlers. */
+/** @deprecated Use createServiceRoleClient(). */
 export function getServerClient() {
   return createServiceRoleClient();
 }
