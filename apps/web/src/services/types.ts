@@ -4,6 +4,23 @@
  */
 
 // --- Operations ---
+
+export interface DashboardMetrics {
+  key: string;
+  devices_total: number;
+  devices_online: number;
+  devices_busy: number;
+  devices_offline: number;
+  devices_error: number;
+  workers_total: number;
+  workers_online: number;
+  workers_error: number;
+  last_worker_heartbeat: string | null;
+  worker_heartbeat_stale: number;
+  error_count_24h: number;
+  updated_at: string | null;
+}
+
 export interface WorkerSummary {
   id: string;
   pc_number: string;

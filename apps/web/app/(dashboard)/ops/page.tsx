@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -8,39 +8,23 @@ import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import Skeleton from "@mui/material/Skeleton";
-import { getKpis, getAlerts } from "@/services/operationsService";
-import type { OperationsKpis, OperationsAlert } from "@/services/types";
+import { useDashboardMetricsRealtime } from "@/hooks/use-dashboard-metrics-realtime";
 
 export default function OpsPage() {
-  const [kpis, setKpis] = useState<OperationsKpis | null>(null);
-  const [alerts, setAlerts] = useState<OperationsAlert[]>([]);
   const [filter, setFilter] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const [k, a] = await Promise.all([getKpis(), getAlerts()]);
-      if (!cancelled) {
-        setKpis(k);
-        setAlerts(a);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { kpis, alerts, loading, isConnected, reconnectAttempt } = useDashboardMetricsRealtime();
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3 }}>
+      <Typography variant="h4" sx={{ mb: 1 }}>
         Operations
+      </Typography>
+      <Typography variant="caption" color={isConnected ? "success.main" : "warning.main"}>
+        Realtime: {isConnected ? "connected" : `reconnecting (${reconnectAttempt})`}
       </Typography>
 
       {loading ? (
-        <Grid container spacing={2}>
+        <Grid container spacing={2} sx={{ mt: 0.5 }}>
           {[1, 2, 3, 4, 5].map((i) => (
             <Grid item key={i} xs={12} sm={6} md={4}>
               <Skeleton variant="rounded" height={100} />
@@ -48,14 +32,14 @@ export default function OpsPage() {
           ))}
         </Grid>
       ) : (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid container spacing={2} sx={{ mb: 3, mt: 0.5 }}>
           <Grid item xs={12} sm={6} md={3}>
             <Card>
               <CardContent>
                 <Typography color="text.secondary" gutterBottom>
                   Online devices
                 </Typography>
-                <Typography variant="h4">{kpis?.onlineDevices ?? 0}</Typography>
+                <Typography variant="h4">{kpis.onlineDevices ?? 0}</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -65,7 +49,7 @@ export default function OpsPage() {
                 <Typography color="text.secondary" gutterBottom>
                   Warning devices
                 </Typography>
-                <Typography variant="h4">{kpis?.warningDevices ?? 0}</Typography>
+                <Typography variant="h4">{kpis.warningDevices ?? 0}</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -76,7 +60,7 @@ export default function OpsPage() {
                   Last heartbeat
                 </Typography>
                 <Typography variant="body1">
-                  {kpis?.lastHeartbeatTime
+                  {kpis.lastHeartbeatTime
                     ? new Date(kpis.lastHeartbeatTime).toLocaleString()
                     : "—"}
                 </Typography>
@@ -90,7 +74,7 @@ export default function OpsPage() {
                   Recent success / failure
                 </Typography>
                 <Typography variant="body1">
-                  {kpis?.recentSuccessCount ?? 0} / {kpis?.recentFailureCount ?? 0}
+                  {kpis.recentSuccessCount ?? 0} / {kpis.recentFailureCount ?? 0}
                 </Typography>
               </CardContent>
             </Card>
@@ -120,7 +104,7 @@ export default function OpsPage() {
         Search (PC / serial / IP)
       </Typography>
       <TextField
-        placeholder="Filter by PC number, serial, or IP…"
+        placeholder="Filter by worker hostname, serial, or IP…"
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         size="small"

@@ -1,109 +1,86 @@
 import { apiClient } from "@/lib/api";
-import type {
-  WorkerSummary,
-  DeviceSummary,
-  OperationsKpis,
-  OperationsAlert,
-} from "./types";
+import type { OperationsAlert, OperationsKpis, DashboardMetrics } from "./types";
 
-/** Raw workers API response: { workers: [...] } */
-interface WorkersResponse {
-  workers?: Array<{
-    id: string;
-    pc_number?: string;
-    hostname?: string;
-    status?: string;
-    last_heartbeat?: string | null;
-    device_count?: number;
-    online_count?: number;
-    max_devices?: number;
-  }>;
+interface DashboardRealtimeResponse {
+  success?: boolean;
+  data?: DashboardMetrics;
 }
 
-/** Devices list API returns { ok, data, page, pageSize, total }. */
-interface DevicesListResponse {
-  ok?: boolean;
-  data?: DeviceSummary[];
-  page?: number;
-  pageSize?: number;
-  total?: number;
+const EMPTY_METRICS: DashboardMetrics = {
+  key: "global",
+  devices_total: 0,
+  devices_online: 0,
+  devices_busy: 0,
+  devices_offline: 0,
+  devices_error: 0,
+  workers_total: 0,
+  workers_online: 0,
+  workers_error: 0,
+  last_worker_heartbeat: null,
+  worker_heartbeat_stale: 0,
+  error_count_24h: 0,
+  updated_at: null,
+};
+
+export async function getDashboardMetricsSnapshot(): Promise<DashboardMetrics> {
+  const res = await apiClient.get<DashboardRealtimeResponse>("/api/dashboard/realtime", { silent: true });
+  if (!res.success || !res.data?.data) return EMPTY_METRICS;
+  return { ...EMPTY_METRICS, ...res.data.data };
 }
 
-export async function getWorkers(): Promise<WorkerSummary[]> {
-  const res = await apiClient.get<WorkersResponse>("/api/workers", { silent: true });
-  if (!res.success || !res.data?.workers) return [];
-  return res.data.workers.map((w) => ({
-    id: w.id,
-    pc_number: w.pc_number ?? w.hostname ?? w.id,
-    hostname: w.hostname,
-    status: w.status ?? "offline",
-    last_heartbeat: w.last_heartbeat ?? null,
-    device_count: w.device_count ?? 0,
-    online_count: w.online_count ?? 0,
-    max_devices: w.max_devices,
-  }));
-}
-
-export async function getDevices(params?: {
-  page?: number;
-  pageSize?: number;
-  status?: string;
-  pc_id?: string;
-  q?: string;
-}): Promise<{ data: DeviceSummary[]; total: number }> {
-  const search = new URLSearchParams();
-  if (params?.page != null) search.set("page", String(params.page));
-  if (params?.pageSize != null) search.set("pageSize", String(params.pageSize));
-  if (params?.status) search.set("status", params.status);
-  if (params?.pc_id) search.set("pc_id", params.pc_id);
-  if (params?.q) search.set("q", params.q);
-  const qs = search.toString();
-  const url = qs ? `/api/devices?${qs}` : "/api/devices";
-  const res = await apiClient.get<DevicesListResponse>(url, { silent: true });
-  if (!res.success) return { data: [], total: 0 };
-  const body = res.data as { data?: DeviceSummary[]; total?: number } | DeviceSummary[];
-  const data = Array.isArray(body) ? body : (body?.data ?? []);
-  const total = Array.isArray(body) ? body.length : (body?.total ?? data.length);
-  return { data, total };
-}
-
-/**
- * KPI: online/warning counts from workers+devices; rest stub + TODO.
- */
-export async function getKpis(): Promise<OperationsKpis> {
-  const [workersRes, devicesRes] = await Promise.all([
-    getWorkers(),
-    getDevices({ pageSize: 1000 }),
-  ]);
-  let onlineDevices = 0;
-  let warningDevices = 0;
-  let lastHeartbeatTime: string | null = null;
-  for (const w of workersRes) {
-    onlineDevices += w.online_count ?? 0;
-    if (w.status !== "online" && w.status !== "offline") warningDevices += 1;
-    if (w.last_heartbeat) {
-      if (!lastHeartbeatTime || w.last_heartbeat > lastHeartbeatTime) {
-        lastHeartbeatTime = w.last_heartbeat;
-      }
-    }
-  }
-  for (const d of devicesRes.data) {
-    if (d.status === "error" || d.status === "warning") warningDevices += 1;
-  }
-  // TODO: recentSuccessCount, recentFailureCount — API 없음, stub.
+export function metricsToKpis(metrics: DashboardMetrics): OperationsKpis {
   return {
-    onlineDevices,
-    warningDevices,
-    lastHeartbeatTime,
+    onlineDevices: metrics.devices_online + metrics.devices_busy,
+    warningDevices: metrics.devices_error + metrics.worker_heartbeat_stale + metrics.workers_error,
+    lastHeartbeatTime: metrics.last_worker_heartbeat,
     recentSuccessCount: 0,
-    recentFailureCount: 0,
+    recentFailureCount: metrics.error_count_24h,
   };
 }
 
-/**
- * Alerts: no API. Stub + TODO.
- */
+export async function getKpis(): Promise<OperationsKpis> {
+  const metrics = await getDashboardMetricsSnapshot();
+  return metricsToKpis(metrics);
+}
+
+export function metricsToAlerts(metrics: DashboardMetrics): OperationsAlert[] {
+  const alerts: OperationsAlert[] = [];
+  const at = metrics.updated_at ?? new Date().toISOString();
+
+  if (metrics.worker_heartbeat_stale > 0) {
+    alerts.push({
+      id: "worker-heartbeat-stale",
+      type: "heartbeat_mismatch",
+      message: `Heartbeat stale workers: ${metrics.worker_heartbeat_stale}`,
+      severity: "warning",
+      at,
+    });
+  }
+
+  if (metrics.workers_error > 0) {
+    alerts.push({
+      id: "worker-error",
+      type: "recent_failures",
+      message: `Workers in error status: ${metrics.workers_error}`,
+      severity: "error",
+      at,
+    });
+  }
+
+  if (metrics.error_count_24h > 0) {
+    alerts.push({
+      id: "recent-failures",
+      type: "recent_failures",
+      message: `Task log errors(24h): ${metrics.error_count_24h}`,
+      severity: "error",
+      at,
+    });
+  }
+
+  return alerts;
+}
+
 export async function getAlerts(): Promise<OperationsAlert[]> {
-  // TODO: heartbeat_mismatch, unauthorized, recent_failures — API 없음.
-  return [];
+  const metrics = await getDashboardMetricsSnapshot();
+  return metricsToAlerts(metrics);
 }
