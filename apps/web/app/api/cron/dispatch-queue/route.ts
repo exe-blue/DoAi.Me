@@ -9,17 +9,16 @@ async function verifySupabaseScheduleAuth(request: Request): Promise<boolean> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
 
-  const jwt = authHeader.replace("Bearer ", "").trim();
-  if (!jwt) return false;
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) return false;
 
-  try {
-    const supabase = createServiceRoleClient();
-    const { data, error } = await supabase.auth.getUser(jwt);
-    if (error) return false;
-    return Boolean(data.user?.id);
-  } catch {
+  const expectedSecret = process.env.SUPABASE_CRON_SECRET;
+  if (!expectedSecret) {
+    // If the cron secret is not configured, fail closed.
     return false;
   }
+
+  return token === expectedSecret;
 }
 
 /**
