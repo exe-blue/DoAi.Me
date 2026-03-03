@@ -44,7 +44,7 @@ function extractValue(res, serial) {
 
 
 
-async function runAdbShell(xiaowei, serial, command, phase) {
+async function runAdbShell(xiaowei, serial, command, phase = "device_presets") {
   const res = await xiaowei.adbShell(serial, command);
   assertAdbSuccess(res, { serial, command, phase });
   return res;
