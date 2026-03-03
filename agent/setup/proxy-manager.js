@@ -19,8 +19,6 @@ const { assertAdbSuccess } = require("../lib/adb-guard");
 
 const FAIL_THRESHOLD = 3; // Mark proxy invalid after this many consecutive failures
 
-
-
 async function runAdbShell(xiaowei, serial, command, phase = "proxy_manager") {
   const res = await xiaowei.adbShell(serial, command);
   assertAdbSuccess(res, { serial, command, phase });
