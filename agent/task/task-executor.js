@@ -1257,7 +1257,7 @@ class TaskExecutor {
         task.id,
         devices,
         taskType,
-        { ...task.payload, matchedRequestId },
+        { ...(task.payload || {}), matchedRequestId },
         result,
         "success",
         `Task completed (${durationSec}s)${summary ? ` — ${summary}` : ""}${matchedRequestId ? ` [requestId=${matchedRequestId}]` : ""}`
