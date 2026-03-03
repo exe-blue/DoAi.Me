@@ -7,7 +7,15 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const sleep = require('../lib/sleep');
+const { assertAdbSuccess } = require('../lib/adb-guard');
 
+
+
+async function runAdbShell(xiaowei, serial, command, phase = "device_watchdog") {
+  const res = await xiaowei.adbShell(serial, command);
+  assertAdbSuccess(res, { serial, command, phase });
+  return res;
+}
 class DeviceWatchdog {
   constructor(xiaowei, supabaseSync, config, broadcaster) {
     this.xiaowei = xiaowei;
@@ -151,7 +159,7 @@ class DeviceWatchdog {
 
     // Try: adb shell echo ping
     try {
-      const result = await this.xiaowei.adbShell(serial, 'echo ping');
+      const result = await runAdbShell(this.xiaowei, serial, 'echo ping', 'watchdog_ping');
       if (result && JSON.stringify(result).includes('ping')) {
         this._errorCounts.delete(serial);
         this._recoveryAttempts.delete(serial);
@@ -177,7 +185,7 @@ class DeviceWatchdog {
    */
   async _checkPing(serial) {
     try {
-      const result = await this.xiaowei.adbShell(serial, 'echo ping');
+      const result = await runAdbShell(this.xiaowei, serial, 'echo ping', 'watchdog_ping');
       if (result && JSON.stringify(result).includes('ping')) {
         // Device is alive, heartbeat will update last_seen next cycle
         return;

@@ -5,7 +5,6 @@
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
 const sleep = require("../lib/sleep");
-const { extractDeviceOutput, summarizeResponse } = require("../lib/xiaowei-response");
 
 function _escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -263,6 +262,8 @@ class TaskExecutor {
         completed_at: new Date().toISOString(),
         duration_ms: result.actualDurationSec != null ? result.actualDurationSec * 1000 : null,
         result: {
+          execution_status: "success",
+          adb_status: "success",
           watchPercentage: result.watchPercentage,
           liked: result.liked ?? false,
           commented: result.commented ?? false,
@@ -287,17 +288,36 @@ class TaskExecutor {
       );
       console.log(`[TaskExecutor] ✓ task_device ${taskDevice.id.substring(0, 8)} completed`);
     } catch (err) {
+      const adbStatus = err?.adbStatus || "failed";
+      const finalStatus = adbStatus === "queued" ? "queued" : "failed";
+      const errorClass = adbStatus === "queued" ? "adb_queued" : "adb_failed";
       console.error(`[TaskExecutor] ✗ task_device ${taskDevice.id.substring(0, 8)} failed: ${err.message}`);
       this.supabaseSync.insertExecutionLog(
         taskDevice.id,
         serial,
         "run_task_device_failed",
-        { task_id: taskDevice.task_id, error: err.message },
+        {
+          task_id: taskDevice.task_id,
+          error: err.message,
+          adb_status: adbStatus,
+          adb_code: err?.adbCode ?? null,
+          adb_reason: err?.adbReason ?? null,
+        },
         null,
-        "error",
+        adbStatus === "queued" ? "warning" : "error",
         err.message
       );
-      await this._updateTaskDevice(taskDevice.id, "failed", { error: err.message });
+      await this._updateTaskDevice(taskDevice.id, finalStatus, {
+        error: err.message,
+        result: {
+          execution_status: finalStatus,
+          failure_class: errorClass,
+          adb_status: adbStatus,
+          adb_code: err?.adbCode ?? null,
+          adb_reason: err?.adbReason ?? null,
+          phase: err?.adbContext?.phase ?? null,
+        },
+      });
     } finally {
       this._jobRunning.delete(taskDevice.id);
     }
@@ -343,15 +363,17 @@ class TaskExecutor {
   }
 
   /**
+   * Guarded adb shell call.
+   */
+  async _adbShell(serial, command, phase = "task_executor") {
+    const res = await this.xiaowei.adbShell(serial, command);
+    assertAdbSuccess(res, { serial, command, phase });
+    return res;
+  }
+
+  /**
    * Layer 3: adbShell with up to 3 retries on failure (무응답/에러 시 재시도).
    */
-  async _adbShellWithRetry(serial, command, maxAttempts = 3, validator = null) {
-    return _withRetry(() => this.xiaowei.adbShell(serial, command), {
-      maxAttempts,
-      serial,
-      command,
-      validator,
-    });
   }
 
   async _updateTaskDevice(id, status, extra = {}) {
@@ -464,7 +486,7 @@ class TaskExecutor {
         await this._trySkipAd(serial);
       }
       if (elapsed % 30000 < TICK_MS) {
-        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+        await this._adbShell(serial, "input keyevent KEYCODE_WAKEUP");
       }
       if (willLike && !actions.liked && elapsedSec >= likeAtSec) {
         actions.liked = await this._doLike(serial, eng);
@@ -533,18 +555,13 @@ class TaskExecutor {
     const MAX_WAIT_MS = 8000;
     const FRESHNESS_MS = 12000;
 
-    await this.xiaowei.adbShell(serial, `uiautomator dump ${DUMP_PATH}`);
+    await this._adbShell(serial, `uiautomator dump ${DUMP_PATH}`);
     const deadline = Date.now() + MAX_WAIT_MS;
     let lastXml = "";
     while (Date.now() < deadline) {
       await sleep(POLL_MS);
       try {
-        const statRes = await this.xiaowei.adbShell(serial, `stat -c %Y ${DUMP_PATH} 2>/dev/null || echo 0`);
-        const mtimeSec = parseInt(extractDeviceOutput(statRes), 10) || 0;
-        const mtimeMs = mtimeSec * 1000;
-        if (mtimeMs > 0 && Date.now() - mtimeMs < FRESHNESS_MS) {
-          const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
-          const xml = extractDeviceOutput(dumpRes);
+
           if (xml && xml.length > 100) return xml;
           lastXml = xml || "";
         }
@@ -553,8 +570,7 @@ class TaskExecutor {
       }
     }
     try {
-      const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
-      lastXml = extractDeviceOutput(dumpRes) || lastXml;
+
     } catch {
       // keep lastXml
     }
@@ -633,7 +649,7 @@ class TaskExecutor {
 
     const cx = Math.round((bounds.x1 + bounds.x2) / 2);
     const cy = Math.round((bounds.y1 + bounds.y2) / 2);
-    await this.xiaowei.adbShell(serial, `input tap ${cx} ${cy}`);
+    await this._adbShell(serial, `input tap ${cx} ${cy}`);
     return true;
   }
 
@@ -716,7 +732,7 @@ class TaskExecutor {
       await this._inputText(serial, query);
       await sleep(1000);
 
-      await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_ENTER");
+      await this._adbShell(serial, "input keyevent KEYCODE_ENTER");
       await sleep(_randInt(3000, 5000));
 
       // First result: try list container first item (RELATED_VIDEO / thumbnail), then VIDEO_TITLE, then fallback tap
@@ -726,7 +742,7 @@ class TaskExecutor {
         const screenInfo = await this._getScreenSize(serial);
         const tapX = Math.round(screenInfo.width / 2);
         const tapY = Math.round(screenInfo.height * 0.4);
-        await this.xiaowei.adbShell(serial, `input tap ${tapX} ${tapY}`);
+        await this._adbShell(serial, `input tap ${tapX} ${tapY}`);
       }
       await sleep(_randInt(3000, 5000));
 
@@ -747,8 +763,7 @@ class TaskExecutor {
 
     const encoded = Buffer.from(str, "utf-8").toString("base64");
     try {
-      const res = await this.xiaowei.adbShell(
-        serial,
+      const res = await this._adbShell(serial,
         `am broadcast -a ADB_INPUT_B64 --es msg '${encoded}' 2>/dev/null`
       );
       const output = extractDeviceOutput(res);
@@ -759,9 +774,9 @@ class TaskExecutor {
 
     try {
       const safe = str.replace(/'/g, "");
-      await this.xiaowei.adbShell(serial, `am broadcast -a clipper.set -e text '${safe}' 2>/dev/null`);
+      await this._adbShell(serial, `am broadcast -a clipper.set -e text '${safe}' 2>/dev/null`);
       await sleep(300);
-      await this.xiaowei.adbShell(serial, "input keyevent 279");
+      await this._adbShell(serial, "input keyevent 279");
       return;
     } catch {
       // fallback to input text (ASCII only)
@@ -769,7 +784,7 @@ class TaskExecutor {
 
     if (/^[\x20-\x7e]+$/.test(str)) {
       const forInput = str.replace(/ /g, "%s").replace(/'/g, "");
-      await this.xiaowei.adbShell(serial, `input text '${forInput}'`);
+      await this._adbShell(serial, `input text '${forInput}'`);
     }
   }
 
@@ -830,8 +845,6 @@ class TaskExecutor {
       await this._findAndTap(serial, YT.PLAY_PAUSE, 0);
     } catch (err) {
       try {
-        const res = await this.xiaowei.adbShell(serial, "dumpsys media_session | grep -E 'state='");
-        const output = extractDeviceOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
           await sleep(500);
@@ -888,14 +901,14 @@ class TaskExecutor {
       const midX = Math.round(screen.width / 2);
       const fromY = Math.round(screen.height * 0.6);
       const toY = Math.round(screen.height * 0.4);
-      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
+      await this._adbShell(serial, `input swipe ${midX} ${fromY} ${midX} ${toY} ${_randInt(300, 600)}`);
       await sleep(_randInt(800, 1500));
 
       let tapped = await this._findAndTap(serial, YT.LIKE_BUTTON, 1);
       if (!tapped && eng?.actionTouchCoords?.like_button) {
         const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.like_button);
         if (abs) {
-          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          await this._adbShell(serial, `input tap ${abs.x} ${abs.y}`);
           tapped = true;
         }
       }
@@ -906,7 +919,7 @@ class TaskExecutor {
       await sleep(_randInt(500, 1000));
       console.log(`[Engagement] 👍 ${serial.substring(0, 6)} liked`);
 
-      await this.xiaowei.adbShell(serial, `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`);
+      await this._adbShell(serial, `input swipe ${midX} ${toY} ${midX} ${fromY} ${_randInt(300, 600)}`);
       await sleep(_randInt(500, 1000));
       return true;
     } catch (err) {
@@ -934,7 +947,7 @@ class TaskExecutor {
       if (!tapped && eng?.actionTouchCoords?.subscribe) {
         const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.subscribe);
         if (abs) {
-          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          await this._adbShell(serial, `input tap ${abs.x} ${abs.y}`);
           tapped = true;
         }
       }
@@ -970,8 +983,7 @@ class TaskExecutor {
       const midX = Math.round(screen.width / 2);
 
       for (let i = 0; i < 3; i++) {
-        await this.xiaowei.adbShell(
-          serial,
+        await this._adbShell(serial,
           `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
         );
         await sleep(_randInt(600, 1000));
@@ -983,7 +995,7 @@ class TaskExecutor {
       if (!found && eng?.actionTouchCoords?.comment_input) {
         const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.comment_input);
         if (abs) {
-          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          await this._adbShell(serial, `input tap ${abs.x} ${abs.y}`);
           found = true;
         }
       }
@@ -1001,7 +1013,7 @@ class TaskExecutor {
       if (!posted) posted = await this._findAndTap(serial, YT.COMMENT_POST_ALT, 1);
       if (!posted) {
         console.warn(`[Engagement] ⚠ ${serial.substring(0, 6)} comment post button not found`);
-        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+        await this._adbShell(serial, "input keyevent KEYCODE_BACK");
         await sleep(500);
         await this._scrollBackToVideo(serial, screen);
         return false;
@@ -1015,7 +1027,7 @@ class TaskExecutor {
     } catch (err) {
       console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} comment failed: ${err.message}`);
       try {
-        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+        await this._adbShell(serial, "input keyevent KEYCODE_BACK");
       } catch {}
       return false;
     }
@@ -1027,8 +1039,7 @@ class TaskExecutor {
   async _scrollBackToVideo(serial, screen) {
     const midX = Math.round(screen.width / 2);
     for (let i = 0; i < 3; i++) {
-      await this.xiaowei.adbShell(
-        serial,
+      await this._adbShell(serial,
         `input swipe ${midX} ${Math.round(screen.height * 0.3)} ${midX} ${Math.round(screen.height * 0.7)} ${_randInt(400, 700)}`
       );
       await sleep(_randInt(400, 700));
@@ -1050,7 +1061,7 @@ class TaskExecutor {
       if (!found && eng?.actionTouchCoords?.save_playlist) {
         const abs = await this._toAbsCoords(serial, eng.actionTouchCoords.save_playlist);
         if (abs) {
-          await this.xiaowei.adbShell(serial, `input tap ${abs.x} ${abs.y}`);
+          await this._adbShell(serial, `input tap ${abs.x} ${abs.y}`);
           found = true;
         }
       }
@@ -1065,9 +1076,9 @@ class TaskExecutor {
       const fromX = Math.round(screen.width * 0.8);
       const toX = Math.round(screen.width * 0.2);
       const duration = _randInt(300, 500);
-      await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
+      await this._adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
       await sleep(400);
-      await this.xiaowei.adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
+      await this._adbShell(serial, `input swipe ${fromX} ${midY} ${toX} ${midY} ${duration}`);
       await sleep(_randInt(800, 1200));
 
       let tapped = await this._findAndTap(serial, YT.SAVE_ADD, 1);
@@ -1083,8 +1094,7 @@ class TaskExecutor {
         await sleep(_randInt(1000, 1500));
         console.log(`[Engagement] 📋 ${serial.substring(0, 6)} saved to Watch Later`);
       } else {
-        await this.xiaowei.adbShell(
-          serial,
+        await this._adbShell(serial,
           `input tap ${Math.round(screen.width / 2)} ${Math.round(screen.height * 0.4)}`
         );
         await sleep(_randInt(1000, 1500));
@@ -1094,7 +1104,7 @@ class TaskExecutor {
     } catch (err) {
       console.warn(`[Engagement] ✗ ${serial.substring(0, 6)} playlist save failed: ${err.message}`);
       try {
-        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+        await this._adbShell(serial, "input keyevent KEYCODE_BACK");
       } catch {}
       return false;
     }
@@ -1111,9 +1121,9 @@ class TaskExecutor {
       const screen = await this._getScreenSize(serial);
       const midX = Math.round(screen.width / 2);
 
-      await this.xiaowei.adbShell(serial, "am force-stop com.google.android.youtube");
+      await this._adbShell(serial, "am force-stop com.google.android.youtube");
       await sleep(1000);
-      await this.xiaowei.adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
+      await this._adbShell(serial, "monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1");
       await sleep(_randInt(3000, 5000));
 
       await this._findAndTap(serial, YT.BOTTOM_NAV_HOME, 0);
@@ -1121,8 +1131,7 @@ class TaskExecutor {
 
       const scrollCount = _randInt(2, 4);
       for (let i = 0; i < scrollCount; i++) {
-        await this.xiaowei.adbShell(
-          serial,
+        await this._adbShell(serial,
           `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
         );
         await sleep(_randInt(1500, 3000));
@@ -1134,7 +1143,7 @@ class TaskExecutor {
 
       while (Date.now() - startTime < targetMs && videosWatched < 3) {
         const tapY = Math.round(screen.height * (_randInt(35, 65) / 100));
-        await this.xiaowei.adbShell(serial, `input tap ${midX} ${tapY}`);
+        await this._adbShell(serial, `input tap ${midX} ${tapY}`);
         await sleep(_randInt(3000, 5000));
 
         await this._trySkipAd(serial);
@@ -1152,7 +1161,7 @@ class TaskExecutor {
           await sleep(5000);
           watched += 5000;
           if (watched % 15000 < 5000) await this._trySkipAd(serial);
-          if (watched % 30000 < 5000) await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_WAKEUP");
+          if (watched % 30000 < 5000) await this._adbShell(serial, "input keyevent KEYCODE_WAKEUP");
         }
 
         videosWatched++;
@@ -1161,25 +1170,23 @@ class TaskExecutor {
         );
 
         if (Math.random() < 0.5 && Date.now() - startTime < targetMs) {
-          await this.xiaowei.adbShell(
-            serial,
+          await this._adbShell(serial,
             `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(400, 700)}`
           );
           await sleep(_randInt(1000, 2000));
           await this._findAndTap(serial, YT.RELATED_VIDEO, 0);
           await sleep(_randInt(3000, 5000));
         } else {
-          await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_BACK");
+          await this._adbShell(serial, "input keyevent KEYCODE_BACK");
           await sleep(_randInt(1500, 2500));
-          await this.xiaowei.adbShell(
-            serial,
+          await this._adbShell(serial,
             `input swipe ${midX} ${Math.round(screen.height * 0.7)} ${midX} ${Math.round(screen.height * 0.3)} ${_randInt(500, 900)}`
           );
           await sleep(_randInt(1500, 2500));
         }
       }
 
-      await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+      await this._adbShell(serial, "input keyevent KEYCODE_HOME");
       await sleep(500);
       console.log(
         `[Warmup] ✓ ${serial.substring(0, 6)} warmup done (${videosWatched} videos, ${Math.round((Date.now() - startTime) / 1000)}s)`
@@ -1187,7 +1194,7 @@ class TaskExecutor {
     } catch (err) {
       console.error(`[Warmup] ✗ ${serial.substring(0, 6)} warmup error: ${err.message}`);
       try {
-        await this.xiaowei.adbShell(serial, "input keyevent KEYCODE_HOME");
+        await this._adbShell(serial, "input keyevent KEYCODE_HOME");
       } catch {}
     }
   }
@@ -1433,7 +1440,9 @@ class TaskExecutor {
           throw new Error("command is required for adb_shell type");
         }
         console.log(`[TaskExecutor]   Xiaowei adbShell: "${payload.command}" → ${devices}`);
-        return this.xiaowei.adbShell(devices, payload.command);
+        const res = await this.xiaowei.adbShell(devices, payload.command);
+        assertAdbSuccess(res, { serial: devices, command: payload.command, phase: "execute_command_adb_shell" });
+        return res;
 
       case "start_app":
         if (!payload.packageName) {
