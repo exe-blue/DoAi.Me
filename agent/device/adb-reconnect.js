@@ -5,6 +5,17 @@
  */
 const sleepLib = require('../lib/sleep');
 
+function isRetryableNetworkError(err) {
+  const message = String(err?.message || err || "").toLowerCase();
+  return /(timeout|timed out|econn|epipe|network|socket|websocket|disconnected|etimedout|enotfound)/.test(message);
+}
+
+function expectConnectOutput(result) {
+  if (!result) return false;
+  const text = String(result.output || result.msg || "").toLowerCase();
+  return text.includes("connected") || text.includes("already");
+}
+
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
     this.xiaowei = xiaowei;
@@ -194,6 +205,7 @@ class AdbReconnectManager {
    */
   async reconnectDevice(serial) {
     let success = false;
+    let lastFailure = { command: null, code: undefined, msg: "", output: "" };
 
     // IP:PORT 형식이면 시리얼에서 직접 추출 (TCP/IP 연결 기기)
     let ip = null;
@@ -203,58 +215,97 @@ class AdbReconnectManager {
     }
     if (!ip) ip = await this._getDeviceIp(serial);
 
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
-      try {
-        console.log(
-          `[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}${ip ? ` (IP: ${ip})` : ""}`,
-        );
+    const runReconnectWithRetry = async ({ command, fn, validator = null }) => {
+      const maxAttempts = this.maxRetries;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const result = await Promise.race([
+            fn(),
+            this.timeoutPromise(this.reconnectTimeout),
+          ]);
 
-        // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
-        if (ip) {
-          try {
-            const connectResult = await Promise.race([
-              this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
-              this.timeoutPromise(this.reconnectTimeout),
-            ]);
-            const connectOut = this._extractOutput(connectResult);
-            if (
-              connectOut &&
-              (connectOut.includes("connected") ||
-                connectOut.includes("already"))
-            ) {
-              success = true;
-              console.log(
-                `[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`,
-              );
-              break;
-            }
-          } catch {}
+          lastFailure = {
+            command,
+            code: result && result.code !== undefined ? result.code : undefined,
+            msg: result?.msg ? String(result.msg) : "",
+            output: this._extractOutput(result),
+          };
+
+          const isQueued = result && result.queued === true;
+          const hasCode = result && result.code !== undefined;
+          const codeFailed = hasCode && Number(result.code) !== 10000;
+          const validatorFailed = typeof validator === "function" && !validator({
+            output: this._extractOutput(result),
+            msg: result?.msg,
+            code: result?.code,
+          });
+
+          if (!isQueued && !codeFailed && !validatorFailed) {
+            return result;
+          }
+
+          lastFailure.msg =
+            isQueued
+              ? "queued response"
+              : codeFailed
+                ? `unexpected code=${result.code}`
+                : "validator failed";
+        } catch (err) {
+          if (!isRetryableNetworkError(err)) {
+            throw err;
+          }
+          lastFailure = {
+            command,
+            code: undefined,
+            msg: err?.message ? String(err.message) : "",
+            output: "",
+          };
         }
 
-        // 방법 2: Xiaowei adb connect (기본)
-        const result = await Promise.race([
-          this.xiaowei.adb(serial, "connect"),
-          this.timeoutPromise(this.reconnectTimeout),
-        ]);
+        if (attempt < maxAttempts) {
+          const delayMs = lastFailure.msg === "queued response" ? 200 * attempt : 500 * attempt;
+          await this.sleep(delayMs);
+        }
+      }
 
+      throw new Error(
+        `Retry exceeded serial=${serial} command=${JSON.stringify(command)} ` +
+          `last_code=${lastFailure.code ?? "n/a"} last_msg=${JSON.stringify(lastFailure.msg || "")} ` +
+          `last_output=${JSON.stringify((lastFailure.output || "").substring(0, 300))}`
+      );
+    };
+
+    try {
+      console.log(
+        `[ADB Reconnect] ${serial} - reconnect start${ip ? ` (IP: ${ip})` : ""}`,
+      );
+
+      // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
+      if (ip) {
+        const connectCommand = `connect ${ip}:5555`;
+        await runReconnectWithRetry({
+          command: connectCommand,
+          fn: () => this.xiaowei.adbShell(serial, connectCommand),
+          validator: expectConnectOutput,
+        });
+        success = true;
+        console.log(`[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`);
+      }
+
+      // 방법 2: Xiaowei adb connect (기본)
+      if (!success) {
+        const result = await runReconnectWithRetry({
+          command: "adb connect",
+          fn: () => this.xiaowei.adb(serial, "connect"),
+          validator: (res) => !res?.error,
+        });
         if (result && !result.error) {
           success = true;
           console.log(`[ADB Reconnect] ✓ ${serial} reconnected`);
-          break;
-        } else {
-          console.log(
-            `[ADB Reconnect] ✗ ${serial} attempt ${attempt} failed: ${result?.error || "unknown error"}`,
-          );
         }
-      } catch (err) {
-        console.log(
-          `[ADB Reconnect] ✗ ${serial} attempt ${attempt} error: ${err.message}`,
-        );
       }
-
-      if (attempt < this.maxRetries) {
-        await this.sleep(1000);
-      }
+    } catch (err) {
+      console.log(`[ADB Reconnect] ✗ ${serial} reconnect failed: ${err.message}`);
     }
 
     // Update failure tracking
