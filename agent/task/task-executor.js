@@ -1589,7 +1589,22 @@ class TaskExecutor {
  */
 function _extractMatchedRequestId(result) {
   if (!result || typeof result !== "object") return null;
-  return result.matchedClientRequestId || result.clientRequestId || null;
+
+  // Fast path: top-level match metadata
+  if (result.matchedClientRequestId || result.clientRequestId) {
+    return result.matchedClientRequestId || result.clientRequestId;
+  }
+
+  // Batch wrapper shape: { batch: true, results: [...] }
+  if (result.batch && Array.isArray(result.results)) {
+    for (const item of result.results) {
+      if (!item || typeof item !== "object") continue;
+      const id = item.matchedClientRequestId || item.clientRequestId;
+      if (id) return id;
+    }
+  }
+
+  return null;
 }
 
 function _extractResponseSummary(result) {
