@@ -1,5 +1,5 @@
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/lib/supabase/server";
 import { runSyncChannels } from "@/lib/sync-channels-runner";
 
 export const dynamic = "force-dynamic";
@@ -9,14 +9,21 @@ async function verifySupabaseScheduleAuth(request: Request): Promise<boolean> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
 
-  const jwt = authHeader.replace("Bearer ", "").trim();
-  if (!jwt) return false;
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) return false;
 
+  const expectedSecret = process.env.SUPABASE_CRON_SECRET;
+  if (!expectedSecret) {
+    console.error("[Cron Auth] SUPABASE_CRON_SECRET is not configured - cron authentication will fail");
+    return false;
+  }
+
+  // Use timing-safe comparison to prevent timing attacks
   try {
-    const supabase = createServiceRoleClient();
-    const { data, error } = await supabase.auth.getUser(jwt);
-    if (error) return false;
-    return Boolean(data.user?.id);
+    const tokenBuffer = Buffer.from(token, "utf8");
+    const secretBuffer = Buffer.from(expectedSecret, "utf8");
+    if (tokenBuffer.length !== secretBuffer.length) return false;
+    return timingSafeEqual(tokenBuffer, secretBuffer);
   } catch {
     return false;
   }

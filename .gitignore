@@ -4,6 +4,10 @@ node_modules/
 .pnp.js
 .pnpm-store/
 
+# Lock files (repo uses pnpm-lock.yaml only)
+package-lock.json
+apps/*/package-lock.json
+
 # Next.js
 .next/
 out/

@@ -361,8 +361,20 @@ pm2 restart agent
 
 ```sql
 select vault.create_secret('https://YOUR-DOMAIN', 'app_base_url');
-select vault.create_secret('YOUR_SUPABASE_SCHEDULE_JWT', 'app_schedule_jwt');
+select vault.create_secret('YOUR_SHARED_SECRET', 'app_schedule_jwt');
 ```
+
+**중요**: 
+- `app_schedule_jwt` 값은 Vercel 환경 변수 `SUPABASE_CRON_SECRET`와 **동일한 값**이어야 합니다.
+- 이 시크릿은 `POST /api/cron/sync-channels`, `POST /api/cron/dispatch-queue` 엔드포인트 인증에 사용됩니다.
+- 강력한 랜덤 시크릿 생성 방법:
+  ```bash
+  # Linux/macOS
+  openssl rand -hex 32
+  
+  # PowerShell (Windows)
+  [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+  ```
 
 2. 마이그레이션 적용
 
