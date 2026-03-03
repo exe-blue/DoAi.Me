@@ -6,8 +6,6 @@
 const sleepLib = require('../lib/sleep');
 const { assertAdbSuccess } = require('../lib/adb-guard');
 
-
-
 async function runAdbShell(xiaowei, serial, command, phase = "adb_reconnect") {
   const res = await xiaowei.adbShell(serial, command);
   assertAdbSuccess(res, { serial, command, phase });
@@ -18,6 +16,7 @@ function assertAdbResult(res, context) {
   assertAdbSuccess(res, context);
   return res;
 }
+
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
     this.xiaowei = xiaowei;
