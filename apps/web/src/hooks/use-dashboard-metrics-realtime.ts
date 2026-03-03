@@ -28,10 +28,19 @@ const EMPTY_METRICS: DashboardMetrics = {
 export function useDashboardMetricsRealtime() {
   const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refetchSnapshot = useCallback(async () => {
     const snapshot = await getDashboardMetricsSnapshot();
-    setMetrics(snapshot);
+    // Only update metrics if we got valid data (not EMPTY_METRICS from API failure)
+    // Check if the snapshot has actual data by comparing updated_at
+    if (snapshot.updated_at !== null) {
+      setMetrics(snapshot);
+      setError(null);
+    } else {
+      // API failed and returned EMPTY_METRICS, preserve current metrics
+      setError("Failed to refresh metrics");
+    }
   }, []);
 
   useEffect(() => {
@@ -42,6 +51,10 @@ export function useDashboardMetricsRealtime() {
       if (!cancelled) {
         setMetrics(snapshot);
         setLoading(false);
+        // Set error if initial load failed
+        if (snapshot.updated_at === null) {
+          setError("Failed to load initial metrics");
+        }
       }
     })();
 
@@ -51,7 +64,9 @@ export function useDashboardMetricsRealtime() {
   }, []);
 
   const handleRealtimeChange = useCallback(() => {
-    refetchSnapshot().catch(() => void 0);
+    refetchSnapshot().catch((err) => {
+      setError(err instanceof Error ? err.message : "Failed to refresh metrics");
+    });
   }, [refetchSnapshot]);
 
   const { isConnected, attempt } = useRealtimePostgresChanges({
@@ -64,5 +79,5 @@ export function useDashboardMetricsRealtime() {
   const kpis: OperationsKpis = useMemo(() => metricsToKpis(metrics), [metrics]);
   const alerts: OperationsAlert[] = useMemo(() => metricsToAlerts(metrics), [metrics]);
 
-  return { metrics, kpis, alerts, loading, isConnected, reconnectAttempt: attempt };
+  return { metrics, kpis, alerts, loading, error, isConnected, reconnectAttempt: attempt };
 }
