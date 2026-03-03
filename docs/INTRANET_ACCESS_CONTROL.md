@@ -17,8 +17,8 @@
 | ------ | ------ |
 | **로그인** | Supabase Auth 이메일/비밀번호. (Google OAuth는 퍼블릭 때 추가) |
 | **페이지** | `middleware.ts`에서 미인증 사용자 → `/login` 리다이렉트 |
-| **API** | 대시보드/브라우저: Supabase Session(쿠키) 필수. **Agent 전용**: `x-api-key` 헤더로 인증 |
-| **API Key** | Vercel 환경변수 `API_KEY`로 관리. Agent는 동일 값을 `.env` 등에 두고 `x-api-key`로 전송 |
+| **API** | 대시보드/브라우저: Supabase Session(쿠키) 필수. **Agent 전용**: `X_API_KEY` 헤더로 인증 |
+| **API Key** | Vercel 환경변수 `API_KEY`로 관리. Agent는 동일 값을 `.env` 등에 두고 `X_API_KEY`로 전송 |
 
 ---
 
@@ -33,6 +33,6 @@
 
 ## 구현 요약
 
-- **middleware.ts**: 공개 경로(`/`, `/login`, `/auth`, `/api/health` 등) 제외 시 `getUser()`로 세션 확인. 없으면 API는 `x-api-key` 검사 후 통과/401, 페이지는 `/login?returnTo=...` 리다이렉트.
-- **API Routes**: 서버에서 `createSupabaseServerClient()`(service role) 사용. 호출 자체는 middleware에서 세션 또는 `x-api-key`로 이미 차단/허용됨.
-- **Agent**: Supabase 직접 사용 + 필요 시 API 호출 시 `x-api-key` 헤더에 `API_KEY` 설정.
+- **middleware.ts**: 공개 경로(`/`, `/login`, `/auth`, `/api/health` 등) 제외 시 `getUser()`로 세션 확인. 없으면 API는 `X_API_KEY` 검사 후 통과/401, 페이지는 `/login?returnTo=...` 리다이렉트.
+- **API Routes**: 서버에서 `createSupabaseServerClient()`(service role) 사용. 호출 자체는 middleware에서 세션 또는 `X_API_KEY`로 이미 차단/허용됨.
+- **Agent**: Supabase 직접 사용 + 필요 시 API 호출 시 `X_API_KEY` 헤더에 `API_KEY` 설정.

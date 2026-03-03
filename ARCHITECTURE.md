@@ -110,7 +110,7 @@
     → createAuthServerClient().auth.getUser() → createdByUserId (user.id)
     → tasks INSERT (created_by = auth user id)
 
-[Agent/API Key] POST /api/tasks (x-api-key)
+[Agent/API Key] POST /api/tasks (X_API_KEY)
     → created_by = NULL
 ```
 

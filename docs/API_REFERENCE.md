@@ -2,7 +2,7 @@
 
 > 최종 수정: 2026-02-26  
 > Stack: Next.js App Router (Vercel Serverless)  
-> Auth: Supabase Session / x-api-key / Supabase Scheduler JWT (internal cron)
+> Auth: Supabase Session / X_API_KEY / Supabase Scheduler JWT (internal cron)
 
 ---
 
@@ -11,7 +11,7 @@
 | 방식 | 사용처 | 설명 |
 |------|--------|------|
 | **Session** | 대부분의 API | Supabase Auth 세션 (쿠키) |
-| **x-api-key** | `/api/tasks` POST 등 | Agent/외부가 API Key로 호출 |
+| **X_API_KEY** | `/api/tasks` POST 등 | Agent/외부가 API Key로 호출 |
 | **Bearer (internal)** | `/api/cron/*` | `Authorization: Bearer ${APP_SCHEDULE_JWT}` (Supabase Scheduler / pg_cron) |
 | **None** | `/api/health`, `/api/commands/presets` | 인증 불필요 |
 
@@ -61,7 +61,7 @@
 | Method | Path | 설명 | Auth |
 |--------|------|------|------|
 | GET | `/api/tasks` | 태스크 목록 | Session |
-| POST | `/api/tasks` | 태스크 생성 (수동/배치) | Session or x-api-key |
+| POST | `/api/tasks` | 태스크 생성 (수동/배치) | Session or X_API_KEY |
 | PATCH | `/api/tasks` | 태스크 상태 업데이트 | Session |
 | DELETE | `/api/tasks` | 태스크 삭제 | Session |
 | GET | `/api/tasks/[id]/devices` | 태스크에 할당된 디바이스 목록 | Session |
@@ -249,4 +249,4 @@
 | 구분 | 엔드포인트 수 (대략) |
 |------|----------------------|
 | 메인 앱 (`app/api/`) | 70+ |
-| 인증 | Session 기본, x-api-key(tasks 등), Bearer(internal scheduler) |
+| 인증 | Session 기본, X_API_KEY(tasks 등), Bearer(internal scheduler) |

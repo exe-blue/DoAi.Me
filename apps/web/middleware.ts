@@ -13,7 +13,7 @@ function isApiRoute(pathname: string): boolean {
 }
 
 function validateApiKey(request: NextRequest): boolean {
-  const apiKey = request.headers.get("x-api-key");
+  const apiKey = request.headers.get("X_API_KEY");
   const validKey = process.env.API_KEY;
   if (!apiKey || !validKey) return false;
   if (apiKey.length !== validKey.length) return false;
@@ -61,7 +61,7 @@ export async function middleware(request: NextRequest) {
 
   // 3. API routes: accept API key OR Supabase session
   if (isApiRoute(pathname)) {
-    if (request.headers.has("x-api-key")) {
+    if (request.headers.has("X_API_KEY")) {
       if (validateApiKey(request)) {
         return NextResponse.next();
       }

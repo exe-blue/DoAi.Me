@@ -62,13 +62,13 @@ export async function middleware(request: NextRequest) {
 | 호출자 | 인증 방식 |
 |--------|----------|
 | Dashboard (브라우저) | Supabase Session Cookie |
-| Agent (Node PC) | `x-api-key` 헤더 |
+| Agent (Node PC) | `X_API_KEY` 헤더 |
 
 ```typescript
 // app/api/tasks/route.ts
 async function validateAuth(request: NextRequest) {
   // 1. API Key 확인 (Agent)
-  const apiKey = request.headers.get('x-api-key');
+  const apiKey = request.headers.get('X_API_KEY');
   if (apiKey === process.env.AGENT_API_KEY) {
     return { user: null, isAgent: true };
   }
