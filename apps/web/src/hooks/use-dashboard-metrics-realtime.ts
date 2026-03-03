@@ -68,8 +68,8 @@ export function useDashboardMetricsRealtime() {
   }, []);
 
   const handleRealtimeChange = useCallback(() => {
-    // Refetch but don't await - errors are handled inside refetchSnapshot
-    refetchSnapshot();
+    // Errors are handled inside refetchSnapshot and set error state
+    void refetchSnapshot();
   }, [refetchSnapshot]);
 
   const { isConnected, attempt } = useRealtimePostgresChanges({

@@ -23,7 +23,13 @@ export default function OpsPage() {
         Realtime: {isConnected ? "connected" : `reconnecting (${reconnectAttempt})`}
       </Typography>
       {error && (
-        <Typography variant="caption" color="error.main" sx={{ display: "block", mt: 0.5 }}>
+        <Typography
+          variant="caption"
+          color="error.main"
+          sx={{ display: "block", mt: 0.5 }}
+          role="alert"
+          aria-live="polite"
+        >
           Error: {error}
         </Typography>
       )}
