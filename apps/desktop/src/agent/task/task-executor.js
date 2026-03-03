@@ -5,6 +5,7 @@
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
 const sleep = require("../lib/sleep");
+const { delayBetweenModules } = require("../lib/module-delay");
 
 function _escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -143,6 +144,7 @@ class TaskExecutor {
    */
   async runTaskDevice(taskDevice) {
     if (!taskDevice?.id) throw new Error("runTaskDevice: missing id");
+    await delayBetweenModules(this.config);
     const serial = taskDevice.device_serial;
     if (!serial) {
       await this._updateTaskDevice(taskDevice.id, "failed", { error: "No device_serial" });

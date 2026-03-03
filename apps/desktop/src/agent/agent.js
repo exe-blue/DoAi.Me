@@ -21,6 +21,7 @@ const AccountManager = require("./setup/account-manager");
 const ScriptVerifier = require("./setup/script-verifier");
 const presets = require("./device/device-presets");
 const sleep = require("./lib/sleep");
+const { delayBetweenModules } = require("./lib/module-delay");
 const logger = require("./lib/logger");
 
 let xiaowei = null;
@@ -113,6 +114,8 @@ async function main() {
 
   logger.info("Agent", `Phase 1 complete: env/DB/settings`, { pc_id: supabaseSync.pcId });
 
+  await delayBetweenModules(config);
+
   // ---------- Phase 2: Xiaowei / device preparation ----------
   // 4. Initialize Xiaowei WebSocket client and connect immediately (Rule D: do not exit process on connection failure)
   xiaowei = new XiaoweiClient(config.xiaoweiWsUrl);
@@ -174,6 +177,7 @@ async function main() {
   }
 
   // 4a. Run optimize on all devices once on first connect (effects off, resolution 1080x1920)
+  await delayBetweenModules(config);
   if (xiaowei.connected && config.runOptimizeOnConnect) {
     try {
       const listRes = await xiaowei.list();
@@ -227,6 +231,8 @@ async function main() {
   await sleep(2000);
   console.log(`[Agent] ✓ PC registered: ${config.pcNumber} (heartbeat OK)`);
 
+  await delayBetweenModules(config);
+
   // 9. Proxy setup — load assignments from Supabase and apply to devices
   proxyManager = new ProxyManager(xiaowei, supabaseSync, config, broadcaster);
   if (xiaowei.connected) {
@@ -247,6 +253,8 @@ async function main() {
   } else {
     console.log("[Agent] - Proxy setup: Xiaowei offline (skipped)");
   }
+
+  await delayBetweenModules(config);
 
   // 10. Account verification — check YouTube login on each device
   accountManager = new AccountManager(xiaowei, supabaseSync);
@@ -327,6 +335,7 @@ async function main() {
     pcUuid: supabaseSync.pcUuid,
     maxConcurrent: config.maxConcurrentTasks ?? 20,
     loggingDir: config.loggingDir,
+    agentConfig: config,
   });
   console.log(`[Agent] DeviceOrchestrator pcId=${supabaseSync.pcId}`);
   deviceOrchestrator.start();

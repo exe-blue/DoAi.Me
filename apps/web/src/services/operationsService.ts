@@ -4,7 +4,17 @@ import type {
   DeviceSummary,
   OperationsKpis,
   OperationsAlert,
+  DashboardMetrics,
 } from "./types";
+
+/** Fallback when API fails or returns no data. */
+const EMPTY_METRICS: DashboardMetrics = {
+  onlineDevices: 0,
+  warningDevices: 0,
+  lastHeartbeatTime: null,
+  recentSuccessCount: 0,
+  recentFailureCount: 0,
+};
 
 /** Raw workers API response: { workers: [...] } */
 interface WorkersResponse {
@@ -106,4 +116,14 @@ export async function getKpis(): Promise<OperationsKpis> {
 export async function getAlerts(): Promise<OperationsAlert[]> {
   // TODO: heartbeat_mismatch, unauthorized, recent_failures — API 없음.
   return [];
+}
+
+/**
+ * Dashboard metrics snapshot from API.
+ * apiClient.get<T> unwraps the envelope: when the API returns { success: true, data: DashboardMetrics },
+ * res.data is already the DashboardMetrics object. Do not use res.data?.data (that would be undefined).
+ */
+export async function getDashboardMetricsSnapshot(): Promise<DashboardMetrics> {
+  const res = await apiClient.get<DashboardMetrics>("/api/dashboard/metrics", { silent: true });
+  return res.success && res.data ? res.data : EMPTY_METRICS;
 }

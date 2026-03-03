@@ -38,6 +38,15 @@ export interface OperationsKpis {
   recentFailureCount: number;
 }
 
+/** Dashboard metrics snapshot from API (same shape as OperationsKpis). API returns { success, data: DashboardMetrics }; apiClient unwraps so res.data is this object. */
+export interface DashboardMetrics {
+  onlineDevices: number;
+  warningDevices: number;
+  lastHeartbeatTime: string | null;
+  recentSuccessCount: number;
+  recentFailureCount: number;
+}
+
 /** Assumption: alert types. TODO: API 없음 → stub. */
 export interface OperationsAlert {
   id: string;

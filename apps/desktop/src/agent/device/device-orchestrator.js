@@ -5,6 +5,7 @@
 const presets = require("./device-presets");
 const { takeScreenshotOnComplete } = require("./screenshot-on-complete");
 const sleep = require("../lib/sleep");
+const { delayBetweenModules } = require("../lib/module-delay");
 const logger = require("../lib/logger");
 
 const STATUS = {
@@ -26,7 +27,7 @@ class DeviceOrchestrator {
    * @param {import('./xiaowei-client')} xiaowei
    * @param {import('@supabase/supabase-js').SupabaseClient} supabase
    * @param {import('./task-executor')} taskExecutor
-   * @param {object} config - { pcId (name string), pcUuid (UUID), maxConcurrent? }
+   * @param {object} config - { pcId, pcUuid, maxConcurrent?, loggingDir?, agentConfig? } (agentConfig for module delay)
    */
   constructor(xiaowei, supabase, taskExecutor, config) {
     this.xiaowei = xiaowei;
@@ -36,6 +37,7 @@ class DeviceOrchestrator {
     this.pcUuid = config.pcUuid || null;
     this.maxConcurrent = config.maxConcurrent ?? 10;
     this.loggingDir = config.loggingDir || null;
+    this.agentConfig = config.agentConfig || null;
 
     /** @type {Map<string, DeviceState>} serial -> state */
     this.deviceStates = new Map();
@@ -140,6 +142,8 @@ class DeviceOrchestrator {
   async _assignWork(serial) {
     const running = this._runningAssignments.size;
     if (running >= this.maxConcurrent) return;
+
+    await delayBetweenModules(this.agentConfig);
 
     if (process.env.DEBUG_ORCHESTRATOR || process.env.DEBUG_ORCHESTRATOR_CLAIM) {
       console.log(`[DeviceOrchestrator] _assignWork(${serial.substring(0, 6)}) pcId=${this.pcId}`);

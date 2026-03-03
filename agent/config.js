@@ -34,6 +34,8 @@ const SETTING_KEY_MAP = {
   log_retention_days: "logRetentionDays",
   command_log_retention_days: "commandLogRetentionDays",
   primary_pc_id: "primaryPcId",
+  module_min_delay_ms: "moduleMinDelayMs",
+  module_max_delay_ms: "moduleMaxDelayMs",
 };
 
 class AgentConfig extends EventEmitter {
@@ -81,6 +83,10 @@ class AgentConfig extends EventEmitter {
     this.maxRetryCount = 3;
     this.logRetentionDays = 7;
     this.commandLogRetentionDays = 30;
+
+    /** 모듈 경계 랜덤 휴식(ms). 최소/최대 딜레이 사이 랜덤 sleep. 클라이언트 설정 가능. */
+    this.moduleMinDelayMs = parseInt(process.env.MODULE_MIN_DELAY_MS || "1500", 10);
+    this.moduleMaxDelayMs = parseInt(process.env.MODULE_MAX_DELAY_MS || "4000", 10);
 
     /** Primary PC: DB (settings.primary_pc_id) takes precedence; env IS_PRIMARY_PC is fallback (Rule F). */
     this.primaryPcId = null;

@@ -60,10 +60,12 @@ export async function runSyncChannels(): Promise<
       };
     }
 
-    // Phase 2.4: round-robin channel sync to reduce YouTube API quota per run
+    // Phase 2.4: round-robin when many channels; sync all when 5 or fewer (e.g. seed set)
     const ROUND_ROBIN_N = 5;
-    const runIndex = Math.floor(Date.now() / 60_000) % ROUND_ROBIN_N;
-    const monitoredThisRun = monitored.filter((_, i) => i % ROUND_ROBIN_N === runIndex);
+    const monitoredThisRun =
+      monitored.length <= ROUND_ROBIN_N
+        ? monitored
+        : monitored.filter((_, i) => i % ROUND_ROBIN_N === Math.floor(Date.now() / 60_000) % ROUND_ROBIN_N);
 
     let totalNew = 0;
     let totalUpdated = 0;

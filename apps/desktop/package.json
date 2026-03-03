@@ -1,6 +1,6 @@
 {
   "name": "doaime-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "DoAi.Me desktop agent controller",
   "author": "doaime",
   "private": true,
@@ -13,6 +13,7 @@
     "bundle:agent": "node src/scripts/bundle-agent.js",
     "prepare:packaged-env": "node src/scripts/prepare-packaged-env.js",
     "dist:clean": "node -e \"require('fs').rmSync('release', { recursive: true, force: true })\"",
+    "version:patch": "node -e \"const p=require('./package.json');const [a,b,c]=p.version.split('.').map(Number);require('fs').writeFileSync('package.json', JSON.stringify({...p,version:[a,b,c+1].join('.')}, null, 2)); console.log('Bumped to', [a,b,c+1].join('.'));\"",
     "dist:win": "pnpm run bundle:agent && pnpm run prepare:packaged-env && electron-builder --win",
     "dist": "pnpm run test && pnpm run build && node src/scripts/download-node-win.js && pnpm run dist:win",
     "dist:wsl": "pnpm run test && pnpm run build && node src/scripts/download-node-win.js && pnpm run bundle:agent && pnpm run prepare:packaged-env && WINEPREFIX=$HOME/.wine-eb WINEARCH=win32 electron-builder --win",
