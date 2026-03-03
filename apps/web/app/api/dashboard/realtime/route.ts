@@ -43,8 +43,10 @@ export async function GET() {
         .eq("status", "active"),
     ]);
 
-    // PC별 요약 (pcs not in generated DB types)
-    const { data: pcs } = await sb.from("pcs").select("id, pc_number, status, last_heartbeat");
+    // 워커별 요약 (v_worker_summary)
+    const { data: workers } = await supabase
+      .from("v_worker_summary")
+      .select("id, hostname, status, last_heartbeat, device_count, devices_online");
 
     return NextResponse.json({
       success: true,
@@ -56,7 +58,7 @@ export async function GET() {
         error: error || 0,
         activeMissions: activeMissions || 0,
         todayStats: { views: views || 0, errors: errors || 0 },
-        pcs: pcs || [],
+        workers: workers || [],
         timestamp: new Date().toISOString(),
       },
     });

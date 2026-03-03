@@ -9,7 +9,7 @@ type WarmupBody = {
   watch_duration_min?: number;
   watch_duration_max?: number;
   device_count?: number;
-  pc_id?: string;
+  worker_id?: string;
 };
 
 /**
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       watch_duration_min = 10000,
       watch_duration_max = 30000,
       device_count = 20,
-      pc_id,
+      worker_id,
     } = body;
 
     const payload = {
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
         device_count,
         payload,
         status: "pending",
-        ...(pc_id ? { pc_id } : {}),
+        ...(worker_id ? { worker_id } : {}),
       } as any)
       .select("id, status, created_at")
       .single();

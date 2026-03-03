@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data: workersRows, error: workersErr } = await supabase
       .from("workers")
-      .select("id, hostname, status, last_heartbeat, device_capacity")
+      .select("id, display_name, hostname, status, last_heartbeat, device_capacity")
       .order("hostname", { ascending: true });
 
     if (workersErr) throw workersErr;
@@ -33,6 +33,7 @@ export async function GET() {
 
     const workers = (workersRows ?? []).map((w) => ({
       id: w.id,
+      worker_name: w.display_name ?? w.hostname ?? w.id,
       pc_number: w.hostname ?? w.id,
       hostname: w.hostname,
       status: w.status ?? "offline",

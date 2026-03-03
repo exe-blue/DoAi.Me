@@ -1,6 +1,6 @@
 // Re-export Database types from auto-generated file
 // To regenerate: npx supabase gen types typescript --project-id <project-ref> > lib/supabase/database.types.ts
-// Production devices table uses serial_number, pc_id, last_heartbeat; regenerate from linked project if types differ.
+// Production schema uses devices.serial and worker_id relationships (no pc_id/serial_number columns). Regenerate from linked project if types differ.
 export type { Json, Database } from "./database.types";
 import type { Database } from "./database.types";
 

@@ -14,7 +14,7 @@ type DeviceRow = { id: string };
 
 /**
  * POST /api/proxies/auto-assign
- * Body: { pc_id?: string (worker_id), limit?: number }
+ * Body: { worker_id?: string (worker_id), limit?: number }
  * Pairs proxy_id-null devices with device_id-null proxies (1:1 by created_at), updates both,
  * and enqueues command_logs (command=set_proxy, results.proxy={ address, username, password }) per pair.
  */
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = getServerClient();
     const body = await request.json().catch(() => ({}));
-    const pcId = body.pc_id ?? body.worker_id ?? null;
+    const workerId = body.worker_id ?? null;
     const limit = Math.min(100, Math.max(1, parseInt(body.limit, 10) || 100));
 
     let proxiesQuery = supabase
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       .is("device_id", null)
       .order("created_at", { ascending: true })
       .limit(limit);
-    if (pcId) proxiesQuery = proxiesQuery.eq("worker_id", pcId);
+    if (workerId) proxiesQuery = proxiesQuery.eq("worker_id", workerId);
     const { data: unassignedProxies, error: proxiesError } =
       await proxiesQuery.returns<ProxyRow[]>();
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       .is("proxy_id", null)
       .order("created_at", { ascending: true })
       .limit(limit);
-    if (pcId) devicesQuery = devicesQuery.eq("worker_id", pcId);
+    if (workerId) devicesQuery = devicesQuery.eq("worker_id", workerId);
     const { data: unassignedDevices, error: devicesError } =
       await devicesQuery.returns<DeviceRow[]>();
 

@@ -8,29 +8,22 @@ export const dynamic = "force-dynamic";
 const SORT_COLUMNS = new Set(["created_at", "last_seen", "serial", "status", "updated_at"]);
 
 /**
- * POST /api/devices — 처음 등록: IP(connection_id) + 시리얼넘버 동시 입력.
- * Body: { serial_number: string, connection_id: string (e.g. "192.168.1.100:5555"), worker_id?: string }
- * 주기적으로 IP가 바뀌어도 heartbeat가 serial_number 기준으로 디바이스를 구별해 connection_id를 갱신함.
+ * POST /api/devices — 시리얼 중심 디바이스 등록.
+ * Body: { serial: string, worker_id?: string }
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = getServerClient();
     const body = await request.json().catch(() => ({}));
-    const serial_number = typeof body.serial_number === "string" ? body.serial_number.trim() : null;
-    const connection_id = typeof body.connection_id === "string" ? body.connection_id.trim() : null;
+    const serial = typeof body.serial === "string" ? body.serial.trim() : null;
     const worker_id = typeof body.worker_id === "string" ? body.worker_id.trim() || null : null;
 
-    if (!serial_number) {
-      return errFrom(new Error("serial_number required"), "VALIDATION", 400);
-    }
-    if (!connection_id) {
-      return errFrom(new Error("connection_id required (e.g. 192.168.1.100:5555)"), "VALIDATION", 400);
+    if (!serial) {
+      return errFrom(new Error("serial required"), "VALIDATION", 400);
     }
 
     const insert: Record<string, unknown> = {
-      serial_number,
-      connection_id,
-      serial: serial_number,
+      serial,
       status: "offline",
     };
     if (worker_id) insert.worker_id = worker_id;
@@ -51,14 +44,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, sortBy, sortOrder, q } = parseListParams(searchParams);
     const status = searchParams.get("status") || undefined;
-    const pc_id = searchParams.get("pc_id") || searchParams.get("worker_id") || undefined;
+    const worker_id = searchParams.get("worker_id") || undefined;
 
     let query = supabase.from("devices").select("*", { count: "exact" });
 
     if (status) query = query.eq("status", status as "error" | "online" | "offline" | "busy");
-    if (pc_id) query = query.eq("worker_id", pc_id);
+    if (worker_id) query = query.eq("worker_id", worker_id);
     if (q) {
-      query = query.or(`serial.ilike.%${q}%,connection_id.ilike.%${q}%,nickname.ilike.%${q}%`);
+      query = query.or(`serial.ilike.%${q}%,nickname.ilike.%${q}%`);
     }
 
     const orderBy = sortBy && SORT_COLUMNS.has(sortBy) ? sortBy : "last_seen";
