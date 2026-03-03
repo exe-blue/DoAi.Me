@@ -1,29 +1,9 @@
 import { NextResponse } from "next/server";
 import { runDispatchQueue } from "@/lib/dispatch-queue-runner";
+import { verifyScheduleSecret } from "@/lib/cron-utils";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-/**
- * Verify the shared secret for Supabase scheduled jobs (pg_cron).
- * Compares the Bearer token from the Authorization header against APP_SCHEDULE_SECRET.
- * This avoids the issue of using supabase.auth.getUser() with a static JWT that would expire.
- */
-function verifyScheduleSecret(request: Request): boolean {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) return false;
-
-  const token = authHeader.replace("Bearer ", "").trim();
-  if (!token) return false;
-
-  const expectedSecret = process.env.APP_SCHEDULE_SECRET;
-  if (!expectedSecret) {
-    console.error("[verifyScheduleSecret] APP_SCHEDULE_SECRET not configured");
-    return false;
-  }
-
-  return token === expectedSecret;
-}
 
 /**
  * POST /api/cron/dispatch-queue

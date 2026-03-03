@@ -1,4 +1,40 @@
 import { CronExpressionParser } from "cron-parser";
+import { timingSafeEqual } from "crypto";
+
+/**
+ * Verify the shared secret for Supabase scheduled jobs (pg_cron).
+ * Uses timing-safe comparison to prevent timing attacks.
+ * @param request The incoming request with Authorization header
+ * @returns true if the secret matches, false otherwise
+ */
+export function verifyScheduleSecret(request: Request): boolean {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) return false;
+
+  const expectedSecret = process.env.APP_SCHEDULE_SECRET;
+  if (!expectedSecret) {
+    console.error("[verifyScheduleSecret] APP_SCHEDULE_SECRET not configured");
+    return false;
+  }
+
+  // Use timing-safe comparison to prevent timing attacks
+  try {
+    const tokenBuffer = Buffer.from(token, "utf8");
+    const secretBuffer = Buffer.from(expectedSecret, "utf8");
+    
+    // Only compare if lengths match (timingSafeEqual requires equal length)
+    if (tokenBuffer.length !== secretBuffer.length) {
+      return false;
+    }
+    
+    return timingSafeEqual(tokenBuffer, secretBuffer);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Compute the next run time from a cron expression.
