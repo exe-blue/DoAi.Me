@@ -24,7 +24,9 @@ const EMPTY_METRICS: DashboardMetrics = {
 
 export async function getDashboardMetricsSnapshot(): Promise<DashboardMetrics> {
   const res = await apiClient.get<DashboardRealtimeResponse>("/api/dashboard/realtime", { silent: true });
-  if (!res.success || !res.data?.data) return EMPTY_METRICS;
+  if (!res.success || !res.data?.data) {
+    throw new Error(res.error || "Failed to fetch dashboard metrics");
+  }
   return { ...EMPTY_METRICS, ...res.data.data };
 }
 

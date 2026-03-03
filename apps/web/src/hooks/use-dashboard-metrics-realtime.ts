@@ -31,15 +31,13 @@ export function useDashboardMetricsRealtime() {
   const [error, setError] = useState<string | null>(null);
 
   const refetchSnapshot = useCallback(async () => {
-    const snapshot = await getDashboardMetricsSnapshot();
-    // Only update metrics if we got valid data (not EMPTY_METRICS from API failure)
-    // Check if the snapshot has actual data by comparing updated_at
-    if (snapshot.updated_at !== null) {
+    try {
+      const snapshot = await getDashboardMetricsSnapshot();
       setMetrics(snapshot);
       setError(null);
-    } else {
-      // API failed and returned EMPTY_METRICS, preserve current metrics
-      setError("Failed to refresh metrics");
+    } catch (err) {
+      // API failed, preserve current metrics and show error
+      setError(err instanceof Error ? err.message : "Failed to refresh metrics");
     }
   }, []);
 
@@ -47,13 +45,19 @@ export function useDashboardMetricsRealtime() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const snapshot = await getDashboardMetricsSnapshot();
-      if (!cancelled) {
-        setMetrics(snapshot);
-        setLoading(false);
-        // Set error if initial load failed
-        if (snapshot.updated_at === null) {
-          setError("Failed to load initial metrics");
+      try {
+        const snapshot = await getDashboardMetricsSnapshot();
+        if (!cancelled) {
+          setMetrics(snapshot);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load initial metrics");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     })();
@@ -64,9 +68,8 @@ export function useDashboardMetricsRealtime() {
   }, []);
 
   const handleRealtimeChange = useCallback(() => {
-    refetchSnapshot().catch((err) => {
-      setError(err instanceof Error ? err.message : "Failed to refresh metrics");
-    });
+    // Refetch but don't await - errors are handled inside refetchSnapshot
+    refetchSnapshot();
   }, [refetchSnapshot]);
 
   const { isConnected, attempt } = useRealtimePostgresChanges({
