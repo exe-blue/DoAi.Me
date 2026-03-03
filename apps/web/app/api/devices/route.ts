@@ -9,7 +9,7 @@ const SORT_COLUMNS = new Set(["created_at", "last_seen", "serial", "status", "up
 
 /**
  * POST /api/devices — 처음 등록: IP(connection_id) + 시리얼넘버 동시 입력.
- * Body: { serial_number: string, connection_id: string (e.g. "192.168.1.100:5555"), worker_id?: string }
+ * Body: { serial_number: string, connection_id: string (e.g. "192.168.1.100:5555"), pc_id?: string, worker_id?: string }
  * 주기적으로 IP가 바뀌어도 heartbeat가 serial_number 기준으로 디바이스를 구별해 connection_id를 갱신함.
  */
 export async function POST(request: NextRequest) {
@@ -18,7 +18,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const serial_number = typeof body.serial_number === "string" ? body.serial_number.trim() : null;
     const connection_id = typeof body.connection_id === "string" ? body.connection_id.trim() : null;
-    const worker_id = typeof body.worker_id === "string" ? body.worker_id.trim() || null : null;
+    const worker_id =
+      typeof body.worker_id === "string"
+        ? body.worker_id.trim() || null
+        : typeof body.pc_id === "string"
+          ? body.pc_id.trim() || null
+          : null;
 
     if (!serial_number) {
       return errFrom(new Error("serial_number required"), "VALIDATION", 400);

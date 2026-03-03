@@ -21,7 +21,8 @@ export interface DeviceSummary {
   serial?: string;
   connection_id?: string;
   status: string;
-  worker_id?: string;
+  pc_id?: string;
+  worker_id?: string; // legacy alias
   nickname?: string | null;
   last_seen?: string | null;
 }

@@ -29,6 +29,15 @@ interface DevicesListResponse {
   total?: number;
 }
 
+function normalizeDevice(device: DeviceSummary): DeviceSummary {
+  const pcId = device.pc_id ?? device.worker_id;
+  return {
+    ...device,
+    pc_id: pcId,
+    worker_id: pcId,
+  };
+}
+
 export async function getWorkers(): Promise<WorkerSummary[]> {
   const res = await apiClient.get<WorkersResponse>("/api/workers", { silent: true });
   if (!res.success || !res.data?.workers) return [];
@@ -62,7 +71,8 @@ export async function getDevices(params?: {
   const res = await apiClient.get<DevicesListResponse>(url, { silent: true });
   if (!res.success) return { data: [], total: 0 };
   const body = res.data as { data?: DeviceSummary[]; total?: number } | DeviceSummary[];
-  const data = Array.isArray(body) ? body : (body?.data ?? []);
+  const rawData = Array.isArray(body) ? body : (body?.data ?? []);
+  const data = rawData.map(normalizeDevice);
   const total = Array.isArray(body) ? body.length : (body?.total ?? data.length);
   return { data, total };
 }

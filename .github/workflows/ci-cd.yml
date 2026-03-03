@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-typecheck:
-    name: Lint & Type Check
+  web-quality-gates:
+    name: Web Quality Gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,11 +29,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm run lint
+      - name: Web typecheck
+        run: pnpm --filter @doai/web typecheck
 
-      - name: Type check
-        run: pnpm run typecheck
+      - name: Web lint
+        run: pnpm --filter @doai/web lint
+
+      - name: Web build
+        run: pnpm --filter @doai/web build
 
   test:
     name: Unit Tests

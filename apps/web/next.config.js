@@ -16,9 +16,9 @@ try {
 const nextConfig = {
   outputFileTracingRoot: path.join(__dirname),
   reactStrictMode: true,
-  eslint: { ignoreDuringBuilds: true },
+  eslint: { ignoreDuringBuilds: false },
   typescript: {
-    ignoreBuildErrors: true,  // Skip TypeScript build errors to allow containerization
+    ignoreBuildErrors: false,
   },
   async redirects() {
     return [

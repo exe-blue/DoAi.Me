@@ -62,4 +62,5 @@
 - [ ] `npm run agent:smoke` 통과 (agent 디렉터리에서 `npm install` 후)
 - [ ] `npm test` 24/24 통과
 - [ ] `npm run lint` warning/error 0
+- [ ] Supabase 스키마 타입 재생성 (`pnpm --filter @doai/web exec supabase gen types typescript --project-id <project-ref> > src/lib/supabase/database.types.ts`) 및 변경사항 반영 확인
 - [ ] 위 1)~3) 항목 중 “필수”로 표시된 문서/정의 완료 여부 검토
