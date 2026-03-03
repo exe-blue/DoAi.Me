@@ -44,6 +44,12 @@ BEGIN
 END;
 $$;
 
+-- Security: Revoke public access and grant only to postgres role.
+-- This function is SECURITY DEFINER and accesses vault secrets, so it should
+-- only be callable by pg_cron (which runs as postgres), not by arbitrary roles.
+REVOKE ALL ON FUNCTION public.invoke_app_schedule_endpoint(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.invoke_app_schedule_endpoint(text) TO postgres;
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'sync-channels-every-minute') THEN
