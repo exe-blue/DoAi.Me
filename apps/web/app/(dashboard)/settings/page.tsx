@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 function maskUrl(url: string): string {
   if (!url || url.length < 20) return "***";
@@ -13,6 +16,8 @@ function maskUrl(url: string): string {
 }
 
 export default function SettingsPage() {
+  const [supabaseStatus, setSupabaseStatus] = useState<"checking" | "ok" | "error">("checking");
+
   const supabaseUrl =
     typeof process.env.NEXT_PUBLIC_SUPABASE_URL === "string"
       ? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -20,6 +25,21 @@ export default function SettingsPage() {
   const hasAnon =
     typeof process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "string" &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length > 0;
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setSupabaseStatus("error");
+      return;
+    }
+    const supabase = createBrowserClient();
+    if (!supabase) {
+      setSupabaseStatus("error");
+      return;
+    }
+    supabase.from("settings").select("key").limit(1).then(({ error }) => {
+      setSupabaseStatus(error ? "error" : "ok");
+    });
+  }, []);
 
   return (
     <Box>
@@ -43,9 +63,24 @@ export default function SettingsPage() {
               secondary={hasAnon ? "Set" : "Not set"}
             />
           </ListItem>
+          <ListItem disablePadding>
+            <ListItemText
+              primary="Supabase connection"
+              secondary={
+                supabaseStatus === "checking"
+                  ? "Checking…"
+                  : supabaseStatus === "ok"
+                    ? "Connected"
+                    : "Not connected or RLS denied"
+              }
+              secondaryTypographyProps={{
+                color: supabaseStatus === "ok" ? "success.main" : supabaseStatus === "error" ? "error" : "text.secondary",
+              }}
+            />
+          </ListItem>
         </List>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-          TODO: Save / update not available (no API).
+          Config is read from environment. DB settings table can be updated via Supabase dashboard or Edge.
         </Typography>
       </Paper>
     </Box>

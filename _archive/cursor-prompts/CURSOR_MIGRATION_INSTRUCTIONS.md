@@ -2,9 +2,8 @@
 
 ## 배경
 실제 Supabase DB 스키마와 JS 코드 간 불일치가 있다. 코드를 DB에 맞춰야 한다.
-Supabase URL: https://vyfxrplzhskncigyfkaz.supabase.co
-
-## 1. 핵심 테이블명 변경
+Supabase URL: 
+## 1. 핵심 테이블명 변경 (Supabase URL: vyfxrplzhskncigyfkaz.supabase.co)
 
 전체 agent/*.js 파일에서:
 
@@ -21,7 +20,7 @@ Supabase URL: https://vyfxrplzhskncigyfkaz.supabase.co
 ### workers → pcs 테이블
 | 코드 (현재) | 실제 DB |
 |---|---|
-| `hostname` (workers) | `pc_number` (pcs) — "PC00" 형식 |
+| `hostname` (workers) | `pc_number` (pcs) — "PC-02" 형식 |
 | `worker_id` | `pc_id` |
 | `workerName` / `WORKER_NAME` | `pcNumber` / `PC_NUMBER` |
 
@@ -46,10 +45,10 @@ Supabase URL: https://vyfxrplzhskncigyfkaz.supabase.co
 
 ```javascript
 // BEFORE
-this.workerName = process.env.WORKER_NAME || "node-pc-01";
+this.workerName = process.env.WORKER_NAME || "PC-02";
 
 // AFTER  
-this.pcNumber = process.env.PC_NUMBER || "PC00";
+this.pcNumber = process.env.PC_NUMBER || "PC-02";
 // PC_NUMBER는 ^PC[0-9]{2}$ 형식 필수 (DB 체크제약)
 ```
 
@@ -59,7 +58,7 @@ this.pcNumber = process.env.PC_NUMBER || "PC00";
 WORKER_NAME=local-test-pc
 
 # AFTER
-PC_NUMBER=PC00
+PC_NUMBER=PC-02
 ```
 
 ## 4. xiaowei-client.js — API 버그 수정 (중요!)
@@ -352,7 +351,7 @@ heartbeat에서 workers 테이블 관련 호출을 pcs로 변경.
 
 ```env
 # DoAi.Me Agent v3.0
-PC_NUMBER=PC00
+PC_NUMBER=PC-02
 SUPABASE_URL=https://vyfxrplzhskncigyfkaz.supabase.co
 SUPABASE_ANON_KEY=<새 anon key>
 SUPABASE_SERVICE_ROLE_KEY=<REPLACE_WITH_SERVICE_ROLE_KEY>

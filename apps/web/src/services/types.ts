@@ -38,7 +38,7 @@ export interface OperationsKpis {
   recentFailureCount: number;
 }
 
-/** Dashboard metrics snapshot from API (same shape as OperationsKpis). API returns { success, data: DashboardMetrics }; apiClient unwraps so res.data is this object. */
+/** Dashboard metrics snapshot (same shape as OperationsKpis). From Supabase via getDashboardMetricsSnapshot. */
 export interface DashboardMetrics {
   onlineDevices: number;
   warningDevices: number;
@@ -47,10 +47,10 @@ export interface DashboardMetrics {
   recentFailureCount: number;
 }
 
-/** Assumption: alert types. TODO: API 없음 → stub. */
+/** Alert from system_events or realtime. */
 export interface OperationsAlert {
   id: string;
-  type: "heartbeat_mismatch" | "unauthorized" | "recent_failures";
+  type: "heartbeat_mismatch" | "unauthorized" | "recent_failures" | string;
   message: string;
   severity: "warning" | "error";
   at: string;

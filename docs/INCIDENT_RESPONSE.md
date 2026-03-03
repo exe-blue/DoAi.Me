@@ -143,7 +143,7 @@ adb shell dumpsys package com.google.android.youtube | findstr versionName
 ### 6.4 핫픽스 배포 (selectors.js 변경 시)
 
 ```
-1. PC00에서 새 셀렉터 확인 (uiautomator dump)
+1. PC-02에서 새 셀렉터 확인 (uiautomator dump)
 2. selectors.js 업데이트
 3. git commit + push
 4. PC01에 배포 → 5분 테스트

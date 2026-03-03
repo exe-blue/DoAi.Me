@@ -35,7 +35,7 @@
 
 | 변수명 | 필수 | 기본값 | 설명 |
 |--------|------|--------|------|
-| `WORKER_NAME` | ✅ | - | 워커 호스트명 (고유) | `node-pc-01` |
+| `WORKER_NAME` | ✅ | - | 워커 호스트명 (고유) | `PC-02` |
 | `WORKER_ID` | ⚠️ | - | Supabase `workers.id` (UUID). 첫 등록 후 할당 |
 | `SUPABASE_URL` | ✅ | - | Supabase 프로젝트 URL |
 | `SUPABASE_ANON_KEY` | ✅ | - | Supabase 익명 키 |
@@ -62,7 +62,7 @@
 ### Agent 환경 규칙
 
 - Agent는 **Xiaowei와 같은 PC**에서 실행되어야 함 (로컬 WebSocket)
-- `WORKER_NAME`은 노드PC별로 고유해야 함 (예: `node-pc-01`, `node-pc-02`)
+- `WORKER_NAME`은 노드PC별로 고유해야 함 (예: `PC-02`, `node-pc-02`)
 - `WORKER_ID`는 첫 heartbeat 시 Supabase에서 조회/생성 후 `.env`에 기록
 
 ---

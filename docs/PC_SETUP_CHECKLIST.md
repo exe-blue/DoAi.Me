@@ -1,7 +1,7 @@
 # PC 배포 체크리스트
 
 > 각 PC(PC01~PC04)에 처음 배포할 때 순서대로 따라할 매뉴얼.
-> PC00은 개발용 — 이미 세팅됨.
+> PC-02은 개발용 — 이미 세팅됨.
 > **원격 PC 실행 흐름·agent/youtube 연동 요약**: [REMOTE_PC_EXECUTION.md](REMOTE_PC_EXECUTION.md)
 
 ---
@@ -66,7 +66,7 @@ notepad agent\.env
 | 변수 | PC01 | PC02 | PC03 | PC04 |
 |------|------|------|------|------|
 | `PC_NUMBER` | PC01 | PC02 | PC03 | PC04 |
-| `WORKER_NAME` | node-pc-01 | node-pc-02 | node-pc-03 | node-pc-04 |
+| `WORKER_NAME` | PC-02 | node-pc-02 | node-pc-03 | node-pc-04 |
 | `LOG_LEVEL` | info | info | info | info |
 
 **공통 값 (모든 PC 동일):**

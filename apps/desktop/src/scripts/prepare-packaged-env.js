@@ -1,7 +1,7 @@
 /**
- * Prepares release.env for the packaged app so resources/.env is populated.
- * Reads from repo root .env.local (or .env) and writes only needed keys to release.env.
- * Run before electron-builder so extraResources can copy release.env -> resources/.env
+ * Prepares release.env for the packaged app so resources/.env and resources/agent/.env are populated.
+ * Source order (later wins): desktop .env.prod, root .env.local/.env, desktop .env.local/.env, process.env.
+ * Run before electron-builder; extraResources copies release.env → resources/.env and → agent/.env.
  */
 const fs = require("fs");
 const path = require("path");
@@ -33,6 +33,7 @@ const env = {
   ...loadEnvFile(path.join(ROOT_DIR, ".env")),
   ...loadEnvFile(path.join(DESKTOP_DIR, ".env.local")),
   ...loadEnvFile(path.join(DESKTOP_DIR, ".env")),
+  ...loadEnvFile(path.join(DESKTOP_DIR, ".env.prod")),
   ...process.env,
 };
 

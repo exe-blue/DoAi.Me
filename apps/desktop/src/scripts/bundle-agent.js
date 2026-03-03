@@ -1,7 +1,8 @@
 /**
  * Bundles apps/desktop/src/agent into a single CJS file for dist.
- * All deps (ws, dotenv, @supabase/supabase-js, cron-parser, winston) and workspace/local imports
- * are inlined so dist needs no node_modules or workspace. Run before electron-builder;
+ * Entry: apps/desktop/src/agent/agent.js.
+ * All deps (ws, dotenv, @supabase/supabase-js, etc.) and local requires are inlined;
+ * no workspace imports (@doai/*) — use local require only so the bundle is self-contained.
  * extraResources copies agent-dist/ → resources/agent/.
  */
 const path = require("path");
@@ -42,6 +43,12 @@ try {
   });
 } catch (err) {
   throw new Error("[bundle-agent] Build failed: " + (err.message || String(err)));
+}
+
+// Ensure no workspace imports (@doai/*) remain — agent must use local require only
+const bundleContent = fs.readFileSync(outfile, "utf8");
+if (bundleContent.includes("@doai/")) {
+  throw new Error("[bundle-agent] Bundle must not contain @doai/* workspace imports; use local require in agent.");
 }
 
 console.log("[bundle-agent] Wrote", outfile);

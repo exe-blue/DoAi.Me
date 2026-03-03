@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { resolveChannelHandle } from "@/lib/youtube";
-import { upsertChannel } from "@/lib/db/channels";
+import { upsertChannel, updateChannelMonitoring, deleteChannel } from "@/lib/db/channels";
 
 export async function registerChannel(handleOrUrl: string) {
   const trimmed = handleOrUrl.trim();
@@ -26,5 +26,25 @@ export async function registerChannel(handleOrUrl: string) {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to register channel",
     };
+  }
+}
+
+export async function setChannelMonitoring(id: string, enabled: boolean) {
+  try {
+    await updateChannelMonitoring(id, enabled);
+    revalidatePath("/youtube/channels");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Update failed" };
+  }
+}
+
+export async function removeChannel(id: string) {
+  try {
+    await deleteChannel(id);
+    revalidatePath("/youtube/channels");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Delete failed" };
   }
 }

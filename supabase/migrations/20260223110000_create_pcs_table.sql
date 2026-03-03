@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS pcs (
   created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE pcs IS '노드 PC (Agent 호스트). pc_number 예: PC00, PC01.';
+COMMENT ON TABLE pcs IS '노드 PC (Agent 호스트). pc_number 예: PC-02, PC01.';
 COMMENT ON COLUMN pcs.pc_number IS 'PC 식별자 (^PC[0-9]{2}$ 권장)';
 COMMENT ON COLUMN pcs.last_heartbeat IS 'Agent 하트비트 최종 시각';
 

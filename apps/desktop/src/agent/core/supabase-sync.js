@@ -60,7 +60,7 @@ class SupabaseSync {
 
   /**
    * Get or create PC by pc_number, return its UUID
-   * @param {string} pcNumber - e.g. "PC00", "PC01" (^PC[0-9]{2}$)
+   * @param {string} pcNumber - e.g. "PC-02", "PC01" (^PC[0-9]{2}$)
    * @returns {Promise<string>} PC UUID
    */
   async getPcId(pcNumber) {

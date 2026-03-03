@@ -15,6 +15,9 @@ import VideoLibraryOutlinedIcon from "@mui/icons-material/VideoLibraryOutlined";
 import SubscriptionsOutlinedIcon from "@mui/icons-material/SubscriptionsOutlined";
 import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
+import ErrorOutlineOutlinedIcon from "@mui/icons-material/ErrorOutlineOutlined";
 
 const SIDEBAR_WIDTH = 260;
 
@@ -27,7 +30,10 @@ const NAV = [
       { label: "Contents", href: "/youtube/contents", icon: <VideoLibraryOutlinedIcon /> },
     ],
   },
+  { label: "Devices", href: "/devices", icon: <DevicesOutlinedIcon /> },
+  { label: "Tasks", href: "/tasks", icon: <AssignmentOutlinedIcon /> },
   { label: "Events", href: "/events", icon: <EventNoteOutlinedIcon /> },
+  { label: "Errors", href: "/errors", icon: <ErrorOutlineOutlinedIcon /> },
   { label: "Settings", href: "/settings", icon: <SettingsOutlinedIcon /> },
 ];
 

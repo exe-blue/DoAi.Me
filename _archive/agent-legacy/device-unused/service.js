@@ -31,7 +31,7 @@ class DeviceService {
     this.supabase = supabase;
     this.config = config;
     this.pcId = null;
-    this.pcNumber = config.pcNumber || "PC00";
+    this.pcNumber = config.pcNumber || "PC-02";
   }
 
   // ═══════════════════════════════════════════════════════

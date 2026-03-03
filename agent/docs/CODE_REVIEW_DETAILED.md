@@ -33,13 +33,13 @@ Agent 재시작 후 같은 기기에서 검색 플로우 실행 → `search icon
 
 ### 2. **ENV/문서와 코드 불일치 — PC 식별자**
 
-- **코드:** `config.js`는 `process.env.PC_NUMBER` (기본값 `"PC00"`), `supabase-sync.js`는 `pcs.pc_number` 로 등록.
-- **docs/ENV.md:** Agent 필수 변수로 `WORKER_NAME`(예: `node-pc-01`) 기재.
-- **agent/.env.example:** `WORKER_NAME=node-pc-01` 있음.  
+- **코드:** `config.js`는 `process.env.PC_NUMBER` (기본값 `"PC-02"`), `supabase-sync.js`는 `pcs.pc_number` 로 등록.
+- **docs/ENV.md:** Agent 필수 변수로 `WORKER_NAME`(예: `PC-02`) 기재.
+- **agent/.env.example:** `WORKER_NAME=PC-02` 있음.  
 → 실제 동작은 `PC_NUMBER`인데 문서/예시는 `WORKER_NAME`이라, 새로 세팅 시 Agent가 잘못된 식별자로 동작하거나 등록 실패할 수 있음.
 
 **권장:**  
-- ENV.md와 .env.example을 **PC_NUMBER** 기준으로 통일 (필수: `PC_NUMBER=PC00` 형식).  
+- ENV.md와 .env.example을 **PC_NUMBER** 기준으로 통일 (필수: `PC_NUMBER=PC-02` 형식).  
 - `WORKER_NAME`이 레거시라면 문서에서 제거하거나 “PC_NUMBER로 대체됨” 명시.
 
 ---

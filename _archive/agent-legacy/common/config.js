@@ -35,7 +35,7 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.pcNumber = process.env.PC_NUMBER || "PC-00";
+    this.pcNumber = process.env.PC_NUMBER || "PC-02";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
@@ -230,9 +230,9 @@ class AgentConfig extends EventEmitter {
     return true;
   }
 
-  /** 환경 이름 (dev=PC00, prod=나머지) */
+  /** 환경 이름 (dev=PC-02, prod=PC-02) */
   get environment() {
-    return this.pcNumber === "PC-00" ? "dev" : "prod";
+    return this.pcNumber === "PC-02" ? "dev" : "prod";
   }
 
   /** 현재 설정 요약 (민감정보 마스킹) */

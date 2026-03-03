@@ -3,7 +3,7 @@
  * SSOT: Desktop runs ONLY apps/desktop/src/agent. Root agent/ must NEVER be used as execution path.
  * - Dev: <repoRoot>/apps/desktop/src/agent/agent.js (app.getAppPath() = apps/desktop), system "node".
  * - Dist: <process.resourcesPath>/agent/agent.bundle.cjs (extraResources copies agent-dist → resources/agent), cwd=resources for .env, bundled node.exe.
- * No fallback to root agent/. Stdout/stderr → userData/logs/agent-*.log. Restart backoff 2s→5s→10s, max 5 retries.
+ * No fallback to root agent/. Stdout/stderr → userData/logs/agent.stdout.log, agent.stderr.log. Restart backoff 2s→5s→10s, max 5 retries.
  */
 
 import { app, BrowserWindow } from "electron";
@@ -16,8 +16,11 @@ const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 const MAX_RESTARTS = 5;
 const BACKOFF_MS = [2000, 5000, 10000];
 const AGENT_LOG_DIR = "logs";
-const AGENT_STDOUT = "agent-stdout.log";
-const AGENT_STDERR = "agent-stderr.log";
+const AGENT_STDOUT = "agent.stdout.log";
+const AGENT_STDERR = "agent.stderr.log";
+const EXIT_TAIL_LINES = 50;
+const EXIT_TAIL_LINES_SHORT = 20;
+const EXIT_TAIL_MAX_CHARS = 4000;
 
 export type AgentStatus = "RUNNING" | "STOPPED" | "RESTARTING" | "ERROR";
 
@@ -26,7 +29,7 @@ export interface AgentState {
   lastExitCode: number | null;
   lastErrorLine: string;
   restartCount: number;
-  /** Current Agent PC number (from agent-pc-status.json), e.g. "PC00", "PC-01". */
+  /** Current Agent PC number (from agent-pc-status.json), e.g. "PC-02", "PC-01". */
   pc_number?: string | null;
   /** Effective WebSocket URL the agent uses (from status file or main env). */
   wsEffectiveUrl?: string;
@@ -44,10 +47,10 @@ export interface AgentState {
   wsCloseCode?: number;
   /** WebSocket close reason string. */
   wsCloseReason?: string;
-  /** Optional HTTP API URL. Set by main, not agent. */
-  xiaoweiHttpApiUrl?: string;
+  /** Optional WS API URL. Set by main, not agent. */
+  xiaoweiWsUrl?: string;
   /** "disabled" | "unavailable" | "enabled". Set by main, not agent. */
-  xiaoweiHttpApiStatus?: "disabled" | "unavailable" | "enabled";
+  xiaoweiWSApiStatus?: "disabled" | "unavailable" | "enabled";
 }
 
 let child: ChildProcess | null = null;
@@ -142,6 +145,31 @@ function closeLogStreams(): void {
   }
 }
 
+/** Read last N lines from a file; if content is longer than maxChars, return last EXIT_TAIL_LINES_SHORT lines. */
+function readLastLines(filePath: string, n: number, maxChars: number): string {
+  try {
+    if (!fs.existsSync(filePath)) return "(file not found)";
+    const raw = fs.readFileSync(filePath, "utf8");
+    const lines = raw.split(/\r?\n/);
+    const tail = lines.slice(-n).join("\n");
+    if (tail.length <= maxChars) return tail;
+    return lines.slice(-EXIT_TAIL_LINES_SHORT).join("\n");
+  } catch (e) {
+    return `(read error: ${(e as Error).message})`;
+  }
+}
+
+function logAgentExitTail(stderrPath: string, stdoutPath?: string): void {
+  const tail = readLastLines(stderrPath, EXIT_TAIL_LINES, EXIT_TAIL_MAX_CHARS);
+  log.info("[AgentRunner] Agent exit — last stderr:\n" + tail);
+  if (stdoutPath) {
+    const stdoutTail = readLastLines(stdoutPath, EXIT_TAIL_LINES_SHORT, 2000);
+    if (stdoutTail && stdoutTail !== "(file not found)") {
+      log.info("[AgentRunner] Agent exit — last stdout:\n" + stdoutTail);
+    }
+  }
+}
+
 function getBackoffMs(): number {
   const index = Math.min(state.restartCount, BACKOFF_MS.length - 1);
   return BACKOFF_MS[index] ?? BACKOFF_MS[BACKOFF_MS.length - 1];
@@ -217,7 +245,7 @@ function notifyRenderer(): void {
   }
 }
 
-/** Env keys passed from Desktop to agent (spawn env wins over agent dotenv). Required: SUPABASE_URL, SUPABASE_ANON_KEY; optional: XIAOWEI_WS_URL, PC_NUMBER, XIAOWEI_TOOLS_DIR, AGENT_WS_STATUS_FILE, AGENT_DEVICES_FILE. */
+/** Env keys passed from Desktop to agent (spawn env wins over agent dotenv). Required: SUPABASE_URL, SUPABASE_ANON_KEY; optional: XIAOWEI_WS_URL, PC_NUMBER, AGENT_WS_STATUS_FILE, AGENT_DEVICES_FILE, AGENT_SETTINGS_PATH, OPENAI_API_KEY. */
 const AGENT_ENV_KEYS = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
@@ -227,6 +255,8 @@ const AGENT_ENV_KEYS = [
   "NODE_ENV",
   "AGENT_WS_STATUS_FILE",
   "AGENT_DEVICES_FILE",
+  "AGENT_SETTINGS_PATH",
+  "OPENAI_API_KEY",
 ] as const;
 
 function buildAgentEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
@@ -235,6 +265,12 @@ function buildAgentEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
   for (const key of AGENT_ENV_KEYS) {
     const v = overrides[key];
     if (v !== undefined && v !== "") base[key] = v;
+  }
+  const missing: string[] = [];
+  if (!base.SUPABASE_URL?.trim()) missing.push("SUPABASE_URL");
+  if (!base.SUPABASE_ANON_KEY?.trim()) missing.push("SUPABASE_ANON_KEY");
+  if (missing.length > 0) {
+    log.warn("[AgentRunner] Agent spawn env missing (agent may crash): " + missing.join(", "));
   }
   return base;
 }
@@ -267,6 +303,12 @@ export function startAgent(envOverrides?: Record<string, string>): boolean {
   log.info("[AgentRunner] script=%s cwd=%s stdoutPath=%s stderrPath=%s", paths.script, paths.cwd, logPaths.stdout, logPaths.stderr);
 
   const env = buildAgentEnv(envOverrides);
+  log.info(
+    "[AgentRunner] spawn env: SUPABASE_URL=%s, SUPABASE_ANON_KEY=%s, XIAOWEI_WS_URL=%s",
+    env.SUPABASE_URL?.trim() ? "(set)" : "(empty)",
+    env.SUPABASE_ANON_KEY?.trim() ? "(set)" : "(empty)",
+    env.XIAOWEI_WS_URL?.trim() || "(default)"
+  );
   const args = [paths.script];
   log.info("[AgentRunner] Spawning node=%s args=%s", paths.node, args);
   child = spawn(paths.node, args, {
@@ -279,52 +321,67 @@ export function startAgent(envOverrides?: Record<string, string>): boolean {
   setState({ status: "RUNNING" });
   notifyRenderer();
 
-  child.stdout?.on("data", (chunk: Buffer) => {
-    const line = chunk.toString();
-    stdoutStream?.write(line);
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    const line = chunk.toString();
-    stderrStream?.write(line);
-  });
+  child.stdout?.pipe(stdoutStream!);
+  child.stderr?.pipe(stderrStream!);
 
   child.on("exit", (code, signal) => {
     child = null;
-    closeLogStreams();
     const codeNum = code ?? (signal === "SIGTERM" ? 0 : -1);
-    setState({
-      status: "STOPPED",
-      lastExitCode: codeNum,
-      lastErrorLine: signal ? `Signal: ${signal}` : `Exit code: ${codeNum}`,
-    });
-    notifyRenderer();
-    log.info("[AgentRunner] Agent exited", { code, signal });
+    const logPaths = getAgentLogPaths();
+    const stdoutRef = stdoutStream;
+    const stderrRef = stderrStream;
 
-    if (state.restartCount >= MAX_RESTARTS) {
-      setState({ status: "ERROR", lastErrorLine: `Stopped after ${MAX_RESTARTS} restarts. Export diagnostics.` });
+    function done(): void {
+      logAgentExitTail(logPaths.stderr, logPaths.stdout);
+      stdoutStream = null;
+      stderrStream = null;
+      setState({
+        status: "STOPPED",
+        lastExitCode: codeNum,
+        lastErrorLine: signal ? `Signal: ${signal}` : `Exit code: ${codeNum}`,
+      });
       notifyRenderer();
+      log.info("[AgentRunner] Agent exited", { code, signal });
+
+      if (state.restartCount >= MAX_RESTARTS) {
+        setState({ status: "ERROR", lastErrorLine: `Stopped after ${MAX_RESTARTS} restarts. Export diagnostics.` });
+        notifyRenderer();
+        return;
+      }
+      const delay = getBackoffMs();
+      setState({ status: "RESTARTING", restartCount: state.restartCount + 1 });
+      notifyRenderer();
+      log.info("[AgentRunner] Restarting in", delay, "ms (attempt", state.restartCount, ")");
+      restartTimer = setTimeout(() => {
+        restartTimer = null;
+        if (xiaoweiReadyCheck && !xiaoweiReadyCheck()) {
+          log.info("[AgentRunner] Waiting for Xiaowei before restart...");
+          const waitForXiaowei = setInterval(() => {
+            if (!xiaoweiReadyCheck || xiaoweiReadyCheck()) {
+              clearInterval(waitForXiaowei);
+              log.info("[AgentRunner] Xiaowei ready — spawning agent");
+              startAgent(lastEnvOverrides);
+            }
+          }, 3000);
+        } else {
+          startAgent(lastEnvOverrides);
+        }
+      }, delay);
+    }
+
+    if (!stdoutRef || !stderrRef) {
+      done();
       return;
     }
-    const delay = getBackoffMs();
-    setState({ status: "RESTARTING", restartCount: state.restartCount + 1 });
-    notifyRenderer();
-    log.info("[AgentRunner] Restarting in", delay, "ms (attempt", state.restartCount, ")");
-    restartTimer = setTimeout(() => {
-      restartTimer = null;
-      // Gate restart on Xiaowei connectivity — poll every 3s until ready
-      if (xiaoweiReadyCheck && !xiaoweiReadyCheck()) {
-        log.info("[AgentRunner] Waiting for Xiaowei before restart...");
-        const waitForXiaowei = setInterval(() => {
-          if (!xiaoweiReadyCheck || xiaoweiReadyCheck()) {
-            clearInterval(waitForXiaowei);
-            log.info("[AgentRunner] Xiaowei ready — spawning agent");
-            startAgent(lastEnvOverrides);
-          }
-        }, 3000);
-      } else {
-        startAgent(lastEnvOverrides);
-      }
-    }, delay);
+    stdoutRef.end();
+    stderrRef.end();
+    const FINISH_TIMEOUT_MS = 300;
+    const waitFinish = Promise.all([
+      new Promise<void>((res) => { stdoutRef.once("finish", res); }),
+      new Promise<void>((res) => { stderrRef.once("finish", res); }),
+    ]);
+    const timeout = new Promise<void>((res) => setTimeout(res, FINISH_TIMEOUT_MS));
+    Promise.race([waitFinish, timeout]).then(done);
   });
 
   child.on("error", (err) => {

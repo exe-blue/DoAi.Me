@@ -14,7 +14,7 @@ class CommandPoller {
   constructor(xiaowei, supabase, config = {}) {
     this.xiaowei = xiaowei;
     this.supabase = supabase;
-    this.pcId = config.pcId || "PC-00";
+    this.pcId = config.pcId || "PC-02";
     this.pollInterval = (config.commandPollIntervalSec || 5) * 1000;
     this._timer = null;
     this._executing = false;

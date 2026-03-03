@@ -31,7 +31,7 @@ WHERE ja.created_at > now() - interval '1 hour'
 GROUP BY ja.status;
 
 -- ========== Step 3: PC UUID 확인 후 claim_next_assignment 테스트 ==========
-SELECT id, pc_number FROM pcs WHERE pc_number = 'PC00';
+SELECT id, pc_number FROM pcs WHERE pc_number = 'PC-02';
 
 -- (위에서 나온 id를 사용) 예: '5da8272e-f28c-4893-b21f-c2bbe5b8c885'
 -- SELECT * FROM claim_next_assignment('5da8272e-f28c-4893-b21f-c2bbe5b8c885'::uuid, 'test_serial');
@@ -55,15 +55,15 @@ WHERE table_schema = 'public' AND table_name = 'job_assignments'
   AND column_name IN ('device_id', 'pc_id', 'video_id', 'device_serial');
 
 -- ========== 수동 pending 1건 생성 (Orchestrator 동작 검증용) ==========
--- PC00 UUID와 job/devices/videos 존재 시 실행. 3초 내 Agent 로그에 [Orchestrator] claim 나와야 함.
+-- PC-02 UUID와 job/devices/videos 존재 시 실행. 3초 내 Agent 로그에 [Orchestrator] claim 나와야 함.
 -- device_id: migration 20260225110000 적용 후 NULL 가능.
 /*
 INSERT INTO job_assignments (job_id, device_id, device_serial, pc_id, video_id, status)
 VALUES (
   (SELECT id FROM jobs WHERE is_active = true LIMIT 1),
-  (SELECT id FROM devices WHERE pc_id = (SELECT id FROM pcs WHERE pc_number = 'PC00' LIMIT 1) LIMIT 1),  -- or NULL after migration
+  (SELECT id FROM devices WHERE pc_id = (SELECT id FROM pcs WHERE pc_number = 'PC-02' LIMIT 1) LIMIT 1),  -- or NULL after migration
   NULL,
-  (SELECT id FROM pcs WHERE pc_number = 'PC00' LIMIT 1),
+  (SELECT id FROM pcs WHERE pc_number = 'PC-02' LIMIT 1),
   (SELECT id FROM videos WHERE status = 'active' LIMIT 1),
   'pending'
 );

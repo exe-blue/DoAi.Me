@@ -40,6 +40,7 @@
     }
   },
   "dependencies": {
-    "claude-code": "^1.0.0"
+    "claude-code": "^1.0.0",
+    "playwright": "^1.58.2"
   }
 }

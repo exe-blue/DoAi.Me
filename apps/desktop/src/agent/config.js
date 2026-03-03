@@ -7,18 +7,28 @@
 const EventEmitter = require("events");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, ".env"), override: true });
+const os = require("os");
+// override: false so spawn env from Desktop wins over .env file
+require("dotenv").config({ path: path.resolve(__dirname, ".env"), override: false });
 
-// Env validation (warn, don't exit — tests may not have env vars)
+// Only Supabase is required for startup; PC_NUMBER is optional (default hostname)
 const requiredEnv = [
   ["SUPABASE_URL", process.env.SUPABASE_URL],
   ["SUPABASE_ANON_KEY", process.env.SUPABASE_ANON_KEY],
-  ["PC_NUMBER", process.env.PC_NUMBER],
 ];
 for (const [name, val] of requiredEnv) {
   if (val === undefined || val === "") {
-    console.warn(`[Config] ⚠ Missing env: ${name} (required for production)`);
+    console.warn(`[Config] Missing env: ${name} (required)`);
   }
+}
+
+/** Normalize XIAOWEI_WS_URL: "127.0.0.1:22222" -> "ws://127.0.0.1:22222/" */
+function normalizeXiaoweiWsUrl(raw) {
+  const s = (raw && String(raw).trim()) || "";
+  if (!s) return "ws://127.0.0.1:22222/";
+  if (s.startsWith("ws://") || s.startsWith("wss://")) return s.replace(/\/+$/, "") + "/";
+  const trimmed = s.replace(/^\/+|\/+$/g, "");
+  return "ws://" + trimmed + "/";
 }
 
 // Mapping: DB setting key → config property name
@@ -45,12 +55,14 @@ class AgentConfig extends EventEmitter {
     super();
 
     // ── Static env vars (never change at runtime) ──
-    this.pcNumber = process.env.PC_NUMBER || null;
+    this.pcNumber = process.env.PC_NUMBER != null && String(process.env.PC_NUMBER).trim() !== ""
+      ? String(process.env.PC_NUMBER).trim()
+      : os.hostname();
     this.agentVersion = process.env.AGENT_VERSION || "0.1.0-alpha";
     this.supabaseUrl = process.env.SUPABASE_URL;
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     this.supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
-    this.xiaoweiWsUrl = process.env.XIAOWEI_WS_URL || "ws://127.0.0.1:22222/";
+    this.xiaoweiWsUrl = normalizeXiaoweiWsUrl(process.env.XIAOWEI_WS_URL || "ws://127.0.0.1:22222/");
     /** OpenAI API Key for comment generation (댓글 생성). Set in env or agent-settings. */
     this.openaiApiKey = process.env.OPENAI_API_KEY || null;
     // Override from agent-settings file when Desktop passes AGENT_SETTINGS_PATH
@@ -60,7 +72,7 @@ class AgentConfig extends EventEmitter {
         if (fs.existsSync(settingsPath)) {
           const data = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
           if (data.pc_number != null && data.pc_number !== "") this.pcNumber = String(data.pc_number);
-          if (data.xiaowei_ws_url != null && data.xiaowei_ws_url !== "") this.xiaoweiWsUrl = String(data.xiaowei_ws_url);
+          if (data.xiaowei_ws_url != null && data.xiaowei_ws_url !== "") this.xiaoweiWsUrl = normalizeXiaoweiWsUrl(String(data.xiaowei_ws_url));
           if (data.openai_api_key != null && data.openai_api_key !== "") this.openaiApiKey = String(data.openai_api_key);
         }
       } catch (_) {

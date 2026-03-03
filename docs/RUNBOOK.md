@@ -25,7 +25,7 @@
     ↕
 [Supabase] DB + Realtime
     ↕
-[PC00~04] Node.js Agent × 5
+[PC-02~04] Node.js Agent × 5
     ↕ Xiaowei WebSocket
 [Galaxy S9] × 500대 (PC당 100대)
 ```
@@ -34,7 +34,7 @@
 |----------|------|----------|
 | 대시보드 | 모니터링 + 미션 관리 | 브라우저 (Vercel URL) |
 | Supabase | DB + 실시간 | dashboard.supabase.com |
-| PC00 | 개발/테스트 | 직접 접근 |
+| PC-02 | 개발/테스트 | 직접 접근 |
 | PC01~04 | 운영 | SplashTop 원격 |
 | Xiaowei | 디바이스 제어 | 각 PC 로컬 (port 22222) |
 
@@ -278,7 +278,7 @@ Agent 시작 시 preflight check가 자동 실행 (구현됨):
 ### 6.2 대응 절차 (목표: 30분 이내)
 
 ```
-=== 1. 진단 (PC00에서, 5분) ===
+=== 1. 진단 (PC-02에서, 5분) ===
 
 # 현재 YouTube 버전 확인
 adb -s 시리얼 shell dumpsys package com.google.android.youtube | findstr versionName
@@ -290,13 +290,13 @@ adb -s 시리얼 pull /sdcard/ui.xml C:\scripts\ui_new.xml
 # 변경된 resource-id 찾기 (이전 dump와 비교)
 # 검색: like_button, subscribe_button, skip_ad_button, title, channel_name
 
-=== 2. selectors.js 수정 (PC00에서, 10분) ===
+=== 2. selectors.js 수정 (PC-02에서, 10분) ===
 
 # agent/youtube/selectors.js 열기
 # RES 객체의 변경된 resource-id 업데이트
 # COORDS 좌표 비율 변경 여부 확인
 
-=== 3. 검증 (PC00에서, 5분) ===
+=== 3. 검증 (PC-02에서, 5분) ===
 
 # preflight check 실행
 node -e "
@@ -338,7 +338,7 @@ adb -s 시리얼 pull /data/app/.../base.apk C:\backup\youtube_vXX.apk
 ### 일반 업데이트
 
 ```powershell
-# PC00에서 먼저 테스트
+# PC-02에서 먼저 테스트
 git pull origin main
 npm ci && cd agent && npm ci && cd ..
 pm2 restart agent

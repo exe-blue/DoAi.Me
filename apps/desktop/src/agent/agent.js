@@ -5,6 +5,8 @@
  * Xiaowei API: docs/xiaowei_ws_api (ws://127.0.0.1:22222/)
  */
 const config = require("./config");
+const fs = require("fs");
+const path = require("path");
 const XiaoweiClient = require("./core/xiaowei-client");
 const SupabaseSync = require("./core/supabase-sync");
 const DashboardBroadcaster = require("./core/dashboard-broadcaster");
@@ -67,14 +69,53 @@ function waitForXiaowei(client, timeoutMs = 10000) {
   });
 }
 
+/** Log Supabase config masked (host only, anon key length + prefix 6). */
+function logSupabaseConfigMasked() {
+  let host = "(empty)";
+  if (config.supabaseUrl && config.supabaseUrl.trim()) {
+    try {
+      host = new URL(config.supabaseUrl.trim()).host;
+    } catch {
+      host = "(invalid URL)";
+    }
+  }
+  const keyLen = config.supabaseAnonKey ? config.supabaseAnonKey.length : 0;
+  const keyPrefix = config.supabaseAnonKey && config.supabaseAnonKey.trim() ? config.supabaseAnonKey.trim().slice(0, 6) : "";
+  console.error(`[Agent] Supabase config (masked): url host=${host}, anon key length=${keyLen} prefix=${keyPrefix}…`);
+}
+
+/** Write failure to status file so Desktop can show reason. */
+function writeStatusFailure(reason) {
+  const statusPath = process.env.AGENT_WS_STATUS_FILE;
+  if (!statusPath) return;
+  try {
+    const dir = path.dirname(statusPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      statusPath,
+      JSON.stringify({
+        status: "FAILED",
+        lastFailure: reason,
+        timestamp: new Date().toISOString(),
+      }, null, 2),
+      "utf8"
+    );
+  } catch (e) {
+    console.error("[Agent] Failed to write status file:", e.message);
+  }
+}
+
 async function main() {
   console.log(`[Agent] Starting PC: ${config.pcNumber}`);
   console.log(`[Agent] Xiaowei URL: ${config.xiaoweiWsUrl}`);
 
   // ---------- Phase 1: Environment / DB / settings ----------
-  // 1. Validate required config
+  // 1. Validate required config (Supabase only)
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
-    console.error("[Agent] ✗ SUPABASE_URL and SUPABASE_ANON_KEY are required");
+    const reason = "SUPABASE_URL or SUPABASE_ANON_KEY missing — set resources/.env or resources/agent/.env when packaged.";
+    console.error("[Agent] ✗ " + reason);
+    logSupabaseConfigMasked();
+    writeStatusFailure(reason);
     process.exit(1);
   }
 
@@ -90,6 +131,8 @@ async function main() {
     console.log("[Agent] ✓ Supabase connected");
   } catch (err) {
     console.error(`[Agent] ✗ Supabase connection failed: ${err.message}`);
+    logSupabaseConfigMasked();
+    writeStatusFailure(`Supabase connection failed: ${err.message}`);
     process.exit(1);
   }
 

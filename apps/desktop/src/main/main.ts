@@ -87,18 +87,42 @@ if (isSquirrel) {
   process.exit(0);
 }
 
-// Load env first so agent spawn and renderer get explicit SUPABASE_* / XIAOWEI_WS_URL
-// Packaged: resources/.env then resources/agent/.env (fallback if .env missing)
+// Packaged: load resources/.env then resources/agent/.env; explicitly inject SUPABASE_*, XIAOWEI_WS_URL into process.env.
 if (typeof process !== "undefined" && app.isPackaged && typeof process.resourcesPath === "string") {
   const resourcesEnv = path.join(process.resourcesPath, ".env");
-  const agentEnv = path.join(process.resourcesPath, "agent", ".env");
-  dotenv.config({ path: resourcesEnv });
-  dotenv.config({ path: agentEnv }); // fallback / override when resources/.env missing or partial
+  const agentEnvPath = path.join(process.resourcesPath, "agent", ".env");
+  const r = dotenv.config({ path: resourcesEnv });
+  const a = dotenv.config({ path: agentEnvPath });
+  bootLog(`BOOT_1 env packaged: resources/.env ${r.error ? "missing" : "loaded"}, agent/.env ${a.error ? "missing" : "loaded"}`);
+  if (r.error) bootLog(`BOOT_1 env resources/.env path=${resourcesEnv}`);
+  if (a.error) bootLog(`BOOT_1 env agent/.env path=${agentEnvPath}`);
+  const inject = (parsed: Record<string, string> | undefined) => {
+    if (!parsed) return;
+    if (parsed.SUPABASE_URL?.trim()) process.env.SUPABASE_URL = parsed.SUPABASE_URL.trim();
+    if (parsed.SUPABASE_ANON_KEY?.trim()) process.env.SUPABASE_ANON_KEY = parsed.SUPABASE_ANON_KEY.trim();
+    if (parsed.XIAOWEI_WS_URL?.trim()) process.env.XIAOWEI_WS_URL = parsed.XIAOWEI_WS_URL.trim();
+  };
+  inject(r.parsed);
+  inject(a.parsed);
+  if (!process.env.SUPABASE_URL?.trim() && process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {
+    process.env.SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  }
+  if (!process.env.SUPABASE_ANON_KEY?.trim() && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()) {
+    process.env.SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  }
+} else {
+  dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+  dotenv.config({ path: path.resolve(process.cwd(), ".env.prod") });
+  dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+  if (!process.env.SUPABASE_URL?.trim() && process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {
+    process.env.SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  }
+  if (!process.env.SUPABASE_ANON_KEY?.trim() && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()) {
+    process.env.SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  }
+  bootLog("BOOT_1 env (dev) load done");
 }
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
-dotenv.config({ path: path.resolve(process.cwd(), ".env.prod") });
-dotenv.config({ path: path.resolve(process.cwd(), ".env") });
-bootLog("BOOT_1 env load");
+bootLog("BOOT_1 env load done");
 
 const gotLock = app.requestSingleInstanceLock();
 bootLog(`BOOT_LOCK gotLock=${gotLock}`);
@@ -202,18 +226,51 @@ function setAgentSettings(payload: AgentSettings): AgentSettings {
   return next;
 }
 
-/** Env passed to agent spawn. SUPABASE_* from env only; PC_NUMBER and XIAOWEI_WS_URL from agent-settings.json (or env fallback). */
+/** Env passed to agent spawn. SUPABASE_* from process.env (loaded from resources/.env when packaged); PC_NUMBER and XIAOWEI_WS_URL from agent-settings.json (or env fallback). */
 function getAgentEnv(): Record<string, string> {
   const out: Record<string, string> = {};
-  if (process.env.SUPABASE_URL) out.SUPABASE_URL = process.env.SUPABASE_URL;
-  if (process.env.SUPABASE_ANON_KEY) out.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+  out.SUPABASE_URL = process.env.SUPABASE_URL ?? "";
+  out.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
   const file = getAgentSettings();
+  // PC_NUMBER from Settings UI (agent-settings.json); empty on first run until user sets it
   out.PC_NUMBER = file.pc_number ?? process.env.PC_NUMBER ?? "";
   out.XIAOWEI_WS_URL = file.xiaowei_ws_url ?? process.env.XIAOWEI_WS_URL ?? "ws://127.0.0.1:22222/";
+  if (!out.XIAOWEI_WS_URL.startsWith("ws://") && !out.XIAOWEI_WS_URL.startsWith("wss://")) {
+    out.XIAOWEI_WS_URL = "ws://" + out.XIAOWEI_WS_URL.replace(/^\/+|\/+$/g, "");
+  }
   if (file.openai_api_key ?? process.env.OPENAI_API_KEY) out.OPENAI_API_KEY = file.openai_api_key ?? process.env.OPENAI_API_KEY ?? "";
-  if (process.env.XIAOWEI_TOOLS_DIR) out.XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR;
+  if (process.env.XIAOWEI_TOOLS_DIR) out.XIAOWEI_TOOLS_DIR = process.env.XIAOWEI_TOOLS_DIR ?? "";
   out.AGENT_SETTINGS_PATH = AGENT_SETTINGS_FILE;
+  if (!out.SUPABASE_URL.trim()) log.warn("[Main] getAgentEnv: SUPABASE_URL is empty — set resources/.env or resources/agent/.env when packaged.");
+  if (!out.SUPABASE_ANON_KEY.trim()) log.warn("[Main] getAgentEnv: SUPABASE_ANON_KEY is empty — agent may exit immediately.");
+  if (!file.xiaowei_ws_url?.trim() && !process.env.XIAOWEI_WS_URL?.trim()) {
+    log.warn("[Main] getAgentEnv: XIAOWEI_WS_URL is empty — agent will use default ws://127.0.0.1:22222/");
+  }
   return out;
+}
+
+/** Log getAgentEnv() result masked for desktop.log (SUPABASE_URL host only, anon key length + prefix 6, XIAOWEI_WS_URL). */
+function logAgentEnvMasked(env: Record<string, string>): void {
+  let supabaseHost = "(empty)";
+  if (env.SUPABASE_URL?.trim()) {
+    try {
+      const u = new URL(env.SUPABASE_URL.trim());
+      supabaseHost = u.host;
+    } catch {
+      supabaseHost = "(invalid URL)";
+    }
+  }
+  const keyPresent = !!(env.SUPABASE_ANON_KEY?.trim());
+  const keyLen = env.SUPABASE_ANON_KEY?.length ?? 0;
+  const keyPrefix = env.SUPABASE_ANON_KEY?.trim().slice(0, 6) ?? "";
+  log.info(
+    "[Main] Agent env (masked): SUPABASE_URL host=%s, SUPABASE_ANON_KEY present=%s length=%s prefix=%s, XIAOWEI_WS_URL=%s",
+    supabaseHost,
+    keyPresent,
+    keyLen,
+    keyPrefix ? `${keyPrefix}…` : "(none)",
+    env.XIAOWEI_WS_URL ?? "(default)"
+  );
 }
 
 const execFileAsync = promisify(execFile);
@@ -1391,11 +1448,14 @@ function startBackgroundInit(): void {
 
     if (process.platform === "win32") {
       bootLog("BOOT_3 agentRunner start");
-      const agentEnv = {
+      const agentEnv: Record<string, string> = {
         ...getAgentEnv(),
         AGENT_WS_STATUS_FILE: path.join(app.getPath("userData"), "agent-ws-status.json"),
         AGENT_DEVICES_FILE: path.join(app.getPath("userData"), "agent-devices.json"),
       };
+      logAgentEnvMasked(agentEnv);
+      const hasSupabase = !!(agentEnv.SUPABASE_URL?.trim() && agentEnv.SUPABASE_ANON_KEY?.trim());
+      if (!hasSupabase) log.warn("[Main] Agent may exit: set SUPABASE_URL and SUPABASE_ANON_KEY in resources/.env or resources/agent/.env (packaged) or .env.local (dev).");
       const started = agentRunner.startAgent(agentEnv);
       if (!started) {
         log.error("[Main] Embedded agent failed to start; check agent path and Node.");

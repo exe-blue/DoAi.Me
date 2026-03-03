@@ -1,10 +1,8 @@
-import { apiClient } from "@/lib/api";
+/**
+ * YouTube channels and contents from Supabase only (no HTTP API).
+ */
+import { createBrowserClient } from "@/lib/supabase/client";
 import type { ChannelSummary, ContentSummary } from "./types";
-
-interface ChannelsApiResponse {
-  channels?: Array<Record<string, unknown>>;
-  contents?: Array<Record<string, unknown>>;
-}
 
 function mapChannel(row: Record<string, unknown>): ChannelSummary {
   return {
@@ -37,15 +35,31 @@ function mapContent(row: Record<string, unknown>): ContentSummary {
 }
 
 export async function getChannels(): Promise<ChannelSummary[]> {
-  const res = await apiClient.get<ChannelsApiResponse>("/api/channels", { silent: true });
-  if (!res.success || !res.data?.channels) return [];
-  return (res.data.channels as Record<string, unknown>[]).map(mapChannel);
+  const supabase = createBrowserClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("channels")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) return [];
+  return (data ?? []).map((row) => mapChannel(row as Record<string, unknown>));
 }
 
 export async function getContents(): Promise<ContentSummary[]> {
-  const res = await apiClient.get<ChannelsApiResponse>("/api/channels", { silent: true });
-  if (!res.success) return [];
-  const contents = res.data?.contents;
-  if (Array.isArray(contents)) return contents.map((r) => mapContent(r as Record<string, unknown>));
-  return [];
+  const supabase = createBrowserClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("videos")
+    .select("*, channels(name)")
+    .order("created_at", { ascending: false });
+
+  if (error) return [];
+  const rows = data ?? [];
+  return rows.map((row: Record<string, unknown>) => {
+    const channelName = (row.channels as { name?: string } | null)?.name;
+    return mapContent({ ...row, channel_name: channelName ?? row.channel_name });
+  });
 }

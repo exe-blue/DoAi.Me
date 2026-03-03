@@ -54,6 +54,7 @@ import { TaskDeviceGrid } from "@/components/task-device-grid";
 import { QueuePanel } from "@/components/queue-panel";
 import { SchedulesPanel } from "@/components/schedules-panel";
 import { useQueueStore } from "@/hooks/use-queue-store";
+import { useRealtimeTasks } from "@/hooks/use-realtime-tasks";
 
 /* ──────────── Status helpers ──────────── */
 
@@ -1099,6 +1100,29 @@ export function TasksPage({
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  useRealtimeTasks({
+    onInsert: (task) => {
+      setTasks((prev) => {
+        const i = prev.findIndex((t) => t.id === task.id);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = task;
+          return next;
+        }
+        return [task, ...prev];
+      });
+    },
+    onUpdate: (task) => {
+      setTasks((prev) => {
+        const i = prev.findIndex((t) => t.id === task.id);
+        if (i < 0) return [task, ...prev];
+        const next = [...prev];
+        next[i] = task;
+        return next;
+      });
+    },
+  });
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort(

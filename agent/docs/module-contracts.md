@@ -198,7 +198,7 @@ verifyConnection(): Promise<boolean>     // Throws on failure
 
 // PC registration
 getPcId(pcNumber: string): Promise<string>
-  // pcNumber format: "PC00"–"PC99"
+  // pcNumber format: "PC-02"–"PC99"
   // Sets this.pcId; upserts row in pcs table
 updatePcStatus(
   pcId: string,
