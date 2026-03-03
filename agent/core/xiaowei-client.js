@@ -213,6 +213,16 @@ class XiaoweiClient extends EventEmitter {
           return;
         }
       }
+      // clientRequestId present but unmatched - log and skip fallback to prevent stale/queued responses
+      // from incorrectly resolving unrelated pending requests
+      console.warn("[Xiaowei] response_unmatched", {
+        reason: "clientRequestId_mismatch",
+        responseAction: this._extractResponseAction(msg),
+        responseDevices: this._extractResponseDevices(msg),
+        responseClientRequestId: echoedId,
+        pendingRequestIds: Array.from(this._pendingRequests.values()).map(p => p.clientRequestId),
+      });
+      return;
     }
 
     const candidates = [];
