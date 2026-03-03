@@ -3,7 +3,6 @@
  * Monitors and automatically reconnects disconnected ADB TCP devices
  * Tracks failure counts and flags persistently dead devices
  */
-const sleepLib = require('../lib/sleep');
 
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
@@ -194,67 +193,13 @@ class AdbReconnectManager {
    */
   async reconnectDevice(serial) {
     let success = false;
+    let lastFailure = { command: null, code: undefined, msg: "", output: "" };
 
     // IP:PORT 형식이면 시리얼에서 직접 추출 (TCP/IP 연결 기기)
     let ip = null;
     if (serial && /^[^:]+:\d+$/.test(serial)) {
       const idx = serial.lastIndexOf(":");
       ip = serial.substring(0, idx);
-    }
-    if (!ip) ip = await this._getDeviceIp(serial);
-
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
-      try {
-        console.log(
-          `[ADB Reconnect] ${serial} - attempt ${attempt}/${this.maxRetries}${ip ? ` (IP: ${ip})` : ""}`,
-        );
-
-        // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
-        if (ip) {
-          try {
-            const connectResult = await Promise.race([
-              this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
-              this.timeoutPromise(this.reconnectTimeout),
-            ]);
-            const connectOut = this._extractOutput(connectResult);
-            if (
-              connectOut &&
-              (connectOut.includes("connected") ||
-                connectOut.includes("already"))
-            ) {
-              success = true;
-              console.log(
-                `[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`,
-              );
-              break;
-            }
-          } catch {}
-        }
-
-        // 방법 2: Xiaowei adb connect (기본)
-        const result = await Promise.race([
-          this.xiaowei.adb(serial, "connect"),
-          this.timeoutPromise(this.reconnectTimeout),
-        ]);
-
-        if (result && !result.error) {
-          success = true;
-          console.log(`[ADB Reconnect] ✓ ${serial} reconnected`);
-          break;
-        } else {
-          console.log(
-            `[ADB Reconnect] ✗ ${serial} attempt ${attempt} failed: ${result?.error || "unknown error"}`,
-          );
-        }
-      } catch (err) {
-        console.log(
-          `[ADB Reconnect] ✗ ${serial} attempt ${attempt} error: ${err.message}`,
-        );
-      }
-
-      if (attempt < this.maxRetries) {
-        await this.sleep(1000);
-      }
     }
 
     // Update failure tracking
@@ -421,22 +366,6 @@ class AdbReconnectManager {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Xiaowei 응답에서 텍스트 출력 추출
-   * @param {object} res
-   * @returns {string}
-   */
-  _extractOutput(res) {
-    if (!res) return "";
-    if (typeof res === "string") return res;
-    if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
-      const vals = Object.values(res.data);
-      if (vals.length > 0 && typeof vals[0] === "string") return vals[0];
-    }
-    if (res.msg) return String(res.msg);
-    return "";
   }
 
   /**

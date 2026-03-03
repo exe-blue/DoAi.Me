@@ -351,6 +351,71 @@ pm2 restart agent
 # PC02~04 순차 (전체 동시 배포 절대 금지)
 ```
 
+### Supabase 스케줄 운영 (sync-channels / dispatch-queue)
+
+> Vercel Cron 대신 Supabase 스케줄러를 사용한다. 내부 엔드포인트는 `POST /api/cron/sync-channels`, `POST /api/cron/dispatch-queue`.
+
+#### A) 신규 등록
+
+1. Vault 시크릿 등록 (Supabase SQL Editor)
+
+```sql
+select vault.create_secret('https://YOUR-DOMAIN', 'app_base_url');
+select vault.create_secret('YOUR_SUPABASE_SCHEDULE_JWT', 'app_schedule_jwt');
+```
+
+2. 마이그레이션 적용
+
+```bash
+supabase db push
+```
+
+3. 등록 확인
+
+```sql
+select jobid, jobname, schedule, command
+from cron.job
+where jobname in ('sync-channels-every-minute', 'dispatch-queue-every-minute')
+order by jobname;
+```
+
+4. 실행 로그 확인
+
+```sql
+select jobid, status, start_time, end_time, return_message
+from cron.job_run_details
+where jobid in (
+  select jobid from cron.job
+  where jobname in ('sync-channels-every-minute', 'dispatch-queue-every-minute')
+)
+order by start_time desc
+limit 20;
+```
+
+#### B) 스케줄 수정
+
+```sql
+select cron.unschedule('sync-channels-every-minute');
+select cron.schedule(
+  'sync-channels-every-minute',
+  '*/2 * * * *',
+  $$select public.invoke_app_schedule_endpoint('/api/cron/sync-channels');$$
+);
+```
+
+`dispatch-queue-every-minute`도 동일하게 unschedule → schedule 순서로 수정.
+
+#### C) 롤백
+
+```sql
+select cron.unschedule('sync-channels-every-minute');
+select cron.unschedule('dispatch-queue-every-minute');
+```
+
+롤백 후 수동 실행이 필요하면 대시보드 로그인 세션으로 아래 API를 수동 호출:
+- `POST /api/sync-channels`
+- `POST /api/dispatch-queue`
+
 ### 긴급 롤백
 
 ```powershell

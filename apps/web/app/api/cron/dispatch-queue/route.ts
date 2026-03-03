@@ -1,23 +1,35 @@
 import { NextResponse } from "next/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import { runDispatchQueue } from "@/lib/dispatch-queue-runner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-function verifyCronAuth(request: Request): boolean {
+async function verifySupabaseScheduleAuth(request: Request): Promise<boolean> {
   const authHeader = request.headers.get("authorization");
-  if (!process.env.CRON_SECRET) return true;
-  return authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  if (!authHeader?.startsWith("Bearer ")) return false;
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) return false;
+
+  const expectedSecret = process.env.SUPABASE_CRON_SECRET;
+  if (!expectedSecret) {
+    // If the cron secret is not configured, fail closed.
+    return false;
+  }
+
+  return token === expectedSecret;
 }
 
 /**
- * GET /api/cron/dispatch-queue
- * Cron: 대기열 1건을 tasks로 디스패치 (PC별 task_devices 생성 → 각 PC Agent가 영상 시청).
+ * POST /api/cron/dispatch-queue
+ * Supabase Scheduled Functions 또는 pg_cron + HTTP 호출에서 실행되는 내부 스케줄 엔드포인트.
  */
-export async function GET(request: Request) {
-  if (!verifyCronAuth(request)) {
+export async function POST(request: Request) {
+  if (!(await verifySupabaseScheduleAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
   try {
     const result = await runDispatchQueue();
     if (!result.ok) return NextResponse.json({ error: (result as { ok: false; error: string }).error }, { status: 500 });
