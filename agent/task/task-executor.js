@@ -16,20 +16,77 @@ function _randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-/** Layer 3: run async fn up to maxAttempts times; on throw retries after short delay, then rethrows. */
-async function _withRetry(fn, maxAttempts = 3) {
-  let lastErr;
+function _isRetryableNetworkError(err) {
+  const message = String(err?.message || err || "").toLowerCase();
+  return /(timeout|timed out|econn|epipe|network|socket|websocket|disconnected|etimedout|enotfound)/.test(message);
+}
+
+function _normalizeRetrySnapshot(result) {
+  return {
+    code: result && result.code !== undefined ? result.code : undefined,
+    msg: result && result.msg != null ? String(result.msg) : "",
+    output: _extractShellOutput(result),
+  };
+}
+
+function expectNonEmptyOutput(result) {
+  return _extractShellOutput(result).trim().length > 0;
+}
+
+/**
+ * Layer 3: run async fn up to maxAttempts times with Xiaowei-aware retry policy.
+ * Retryable: network/timeout errors, queued=true, code!==10000, validator failure.
+ */
+async function _withRetry(fn, { maxAttempts = 3, serial = "", command = "", validator = null } = {}) {
+  let lastError = null;
+  let lastSnapshot = { code: undefined, msg: "", output: "" };
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (attempt < maxAttempts) {
-        await sleep(500 * attempt);
+      const result = await fn();
+      lastSnapshot = _normalizeRetrySnapshot(result);
+
+      const isQueued = result && result.queued === true;
+      const hasCode = result && result.code !== undefined;
+      const codeFailed = hasCode && Number(result.code) !== 10000;
+      const validatorFailed = typeof validator === "function" && !validator(result);
+
+      if (!isQueued && !codeFailed && !validatorFailed) {
+        return result;
       }
+
+      lastError = new Error(
+        isQueued
+          ? "queued response"
+          : codeFailed
+            ? `unexpected code=${result.code}`
+            : "validator failed"
+      );
+    } catch (err) {
+      if (!_isRetryableNetworkError(err)) {
+        throw err;
+      }
+      lastError = err;
+      lastSnapshot = {
+        code: undefined,
+        msg: err?.message ? String(err.message) : "",
+        output: "",
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      const base = lastSnapshot.msg === "queued response" ? 200 : 500;
+      await sleep(base * attempt);
     }
   }
-  throw lastErr;
+
+  const fail = new Error(
+    `Retry exceeded serial=${serial} command=${JSON.stringify(command)} ` +
+      `last_code=${lastSnapshot.code ?? "n/a"} last_msg=${JSON.stringify(lastSnapshot.msg || "")} ` +
+      `last_output=${JSON.stringify((lastSnapshot.output || "").substring(0, 300))}`
+  );
+  if (lastError) fail.cause = lastError;
+  throw fail;
 }
 
 /** YouTube UI 요소 (resource-id / content-desc). docs/youtube-ui-objects.md 참고. */
@@ -288,8 +345,13 @@ class TaskExecutor {
   /**
    * Layer 3: adbShell with up to 3 retries on failure (무응답/에러 시 재시도).
    */
-  async _adbShellWithRetry(serial, command, maxAttempts = 3) {
-    return _withRetry(() => this.xiaowei.adbShell(serial, command), maxAttempts);
+  async _adbShellWithRetry(serial, command, maxAttempts = 3, validator = null) {
+    return _withRetry(() => this.xiaowei.adbShell(serial, command), {
+      maxAttempts,
+      serial,
+      command,
+      validator,
+    });
   }
 
   async _updateTaskDevice(id, status, extra = {}) {
@@ -630,8 +692,6 @@ class TaskExecutor {
    */
   async _getScreenSize(serial) {
     try {
-      const res = await this.xiaowei.adbShell(serial, "wm size");
-      const output = extractDeviceOutput(res);
       const match = output && output.match(/(\d+)x(\d+)/);
       if (match) {
         return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
