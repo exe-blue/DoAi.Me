@@ -317,6 +317,11 @@ class TaskExecutor {
           adb_reason: err?.adbReason ?? null,
           phase: err?.adbContext?.phase ?? null,
         },
+        // Clear claim fields when reverting to queued (like fail_or_retry_task_device RPC)
+        ...(finalStatus === "queued" && {
+          claimed_by_pc_id: null,
+          lease_expires_at: null,
+        }),
       });
     } finally {
       this._jobRunning.delete(taskDevice.id);
