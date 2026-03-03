@@ -11,6 +11,7 @@ interface WorkersResponse {
   workers?: Array<{
     id: string;
     pc_number?: string;
+    worker_name?: string;
     hostname?: string;
     status?: string;
     last_heartbeat?: string | null;
@@ -34,7 +35,8 @@ export async function getWorkers(): Promise<WorkerSummary[]> {
   if (!res.success || !res.data?.workers) return [];
   return res.data.workers.map((w) => ({
     id: w.id,
-    pc_number: w.pc_number ?? w.hostname ?? w.id,
+    worker_name: w.worker_name ?? w.pc_number ?? w.hostname ?? w.id,
+    pc_number: w.pc_number,
     hostname: w.hostname,
     status: w.status ?? "offline",
     last_heartbeat: w.last_heartbeat ?? null,
@@ -48,14 +50,14 @@ export async function getDevices(params?: {
   page?: number;
   pageSize?: number;
   status?: string;
-  pc_id?: string;
+  worker_id?: string;
   q?: string;
 }): Promise<{ data: DeviceSummary[]; total: number }> {
   const search = new URLSearchParams();
   if (params?.page != null) search.set("page", String(params.page));
   if (params?.pageSize != null) search.set("pageSize", String(params.pageSize));
   if (params?.status) search.set("status", params.status);
-  if (params?.pc_id) search.set("pc_id", params.pc_id);
+  if (params?.worker_id) search.set("worker_id", params.worker_id);
   if (params?.q) search.set("q", params.q);
   const qs = search.toString();
   const url = qs ? `/api/devices?${qs}` : "/api/devices";

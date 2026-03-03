@@ -6,7 +6,8 @@
 // --- Operations ---
 export interface WorkerSummary {
   id: string;
-  pc_number: string;
+  worker_name: string;
+  pc_number?: string;
   hostname?: string;
   status: string;
   last_heartbeat: string | null;
@@ -17,9 +18,7 @@ export interface WorkerSummary {
 
 export interface DeviceSummary {
   id: string;
-  serial_number?: string;
   serial?: string;
-  connection_id?: string;
   status: string;
   worker_id?: string;
   nickname?: string | null;

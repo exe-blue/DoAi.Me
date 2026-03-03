@@ -7,31 +7,16 @@ export async function GET() {
   try {
     const supabase = getServerClient();
 
-    type PcRow = { id: string; pc_number: string | null; hostname: string | null; status: string | null; last_heartbeat: string | null };
-    let workersList: Array<{ id: string; name: string; status: string; last_heartbeat: string | null }> = [];
-    const { data: pcsData, error: pcsError } = await (supabase as any)
-      .from("pcs")
-      .select("id, pc_number, hostname, status, last_heartbeat") as { data: PcRow[] | null; error: unknown };
-
-    if (!pcsError && pcsData?.length) {
-      workersList = pcsData.map((p) => ({
-        id: p.id,
-        name: p.pc_number ?? p.hostname ?? "",
-        status: p.status ?? "offline",
-        last_heartbeat: p.last_heartbeat,
-      }));
-    } else {
-      const { data: workersData, error: workersError } = await supabase
-        .from("workers")
-        .select("id, display_name, hostname, status, last_heartbeat");
-      if (workersError) throw workersError;
-      workersList = (workersData ?? []).map((w) => ({
-        id: w.id,
-        name: w.display_name ?? w.hostname ?? "",
-        status: w.status ?? "offline",
-        last_heartbeat: w.last_heartbeat,
-      }));
-    }
+    const { data: workersData, error: workersError } = await supabase
+      .from("workers")
+      .select("id, display_name, hostname, status, last_heartbeat");
+    if (workersError) throw workersError;
+    const workersList: Array<{ id: string; name: string; status: string; last_heartbeat: string | null }> = (workersData ?? []).map((w) => ({
+      id: w.id,
+      name: w.display_name ?? w.hostname ?? "",
+      status: w.status ?? "offline",
+      last_heartbeat: w.last_heartbeat,
+    }));
 
     const onlineWorker = workersList.find((w) => w.status === "online") ?? workersList[0] ?? null;
 

@@ -272,7 +272,7 @@ type TaskWithDevicesOptions = {
   workflowId?: string | null;
   workflowVersion?: string | null;
   inputs?: Record<string, unknown> | null;
-  deviceIds?: Array<{ id: string; serial: string; pc_id: string }>;
+  deviceIds?: Array<{ id: string; serial: string; worker_id: string }>;
 };
 
 export async function createTaskWithTaskDevices(options: TaskWithDevicesOptions) {

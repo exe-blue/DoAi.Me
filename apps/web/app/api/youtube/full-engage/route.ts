@@ -8,7 +8,7 @@ type FullEngageBody = {
   comment_text?: string | null;
   subscribe?: boolean;
   device_count?: number;
-  pc_id?: string;
+  worker_id?: string;
 };
 
 /**
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       comment_text,
       subscribe = false,
       device_count = 20,
-      pc_id,
+      worker_id,
     } = body;
 
     const commands: { action: string; params?: Record<string, unknown>; failStop?: boolean }[] = [
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         device_count,
         payload,
         status: "pending",
-        ...(pc_id ? { pc_id } : {}),
+        ...(worker_id ? { worker_id } : {}),
       } as any)
       .select("id, status, created_at")
       .single();

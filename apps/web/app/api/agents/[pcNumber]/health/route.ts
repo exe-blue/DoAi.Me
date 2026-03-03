@@ -3,11 +3,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type PcRow = { id: string; last_heartbeat: string | null; status: string | null };
+type WorkerRow = { id: string; hostname: string; last_heartbeat: string | null; status: string | null };
 
 /**
  * GET /api/agents/[pcNumber]/health
- * Returns last heartbeat and device count for the given PC (e.g. PC00).
+ * Returns last heartbeat and device count for the given worker hostname (legacy param name pcNumber).
  * Used by PM2 health-check script or dashboard for server-side monitoring.
  */
 export async function GET(
@@ -19,14 +19,14 @@ export async function GET(
     const supabase = createSupabaseServerClient();
 
     const { data: pc, error } = await (supabase as any)
-      .from("pcs")
-      .select("id, last_heartbeat, status")
-      .eq("pc_number", pcNumber)
-      .maybeSingle() as { data: PcRow | null; error: unknown };
+      .from("workers")
+      .select("id, hostname, last_heartbeat, status")
+      .eq("hostname", pcNumber)
+      .maybeSingle() as { data: WorkerRow | null; error: unknown };
 
     if (error || !pc) {
       return NextResponse.json(
-        { ok: false, error: "PC not found", pcNumber },
+        { ok: false, error: "Worker not found", pcNumber },
         { status: 404 }
       );
     }
@@ -39,7 +39,7 @@ export async function GET(
     const { count } = await (supabase as any)
       .from("devices")
       .select("id", { count: "exact", head: true })
-      .eq("pc_id", pc.id);
+      .eq("worker_id", pc.id);
 
     return NextResponse.json({
       ok,

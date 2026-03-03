@@ -69,7 +69,7 @@ export const taskUpdateSchema = z.object({
 // Quick task creation (YouTube URL → 1 device)
 export const quickTaskCreateSchema = z.object({
   youtube_url: z.string().url("Invalid YouTube URL"),
-  pc_id: z.string().uuid("Invalid PC ID"),
+  worker_id: z.string().uuid("Invalid Worker ID"),
 });
 
 // Worker heartbeat schema

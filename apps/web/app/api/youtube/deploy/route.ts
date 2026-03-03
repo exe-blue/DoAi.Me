@@ -6,8 +6,8 @@
  *
  * POST /api/youtube/deploy
  * {
- *   "pc_id": "uuid",                         // required for resolving target devices
- *   "devices": "optional comma list",        // omit to use all online/busy for pc_id
+ *   "worker_id": "uuid",                         // required for resolving target devices
+ *   "devices": "optional comma list",        // omit to use all online/busy for worker_id
  *   "local_path": "./scripts/youtube_commander.js",
  *   "remote_path": "/sdcard/scripts/youtube_commander.js"
  * }
@@ -26,7 +26,7 @@ const DEFAULT_REMOTE_DIR = "/sdcard/scripts/";
 
 async function resolveTargetDevices(
   supabase: ReturnType<typeof createSupabaseServerClient>,
-  pc_id: string | null,
+  worker_id: string | null,
   devicesHint?: string,
 ): Promise<{ target_devices: string[]; devicesLabel: string }> {
   if (devicesHint && devicesHint !== "all") {
@@ -36,15 +36,15 @@ async function resolveTargetDevices(
       .filter(Boolean);
     return { target_devices: list, devicesLabel: devicesHint };
   }
-  if (!pc_id) return { target_devices: [], devicesLabel: "" };
+  if (!worker_id) return { target_devices: [], devicesLabel: "" };
   const { data: rawData } = await (supabase as any)
     .from("devices")
-    .select("serial, connection_id")
-    .eq("pc_id", pc_id)
+    .select("serial")
+    .eq("worker_id", worker_id)
     .in("status", ["online", "busy"]);
-  const data = rawData as Array<{ serial: string | null; connection_id: string | null }> | null;
+  const data = rawData as Array<{ serial: string | null }> | null;
   const targets = (data || [])
-    .map((d) => d.connection_id || d.serial)
+    .map((d) => d.serial)
     .filter(Boolean);
   return { target_devices: targets, devicesLabel: targets.join(",") };
 }
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const supabase = createSupabaseServerClient();
     const body = await req.json();
     const {
-      pc_id = null,
+      worker_id = null,
       devices: devicesHint,
       script_name,
       local_path,
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     const { target_devices, devicesLabel } = await resolveTargetDevices(
       supabase,
-      pc_id ?? null,
+      worker_id ?? null,
       devicesHint,
     );
     if (
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error:
-            "No target devices (pc_id required with online/busy devices, or pass devices list)",
+            "No target devices (worker_id required with online/busy devices, or pass devices list)",
         },
         { status: 400 },
       );
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
         type: "youtube",
         task_type: "upload_file",
         status: "pending",
-        pc_id: pc_id || null,
+        worker_id: worker_id || null,
         payload: {
           devices: devicesLabel,
           local_path: lPath,
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
         type: "youtube",
         task_type: "upload_file",
         status: "pending",
-        pc_id: pc_id || null,
+        worker_id: worker_id || null,
         payload: {
           devices: devicesLabel,
           local_path: resolvedLocalPath,
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
         local_path: resolvedLocalPath,
         remote_path: resolvedRemotePath,
         devices: devicesLabel,
-        pc_id,
+        worker_id,
       },
     });
   } catch (err) {

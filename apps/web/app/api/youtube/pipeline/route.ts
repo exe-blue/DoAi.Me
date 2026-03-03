@@ -17,7 +17,7 @@ type PipelineBody = {
   step_delay?: number;
   devices?: string;
   device_count?: number;
-  pc_id?: string;
+  worker_id?: string;
 };
 
 /**
@@ -26,7 +26,7 @@ type PipelineBody = {
  */
 async function resolveTargetDevices(
   supabase: ReturnType<typeof createSupabaseServerClient>,
-  pc_id: string | null,
+  worker_id: string | null,
   devicesHint?: string,
 ): Promise<{ target_devices: string[]; devicesLabel: string }> {
   if (devicesHint && devicesHint !== "all") {
@@ -36,17 +36,17 @@ async function resolveTargetDevices(
       .filter(Boolean);
     return { target_devices: list, devicesLabel: devicesHint };
   }
-  if (!pc_id) {
+  if (!worker_id) {
     return { target_devices: [], devicesLabel: "" };
   }
   const { data: rawData } = await (supabase as any)
     .from("devices")
-    .select("serial, connection_id")
-    .eq("pc_id", pc_id)
+    .select("serial")
+    .eq("worker_id", worker_id)
     .in("status", ["online", "busy"]);
-  const data = rawData as Array<{ serial: string | null; connection_id: string | null }> | null;
+  const data = rawData as Array<{ serial: string | null }> | null;
   const targets = (data || [])
-    .map((d) => d.connection_id || d.serial)
+    .map((d) => d.serial)
     .filter(Boolean);
   return { target_devices: targets, devicesLabel: targets.join(",") };
 }
@@ -54,7 +54,7 @@ async function resolveTargetDevices(
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as PipelineBody;
-    const { commands, step_delay = 500, devices: devicesHint, pc_id } = body;
+    const { commands, step_delay = 500, devices: devicesHint, worker_id } = body;
 
     if (!Array.isArray(commands) || commands.length === 0) {
       return NextResponse.json(
@@ -79,14 +79,14 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseServerClient();
     const { target_devices, devicesLabel } = await resolveTargetDevices(
       supabase,
-      pc_id ?? null,
+      worker_id ?? null,
       devicesHint,
     );
     if (target_devices.length === 0) {
       return NextResponse.json(
         {
           error:
-            "No target devices (set pc_id and ensure online/busy devices, or pass devices list)",
+            "No target devices (set worker_id and ensure online/busy devices, or pass devices list)",
         },
         { status: 400 },
       );
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
         status: "pending",
         payload,
         target_devices: target_devices,
-        ...(pc_id ? { pc_id } : {}),
+        ...(worker_id ? { worker_id } : {}),
       } as any)
       .select("id, status, created_at")
       .single();
