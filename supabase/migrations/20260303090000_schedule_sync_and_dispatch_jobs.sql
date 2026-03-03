@@ -3,7 +3,14 @@
 --
 -- Required Vault secrets:
 --   - app_base_url: e.g. https://your-domain.com
---   - app_schedule_jwt: JWT used as Authorization Bearer token for /api/cron/* endpoints
+--   - app_schedule_jwt: Static shared secret (NOT a Supabase Auth JWT).
+--                       Must match the CRON_SECRET environment variable in your app.
+--                       Generate with: openssl rand -base64 32
+--
+-- Authentication mechanism:
+--   The API routes verify the Bearer token by simple string comparison with CRON_SECRET,
+--   NOT by validating it as a Supabase Auth user token. This ensures the secret won't
+--   expire and scheduled jobs won't silently fail.
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
