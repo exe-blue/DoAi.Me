@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runDispatchQueue } from "@/lib/dispatch-queue-runner";
+import { timingSafeEqual } from "crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -22,7 +23,15 @@ function verifyCronAuth(request: Request): boolean {
   }
 
   // Use constant-time comparison to prevent timing attacks
-  return providedSecret === expectedSecret;
+  try {
+    return timingSafeEqual(
+      Buffer.from(providedSecret),
+      Buffer.from(expectedSecret)
+    );
+  } catch {
+    // Lengths don't match or other error
+    return false;
+  }
 }
 
 /**
