@@ -8,6 +8,8 @@
  *   3. updateLoginStatus() — update DB with verification results
  */
 
+const { extractDeviceOutput } = require("../lib/xiaowei-response");
+
 class AccountManager {
   /**
    * @param {import('./xiaowei-client')} xiaowei
@@ -103,7 +105,7 @@ class AccountManager {
         serial,
         "dumpsys account | grep -A1 'Account {' | grep -i com.google"
       );
-      const output = _extractAdbOutput(resp);
+      const output = extractDeviceOutput(resp);
 
       if (output) {
         // Extract email from output like: "Account {name=user@gmail.com, type=com.google}"
@@ -120,14 +122,14 @@ class AccountManager {
           serial,
           "pm list packages | grep com.google.android.youtube"
         );
-        const ytOutput = _extractAdbOutput(ytResp);
+        const ytOutput = extractDeviceOutput(ytResp);
         if (ytOutput && ytOutput.includes("com.google.android.youtube")) {
           // YouTube is installed; check for sign-in via shared_prefs
           const prefResp = await this.xiaowei.adbShell(
             serial,
             "ls /data/data/com.google.android.youtube/shared_prefs/ 2>/dev/null | head -5"
           );
-          const prefOutput = _extractAdbOutput(prefResp);
+          const prefOutput = extractDeviceOutput(prefResp);
           // If there are account-related prefs, user is likely logged in
           if (prefOutput && prefOutput.includes("auth")) {
             result.loggedIn = true;
@@ -223,20 +225,6 @@ class AccountManager {
       console.error(`[Account] Failed to update last_login for ${accountId}: ${error.message}`);
     }
   }
-}
-
-/**
- * Extract clean text output from Xiaowei adbShell response.
- * @param {object} response
- * @returns {string|null}
- */
-function _extractAdbOutput(response) {
-  if (!response) return null;
-  if (typeof response === "string") return response.trim();
-  const text = response.output || response.result || response.data || response.stdout;
-  if (typeof text === "string") return text.trim();
-  if (Array.isArray(response)) return response.join("\n").trim();
-  return null;
 }
 
 module.exports = AccountManager;

@@ -16,6 +16,7 @@
  */
 
 const FAIL_THRESHOLD = 3; // Mark proxy invalid after this many consecutive failures
+const { extractDeviceOutput } = require("../lib/xiaowei-response");
 
 class ProxyManager {
   /**
@@ -211,10 +212,10 @@ class ProxyManager {
 
     try {
       const proxyResp = await this.xiaowei.adbShell(serial, "settings get global http_proxy");
-      result.currentProxy = _extractAdbOutput(proxyResp);
+      result.currentProxy = extractDeviceOutput(proxyResp);
 
       const ipResp = await this.xiaowei.adbShell(serial, "curl -s --max-time 10 https://ipinfo.io/ip");
-      result.externalIp = _extractAdbOutput(ipResp);
+      result.externalIp = extractDeviceOutput(ipResp);
 
       const proxy = this.assignments.get(serial);
       if (proxy && result.currentProxy) {
@@ -560,18 +561,6 @@ class ProxyManager {
         { assigned, applied, total: proxyIds.length });
     }
   }
-}
-
-/**
- * Extract clean text output from Xiaowei adbShell response.
- */
-function _extractAdbOutput(response) {
-  if (!response) return null;
-  if (typeof response === "string") return response.trim();
-  const text = response.output || response.result || response.data || response.stdout;
-  if (typeof text === "string") return text.trim();
-  if (Array.isArray(response)) return response.join("\n").trim();
-  return null;
 }
 
 module.exports = ProxyManager;

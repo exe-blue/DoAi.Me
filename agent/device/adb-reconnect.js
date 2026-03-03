@@ -4,6 +4,7 @@
  * Tracks failure counts and flags persistently dead devices
  */
 const sleepLib = require('../lib/sleep');
+const { extractDeviceOutput } = require('../lib/xiaowei-response');
 
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
@@ -216,7 +217,7 @@ class AdbReconnectManager {
               this.xiaowei.adbShell(serial, `connect ${ip}:5555`),
               this.timeoutPromise(this.reconnectTimeout),
             ]);
-            const connectOut = this._extractOutput(connectResult);
+            const connectOut = extractDeviceOutput(connectResult, serial);
             if (
               connectOut &&
               (connectOut.includes("connected") ||
@@ -421,22 +422,6 @@ class AdbReconnectManager {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Xiaowei 응답에서 텍스트 출력 추출
-   * @param {object} res
-   * @returns {string}
-   */
-  _extractOutput(res) {
-    if (!res) return "";
-    if (typeof res === "string") return res;
-    if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
-      const vals = Object.values(res.data);
-      if (vals.length > 0 && typeof vals[0] === "string") return vals[0];
-    }
-    if (res.msg) return String(res.msg);
-    return "";
   }
 
   /**
