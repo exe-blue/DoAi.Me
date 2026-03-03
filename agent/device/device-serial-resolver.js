@@ -7,6 +7,7 @@
 const SERIALNO_PROP = "ro.serialno";
 const RIL_SERIAL_PROP = "ril.serialnumber";
 const RESOLVE_TIMEOUT_MS = 5000;
+const { extractDeviceOutput } = require("../lib/xiaowei-response");
 
 function isIpPortIdentifier(deviceId) {
   if (!deviceId || typeof deviceId !== "string") return false;
@@ -17,19 +18,6 @@ function isIpPortIdentifier(deviceId) {
   const port = parseInt(parts[1], 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
   return true;
-}
-
-function extractSerialFromResponse(response) {
-  if (!response) return null;
-  let raw = null;
-  if (typeof response.data === "string") raw = response.data;
-  else if (response.data && typeof response.data.result === "string") raw = response.data.result;
-  else if (response.data && typeof response.data === "object") {
-    raw = response.data.result ?? response.data.data ?? response.data.output ?? null;
-  }
-  if (raw == null) return null;
-  const s = String(raw).trim();
-  return s.length > 0 ? s : null;
 }
 
 /**
@@ -50,7 +38,7 @@ async function resolveHardwareSerial(xiaowei, deviceId) {
           setTimeout(() => rej(new Error("timeout")), RESOLVE_TIMEOUT_MS)
         ),
       ]);
-      const serial = extractSerialFromResponse(res);
+      const serial = extractDeviceOutput(res, deviceId) || extractDeviceOutput(res);
       if (serial) return serial;
     } catch (_) {
       continue;
@@ -89,5 +77,4 @@ module.exports = {
   isIpPortIdentifier,
   resolveHardwareSerial,
   resolveHardwareSerialsForList,
-  extractSerialFromResponse,
 };

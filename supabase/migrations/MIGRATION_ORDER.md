@@ -38,3 +38,4 @@ Migrations in `supabase/migrations` listed by filename; apply in this order.
 - `20260301000004_device_insert_pending_only.sql` — fn_add_task_device_for_new_device pending only (late-join policy A)
 - `20260301000005_sync_lock_rpc.sql` — try_sync_lock / release_sync_lock
 - `20260301000006_dequeue_order_oldest_first.sql` — dequeue_task_queue_item 정렬을 created_at ASC + order_key ASC로 고정
+- `20260303090000_schedule_sync_and_dispatch_jobs.sql` — Supabase pg_cron으로 sync-channels/dispatch-queue 스케줄 등록

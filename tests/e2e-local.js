@@ -29,11 +29,18 @@ const BASE_URL =
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
   "http://localhost:3000";
 
-const noCleanup = process.argv.includes("--no-cleanup");
-
-async function fetchOk(url, options = {}) {
-  const res = await fetch(url, { ...options, redirect: "manual" });
-  return res.status >= 200 && res.status < 400;
+async function fetchOk(url) {
+  return new Promise((resolve) => {
+    const lib = url.startsWith("https") ? require("https") : require("http");
+    const req = lib.get(url, { timeout: 10000 }, (res) => {
+      resolve(res.statusCode >= 200 && res.statusCode < 400);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
 }
 
 async function main() {

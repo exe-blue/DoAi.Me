@@ -7,6 +7,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:e2e": "pnpm --filter @doai/web run test:e2e",
     "typecheck": "turbo run typecheck",
     "dist": "pnpm --filter doaime-desktop dist"
   },

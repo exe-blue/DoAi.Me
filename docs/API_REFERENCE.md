@@ -2,7 +2,7 @@
 
 > 최종 수정: 2026-02-26  
 > Stack: Next.js App Router (Vercel Serverless)  
-> Auth: Supabase Session / x-api-key / Bearer (CRON)
+> Auth: Supabase Session / x-api-key / Supabase Scheduler JWT (internal cron)
 
 ---
 
@@ -12,7 +12,7 @@
 |------|--------|------|
 | **Session** | 대부분의 API | Supabase Auth 세션 (쿠키) |
 | **x-api-key** | `/api/tasks` POST 등 | Agent/외부가 API Key로 호출 |
-| **Bearer** | `/api/cron/*` | `Authorization: Bearer ${CRON_SECRET}` (Vercel Cron) |
+| **Bearer (internal)** | `/api/cron/*` | `Authorization: Bearer ${APP_SCHEDULE_JWT}` (Supabase Scheduler / pg_cron) |
 | **None** | `/api/health`, `/api/commands/presets` | 인증 불필요 |
 
 ---
@@ -209,12 +209,12 @@
 | POST | `/api/commands` | 명령 생성 (target_type, target_serials, command 등) | Session |
 | GET | `/api/commands/[id]` | 명령 로그 상세 | Session |
 
-### 크론 (Bearer)
+### 내부 스케줄 엔드포인트 (Supabase Scheduler JWT)
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/api/cron/sync-channels` | 채널 자동 동기화 (1분 주기) |
-| GET | `/api/cron/dispatch-queue` | 큐 디스패치 |
+| POST | `/api/cron/sync-channels` | 채널 자동 동기화 (1분 주기) |
+| POST | `/api/cron/dispatch-queue` | 큐 디스패치 |
 
 ### 앱에서 호출하는 동기화·디스패치
 
@@ -249,4 +249,4 @@
 | 구분 | 엔드포인트 수 (대략) |
 |------|----------------------|
 | 메인 앱 (`app/api/`) | 70+ |
-| 인증 | Session 기본, x-api-key(tasks 등), Bearer(cron) |
+| 인증 | Session 기본, x-api-key(tasks 등), Bearer(internal scheduler) |
