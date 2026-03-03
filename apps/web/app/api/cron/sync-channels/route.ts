@@ -1,6 +1,6 @@
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { runSyncChannels } from "@/lib/sync-channels-runner";
-import { timingSafeEqual } from "crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

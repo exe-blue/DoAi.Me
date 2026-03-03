@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/lib/supabase/server";
-import { runDispatchQueue } from "@/lib/dispatch-queue-runner";
 import { timingSafeEqual } from "crypto";
+import { NextResponse } from "next/server";
+import { runDispatchQueue } from "@/lib/dispatch-queue-runner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
