@@ -141,6 +141,18 @@ updateDevices(devices: string, data: object): Promise<object>
 | `"error"` | `Error` | WebSocket `error` fires |
 | `"response"` | `object` | Every parsed inbound message |
 
+
+
+**동시성 응답 매칭 보장 방식 (Concurrency Response Matching):**
+
+- `send()`는 모든 outbound payload에 고유 `requestId`를 자동 주입한다.
+- 수신 응답에서 `requestId`가 존재하면 해당 `pending` 엔트리를 **우선** resolve/reject 한다.
+- 응답이 `status=error|failed`, `code>=400`, `success=false` 중 하나면 reject 처리한다.
+- 구버전 Xiaowei 서버처럼 `requestId`를 에코하지 않는 경우, 다음 fallback 순서로 매칭한다.
+  1. `action` + `devices`가 일치하는 pending 중 가장 먼저 보낸 요청
+  2. 위 조건이 없으면 단일 in-flight/최오래된 요청(oldest pending)
+- 이 fallback은 레거시 호환용이며, 동시 다발 요청 안전성은 `requestId` 에코를 지원하는 서버에서 가장 강하게 보장된다.
+
 **Usage in `agent.js`:**
 
 ```js
