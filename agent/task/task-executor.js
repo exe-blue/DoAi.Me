@@ -5,19 +5,10 @@
 const path = require("path");
 const CommentGenerator = require("../setup/comment-generator");
 const sleep = require("../lib/sleep");
+const { extractDeviceOutput, summarizeResponse } = require("../lib/xiaowei-response");
 
 function _escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Extract shell command output from Xiaowei adbShell response (code, msg, data, stdout). */
-function _extractShellOutput(res) {
-  if (res == null) return "";
-  if (typeof res === "string") return res;
-  if (res.data != null) return Array.isArray(res.data) ? (res.data[0] != null ? String(res.data[0]) : "") : String(res.data);
-  if (res.msg != null) return String(res.msg);
-  if (res.stdout != null) return String(res.stdout);
-  return String(res);
 }
 
 /** Random int [min, max] inclusive */
@@ -549,11 +540,11 @@ class TaskExecutor {
       await sleep(POLL_MS);
       try {
         const statRes = await this.xiaowei.adbShell(serial, `stat -c %Y ${DUMP_PATH} 2>/dev/null || echo 0`);
-        const mtimeSec = parseInt(_extractShellOutput(statRes), 10) || 0;
+        const mtimeSec = parseInt(extractDeviceOutput(statRes), 10) || 0;
         const mtimeMs = mtimeSec * 1000;
         if (mtimeMs > 0 && Date.now() - mtimeMs < FRESHNESS_MS) {
           const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
-          const xml = _extractShellOutput(dumpRes);
+          const xml = extractDeviceOutput(dumpRes);
           if (xml && xml.length > 100) return xml;
           lastXml = xml || "";
         }
@@ -563,7 +554,7 @@ class TaskExecutor {
     }
     try {
       const dumpRes = await this.xiaowei.adbShell(serial, `cat ${DUMP_PATH}`);
-      lastXml = _extractShellOutput(dumpRes) || lastXml;
+      lastXml = extractDeviceOutput(dumpRes) || lastXml;
     } catch {
       // keep lastXml
     }
@@ -701,8 +692,6 @@ class TaskExecutor {
    */
   async _getScreenSize(serial) {
     try {
-      const res = await this._adbShellWithRetry(serial, "wm size", 3, expectNonEmptyOutput);
-      const output = _extractShellOutput(res);
       const match = output && output.match(/(\d+)x(\d+)/);
       if (match) {
         return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
@@ -762,7 +751,7 @@ class TaskExecutor {
         serial,
         `am broadcast -a ADB_INPUT_B64 --es msg '${encoded}' 2>/dev/null`
       );
-      const output = _extractShellOutput(res);
+      const output = extractDeviceOutput(res);
       if (output && output.includes("result=0")) return;
     } catch {
       // fallback
@@ -842,7 +831,7 @@ class TaskExecutor {
     } catch (err) {
       try {
         const res = await this.xiaowei.adbShell(serial, "dumpsys media_session | grep -E 'state='");
-        const output = _extractShellOutput(res);
+        const output = extractDeviceOutput(res);
         if (output && output.includes("state=2")) {
           await this._findAndTap(serial, YT.PLAYER, 0);
           await sleep(500);
@@ -1598,17 +1587,7 @@ class TaskExecutor {
  * @returns {string|null}
  */
 function _extractResponseSummary(result) {
-  if (!result) return null;
-  if (typeof result === "string") return result.substring(0, 100);
-
-  // Common Xiaowei response patterns
-  if (result.msg) return String(result.msg).substring(0, 100);
-  if (result.message) return String(result.message).substring(0, 100);
-  if (result.status) return `status=${result.status}`;
-  if (result.code !== undefined) return `code=${result.code}`;
-  if (result.success !== undefined) return result.success ? "success=true" : "success=false";
-
-  return null;
+  return summarizeResponse(result);
 }
 
 module.exports = TaskExecutor;

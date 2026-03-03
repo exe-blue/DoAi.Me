@@ -3,18 +3,6 @@
  * Monitors and automatically reconnects disconnected ADB TCP devices
  * Tracks failure counts and flags persistently dead devices
  */
-const sleepLib = require('../lib/sleep');
-
-function isRetryableNetworkError(err) {
-  const message = String(err?.message || err || "").toLowerCase();
-  return /(timeout|timed out|econn|epipe|network|socket|websocket|disconnected|etimedout|enotfound)/.test(message);
-}
-
-function expectConnectOutput(result) {
-  if (!result) return false;
-  const text = String(result.output || result.msg || "").toLowerCase();
-  return text.includes("connected") || text.includes("already");
-}
 
 class AdbReconnectManager {
   constructor(xiaowei, supabaseSync, broadcaster, config) {
@@ -213,100 +201,6 @@ class AdbReconnectManager {
       const idx = serial.lastIndexOf(":");
       ip = serial.substring(0, idx);
     }
-    if (!ip) ip = await this._getDeviceIp(serial);
-
-    const runReconnectWithRetry = async ({ command, fn, validator = null }) => {
-      const maxAttempts = this.maxRetries;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const result = await Promise.race([
-            fn(),
-            this.timeoutPromise(this.reconnectTimeout),
-          ]);
-
-          lastFailure = {
-            command,
-            code: result && result.code !== undefined ? result.code : undefined,
-            msg: result?.msg ? String(result.msg) : "",
-            output: this._extractOutput(result),
-          };
-
-          const isQueued = result && result.queued === true;
-          const hasCode = result && result.code !== undefined;
-          const codeFailed = hasCode && Number(result.code) !== 10000;
-          const validatorFailed = typeof validator === "function" && !validator({
-            output: this._extractOutput(result),
-            msg: result?.msg,
-            code: result?.code,
-          });
-
-          if (!isQueued && !codeFailed && !validatorFailed) {
-            return result;
-          }
-
-          lastFailure.msg =
-            isQueued
-              ? "queued response"
-              : codeFailed
-                ? `unexpected code=${result.code}`
-                : "validator failed";
-        } catch (err) {
-          if (!isRetryableNetworkError(err)) {
-            throw err;
-          }
-          lastFailure = {
-            command,
-            code: undefined,
-            msg: err?.message ? String(err.message) : "",
-            output: "",
-          };
-        }
-
-        if (attempt < maxAttempts) {
-          const delayMs = lastFailure.msg === "queued response" ? 200 * attempt : 500 * attempt;
-          await this.sleep(delayMs);
-        }
-      }
-
-      throw new Error(
-        `Retry exceeded serial=${serial} command=${JSON.stringify(command)} ` +
-          `last_code=${lastFailure.code ?? "n/a"} last_msg=${JSON.stringify(lastFailure.msg || "")} ` +
-          `last_output=${JSON.stringify((lastFailure.output || "").substring(0, 300))}`
-      );
-    };
-
-    try {
-      console.log(
-        `[ADB Reconnect] ${serial} - reconnect start${ip ? ` (IP: ${ip})` : ""}`,
-      );
-
-      // 방법 1: IP:5555로 adb connect (OTG 네트워크 방식)
-      if (ip) {
-        const connectCommand = `connect ${ip}:5555`;
-        await runReconnectWithRetry({
-          command: connectCommand,
-          fn: () => this.xiaowei.adbShell(serial, connectCommand),
-          validator: expectConnectOutput,
-        });
-        success = true;
-        console.log(`[ADB Reconnect] ✓ ${serial} reconnected via IP ${ip}:5555`);
-      }
-
-      // 방법 2: Xiaowei adb connect (기본)
-      if (!success) {
-        const result = await runReconnectWithRetry({
-          command: "adb connect",
-          fn: () => this.xiaowei.adb(serial, "connect"),
-          validator: (res) => !res?.error,
-        });
-        if (result && !result.error) {
-          success = true;
-          console.log(`[ADB Reconnect] ✓ ${serial} reconnected`);
-        }
-      }
-    } catch (err) {
-      console.log(`[ADB Reconnect] ✗ ${serial} reconnect failed: ${err.message}`);
-    }
 
     // Update failure tracking
     if (success) {
@@ -472,22 +366,6 @@ class AdbReconnectManager {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Xiaowei 응답에서 텍스트 출력 추출
-   * @param {object} res
-   * @returns {string}
-   */
-  _extractOutput(res) {
-    if (!res) return "";
-    if (typeof res === "string") return res;
-    if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
-      const vals = Object.values(res.data);
-      if (vals.length > 0 && typeof vals[0] === "string") return vals[0];
-    }
-    if (res.msg) return String(res.msg);
-    return "";
   }
 
   /**

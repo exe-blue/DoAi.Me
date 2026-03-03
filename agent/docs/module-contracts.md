@@ -5,6 +5,27 @@ Organized by subdirectory. All modules are CommonJS.
 
 ---
 
+## 표준 응답 파싱 규약 (Xiaowei)
+
+모든 Xiaowei 응답 파싱은 **반드시** `agent/lib/xiaowei-response.js`의 공통 유틸만 사용한다.
+
+- `isSuccessResponse(res)`
+  - 성공 기준은 `code === 10000`.
+  - `queued: true` 응답은 연결 끊김 시 임시 큐잉 상태로 간주하며 성공으로 처리하지 않는다.
+- `extractDeviceOutput(res, serial?)`
+  - 출력 추출 우선순서:
+    1. `data[serial]`
+    2. `data` 객체의 첫 번째 값
+    3. `data` 문자열
+    4. `stdout` → `msg` → `result` → `output`
+- `summarizeResponse(res, serial?)`
+  - 로그/에러 메시지용 짧은 요약 문자열 생성.
+
+신규 모듈에서 응답 파싱 로직(예: `_extractAdbOutput`, `_extractOutput`, `_extractResponse`)을 중복 구현하지 말고,
+기존 모듈 리팩터링 시에도 동일 유틸로 통일한다.
+
+---
+
 ## core/
 
 Three modules exported from `agent/core/index.js`. All are plain CommonJS classes. `XiaoweiClient` extends `EventEmitter`; the other two do not.
