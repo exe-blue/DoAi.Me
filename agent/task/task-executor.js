@@ -1254,9 +1254,9 @@ class TaskExecutor {
       // 3. Fetch per-device configs from task_devices
       const deviceConfigs = await this._fetchDeviceConfigs(task.id);
 
-      // 4. Execute based on task type — _dispatch logs the specific Xiaowei command
+      // 4. Execute based on task type — _executeTaskType logs the specific Xiaowei command
       const devices = this._resolveDevices(task);
-      const result = await this._dispatch(taskType, task, devices, deviceConfigs);
+      const result = await this._executeTaskType(taskType, task, devices, deviceConfigs);
       const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
       // 5. Extract response summary for logging
@@ -1388,6 +1388,12 @@ class TaskExecutor {
    * @returns {Promise<object>}
    */
   async _dispatch(taskType, task, devices, deviceConfigs) {
+    return this._executeTaskType(taskType, task, devices, deviceConfigs);
+  }
+
+  async _executeTaskType(taskType, task, devices, deviceConfigs) {
+    await this._assertXiaoweiExecutionPolicy({ taskType, taskId: task?.id, devices });
+
     const payload = task.payload || {};
     const options = {
       count: payload.count || 1,
@@ -1398,7 +1404,10 @@ class TaskExecutor {
     switch (taskType) {
       case "watch_video":
       case "view_farm":
-        return this._executeWatchVideo(devices, payload, options, deviceConfigs);
+        return this._executeWatchVideo(devices, payload, options, deviceConfigs, {
+          taskType,
+          taskId: task?.id,
+        });
 
       case "subscribe": {
         const actionName = payload.actionName || "YouTube_구독";
@@ -1413,10 +1422,10 @@ class TaskExecutor {
       }
 
       case "comment":
-        return this._executeComment(devices, payload, options);
+        return this._executeComment(devices, payload, options, { taskType, taskId: task?.id });
 
       case "custom":
-        return this._executeCustom(devices, payload, options);
+        return this._executeCustom(devices, payload, options, { taskType, taskId: task?.id });
 
       case "action":
         if (!payload.actionName) {
@@ -1486,6 +1495,14 @@ class TaskExecutor {
           throw new Error("scriptPath is required for run_script type");
         }
         const runScriptPath = this._resolveScriptPath(payload.scriptPath);
+        await this._assertXiaoweiExecutionPolicy({
+          taskType,
+          taskId: task?.id,
+          devices,
+          callType: "autojsCreate",
+          scriptPath: payload.scriptPath,
+          resolvedScriptPath: runScriptPath,
+        });
         console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
         return this.xiaowei.autojsCreate(devices, runScriptPath, options);
 
@@ -1501,7 +1518,14 @@ class TaskExecutor {
     }
   }
 
-  async _executeWatchVideo(devices, payload, options, deviceConfigs) {
+  async _executeWatchVideo(devices, payload, options, deviceConfigs, context = {}) {
+    await this._assertXiaoweiExecutionPolicy({
+      ...context,
+      devices,
+      callType: payload.actionName ? "actionCreate" : "autojsCreate",
+      scriptPath: payload.actionName ? null : (payload.scriptPath || "youtube_watch.js"),
+    });
+
     // If we have per-device configs (batch task), execute individually for each device
     if (deviceConfigs && deviceConfigs.size > 0) {
       console.log(`[TaskExecutor]   Batch execution: ${deviceConfigs.size} devices with individual videos`);
@@ -1512,11 +1536,25 @@ class TaskExecutor {
         console.log(`[TaskExecutor]   Device ${deviceSerial} → ${config.video_url}`);
 
         if (payload.actionName) {
+          await this._assertXiaoweiExecutionPolicy({
+            ...context,
+            deviceSerial,
+            devices: deviceSerial,
+            callType: "actionCreate",
+          });
           const result = await this.xiaowei.actionCreate(deviceSerial, payload.actionName, options);
           results.push({ device: deviceSerial, result });
         } else {
           const scriptName = payload.scriptPath || "youtube_watch.js";
           const scriptPath = this._resolveScriptPath(scriptName);
+          await this._assertXiaoweiExecutionPolicy({
+            ...context,
+            deviceSerial,
+            devices: deviceSerial,
+            callType: "autojsCreate",
+            scriptPath: scriptName,
+            resolvedScriptPath: scriptPath,
+          });
           const result = await this.xiaowei.autojsCreate(deviceSerial, scriptPath, {
             ...options,
             taskInterval: payload.taskInterval || [2000, 5000],
@@ -1537,6 +1575,13 @@ class TaskExecutor {
 
     const scriptName = payload.scriptPath || "youtube_watch.js";
     const scriptPath = this._resolveScriptPath(scriptName);
+    await this._assertXiaoweiExecutionPolicy({
+      ...context,
+      devices,
+      callType: "autojsCreate",
+      scriptPath: scriptName,
+      resolvedScriptPath: scriptPath,
+    });
     console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${scriptName} → ${devices}`);
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
@@ -1545,9 +1590,23 @@ class TaskExecutor {
     });
   }
 
-  async _executeComment(devices, payload, options) {
+  async _executeComment(devices, payload, options, context = {}) {
+    await this._assertXiaoweiExecutionPolicy({
+      ...context,
+      devices,
+      callType: payload.scriptPath ? "autojsCreate" : "actionCreate",
+      scriptPath: payload.scriptPath || null,
+    });
+
     if (payload.scriptPath) {
       const scriptPath = this._resolveScriptPath(payload.scriptPath);
+      await this._assertXiaoweiExecutionPolicy({
+        ...context,
+        devices,
+        callType: "autojsCreate",
+        scriptPath: payload.scriptPath,
+        resolvedScriptPath: scriptPath,
+      });
       console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
       return this.xiaowei.autojsCreate(devices, scriptPath, options);
     }
@@ -1557,17 +1616,177 @@ class TaskExecutor {
     return this.xiaowei.actionCreate(devices, actionName, options);
   }
 
-  async _executeCustom(devices, payload, options) {
+  async _executeCustom(devices, payload, options, context = {}) {
+    await this._assertXiaoweiExecutionPolicy({
+      ...context,
+      devices,
+      callType: "autojsCreate",
+      scriptPath: payload.scriptPath || null,
+    });
+
     if (!payload.scriptPath) {
       throw new Error("scriptPath is required for custom task type");
     }
     const scriptPath = this._resolveScriptPath(payload.scriptPath);
+    await this._assertXiaoweiExecutionPolicy({
+      ...context,
+      devices,
+      callType: "autojsCreate",
+      scriptPath: payload.scriptPath,
+      resolvedScriptPath: scriptPath,
+    });
     console.log(`[TaskExecutor]   Xiaowei autojsCreate: ${payload.scriptPath} → ${devices}`);
     return this.xiaowei.autojsCreate(devices, scriptPath, {
       ...options,
       taskInterval: payload.taskInterval || [2000, 5000],
       deviceInterval: payload.deviceInterval || "1000",
     });
+  }
+
+  async _assertXiaoweiExecutionPolicy({
+    taskType,
+    taskId,
+    devices,
+    deviceSerial,
+    callType,
+    scriptPath,
+    resolvedScriptPath,
+  } = {}) {
+    const scriptExecutionTypes = new Set([
+      "watch_video",
+      "view_farm",
+      "comment",
+      "custom",
+      "script",
+      "run_script",
+      "action",
+      "actionCreate",
+    ]);
+
+    if (taskType && scriptExecutionTypes.has(taskType)) {
+      const allowedCalls = new Set(["autojsCreate", "actionCreate"]);
+      if (callType && !allowedCalls.has(callType)) {
+        await this._reportPolicyViolation({
+          code: "policy_violation",
+          reason: `disallowed_call_type:${callType}`,
+          taskType,
+          taskId,
+          devices,
+          deviceSerial,
+        });
+      }
+    }
+
+    if (scriptPath == null) {
+      return;
+    }
+
+    if (!this.config.scriptsDir) {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "scripts_dir_not_configured",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+      });
+    }
+
+    if (path.isAbsolute(scriptPath)) {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "absolute_path_not_allowed",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+        scriptPath,
+      });
+    }
+
+    const scriptSegments = String(scriptPath).split(/[\\/]+/);
+    if (scriptSegments.includes("..")) {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "parent_path_not_allowed",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+        scriptPath,
+      });
+    }
+
+    if (path.extname(scriptPath).toLowerCase() !== ".js") {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "non_js_script_not_allowed",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+        scriptPath,
+      });
+    }
+
+    const baseDir = path.resolve(this.config.scriptsDir);
+    const resolved = path.resolve(resolvedScriptPath || this._resolveScriptPath(scriptPath));
+    const relative = path.relative(baseDir, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "script_outside_whitelist_dir",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+        scriptPath,
+        resolvedScriptPath: resolved,
+      });
+    }
+
+    if (path.extname(resolved).toLowerCase() !== ".js") {
+      await this._reportPolicyViolation({
+        code: "policy_violation",
+        reason: "resolved_non_js_script_not_allowed",
+        taskType,
+        taskId,
+        devices,
+        deviceSerial,
+        scriptPath,
+        resolvedScriptPath: resolved,
+      });
+    }
+  }
+
+  async _reportPolicyViolation(details) {
+    const deviceLabel = details.deviceSerial || details.devices || "unknown";
+    const message = `[TaskExecutor] policy_violation code=${details.code} task=${details.taskId || "unknown"} device=${deviceLabel} reason=${details.reason}`;
+    console.error(message);
+
+    if (details.taskId && this.supabaseSync?.insertExecutionLog) {
+      try {
+        await this.supabaseSync.insertExecutionLog(
+          details.taskId,
+          deviceLabel,
+          "policy_violation",
+          {
+            code: details.code,
+            reason: details.reason,
+            task_type: details.taskType,
+            script_path: details.scriptPath,
+            resolved_script_path: details.resolvedScriptPath,
+          },
+          null,
+          "error",
+          `${details.code}:${details.reason}`
+        );
+      } catch (err) {
+        console.error(`[TaskExecutor] policy_violation logging failed: ${err.message}`);
+      }
+    }
+
+    throw new Error(`${details.code}:${details.reason}`);
   }
 
   /**
